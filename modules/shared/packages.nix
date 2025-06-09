@@ -17,6 +17,7 @@ with pkgs; [
   openssh
   sox
   sqlite
+  stow
   wget
   yazi
   zip
