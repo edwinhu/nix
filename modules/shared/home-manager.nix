@@ -65,6 +65,9 @@ let name = "Edwin Hu";
         # Remove history data we don't want to see
         export HISTIGNORE="pwd:ls:cd"
 
+        # yazi alias
+        alias y='yazi'
+
         # Ripgrep alias
         alias search=rg -p --glob '!node_modules/*'  $@
 

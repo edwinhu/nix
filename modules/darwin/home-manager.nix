@@ -68,7 +68,7 @@ in
       enable = true;
       entries = [
         { path = "/Applications/WezTerm.app/"; }
-        { path = "/Applications/Google Chrome.app/"; }
+        { path = "/Applications/Dia.app/"; }
         { path = "/Applications/Morgen.app/"; }
         { path = "/Applications/Visual Studio Code.app/"; }
         { path = "/Applications/Logseq.app/"; }

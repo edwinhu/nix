@@ -19,6 +19,7 @@ _:
   "obsidian"
   "shottr"
   "soundsource"
+  "protonvpn"
 
   # Entertainment Tools
 
