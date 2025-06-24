@@ -49,7 +49,6 @@
       "3" = [ "main" ];
       "4" = [ "main" ];
       "5" = [ "main" ];
-      "6" = [ "main" ];
       "C" = [ "main" ];
       "O" = [ "main" ];
       "N" = [ "main" ];
@@ -65,6 +64,15 @@
           check-further-callbacks = false;
           "if" = {
             app-id = "com.apple.finder";
+          };
+          run = [
+            "layout floating" "move-node-to-workspace 0"
+          ];
+        }
+        {
+          check-further-callbacks = false;
+          "if" = {
+            app-id = "com.binarynights.ForkLift";
           };
           run = [
             "layout floating" "move-node-to-workspace 0"
@@ -186,15 +194,15 @@
 
         alt-tab = "workspace-back-and-forth";
 
-        alt-left = "focus left";
-        alt-down = "focus down";
-        alt-up = "focus up";
-        alt-right = "focus right";
+        # alt-left = "focus left";
+        # alt-down = "focus down";
+        # alt-up = "focus up";
+        # alt-right = "focus right";
 
-        ctrl-cmd-shift-left = "move left";
-        ctrl-cmd-shift-down = "move down";
-        ctrl-cmd-shift-up = "move up";
-        ctrl-cmd-shift-right = "move right";
+        # ctrl-cmd-shift-left = "move left";
+        # ctrl-cmd-shift-down = "move down";
+        # ctrl-cmd-shift-up = "move up";
+        # ctrl-cmd-shift-right = "move right";
 
         ctrl-cmd-shift-0 = "balance-sizes";
 
@@ -204,7 +212,6 @@
         ctrl-alt-cmd-shift-3 = "workspace 3";
         ctrl-alt-cmd-shift-4 = "workspace 4";
         ctrl-alt-cmd-shift-5 = "workspace 5";
-        ctrl-alt-cmd-shift-6 = "workspace 6";
         ctrl-alt-cmd-shift-c = "workspace C";
         ctrl-alt-cmd-shift-e = "workspace E";
         ctrl-alt-cmd-shift-n = "workspace N";
@@ -235,10 +242,6 @@
         ];
         alt-shift-5 = [
           "move-node-to-workspace 5"
-          "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
-        ];
-        alt-shift-6 = [
-          "move-node-to-workspace 6"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
         alt-shift-c = [

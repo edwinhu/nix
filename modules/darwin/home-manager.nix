@@ -77,26 +77,4 @@ in
     };
     opacity.terminal = 0.8;
   };
-
-  # Fully declarative dock using the latest from Nix Store
-  local = { 
-    dock = {
-      enable = true;
-      entries = [
-        { path = "/Applications/WezTerm.app/"; }
-        { path = "/Applications/Dia.app/"; }
-        { path = "/Applications/Morgen.app/"; }
-        { path = "/Applications/Visual Studio Code.app/"; }
-        { path = "/Applications/Logseq.app/"; }
-        { path = "/Applications/Obsidian.app/"; }
-        { path = "/Applications/Bitwarden.app/"; }
-        { path = "/Applications/Beeper Desktop.app/"; }
-        {
-          path = "${config.users.users.${user}.home}/Downloads";
-          section = "others";
-          options = "--sort dateadded --view grid --display stack";
-        }
-      ];
-    };
-  };
 }

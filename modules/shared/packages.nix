@@ -5,6 +5,7 @@ with pkgs; [
   aspell
   aspellDicts.en
   bash-completion
+  cmake
   coreutils
   gh
   gh-copilot
@@ -32,6 +33,7 @@ with pkgs; [
   rclone
 
   # Media-related packages
+  cm_unicode
   dejavu_fonts
   font-awesome
   hack-font

@@ -5,8 +5,9 @@ let user = "vwh7mb"; in
 {
 
   imports = [
-    ../../modules/darwin/home-manager.nix
     ../../modules/shared
+    ../../modules/darwin/home-manager.nix
+    ../../modules/darwin/aerospace.nix
   ];
 
   # Auto upgrade nix package and the daemon service.
@@ -47,6 +48,10 @@ let user = "vwh7mb"; in
       NSGlobalDomain = {
         AppleShowAllExtensions = true;
         ApplePressAndHoldEnabled = false;
+        # Automatically hide and show the menu bar
+        _HIHideMenuBar = true;
+        # Disable window animations
+        NSAutomaticWindowAnimationsEnabled = false;
 
         # 120, 90, 60, 30, 12, 6, 2
         KeyRepeat = 2;
@@ -57,6 +62,7 @@ let user = "vwh7mb"; in
         "com.apple.mouse.tapBehavior" = 1;
         "com.apple.sound.beep.volume" = 0.0;
         "com.apple.sound.beep.feedback" = 0;
+        "com.apple.trackpad.scaling" = 3.0;
       };
 
       dock = {
@@ -65,6 +71,19 @@ let user = "vwh7mb"; in
         launchanim = true;
         orientation = "bottom";
         tilesize = 48;
+        persistent-apps = [
+          "/Applications/WezTerm.app/"
+          "/Applications/Dia.app/"
+          "/Applications/Morgen.app/"
+          "/Applications/Visual Studio Code.app/"
+          "/Applications/Logseq.app/"
+          "/Applications/Obsidian.app/"
+          "/Applications/Bitwarden.app/"
+          "/Applications/Beeper Desktop.app/"
+        ];
+        persistent-others = [
+          "${config.users.users.${user}.home}/Downloads"
+        ];
       };
 
       finder = {
@@ -77,6 +96,15 @@ let user = "vwh7mb"; in
       };
     };
   };
+
   # Enable Touch ID authentication for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
+
+  services.sketchybar = {
+    enable = true;
+    package = pkgs.sketchybar;
+  };
+
+  services.emacs.enable = true;
+
 }

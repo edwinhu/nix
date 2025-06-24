@@ -3,31 +3,31 @@ _:
 [
   # Development Tools
   # for some reason this always fails, so just brew install it afterwards
-  #"railwaycat/emacsmacport/emacs-mac"
-  "visual-studio-code"
-  "wezterm"
   "ghostty"
   "github"
+  "visual-studio-code"
+  "wezterm"
 
   # Communication Tools
   "beeper"
+  "granola"
 
   # Utility Tools
-  "morgen"
   "bitwarden"
   "logseq"
-  "superwhisper"
+  "morgen"
   "obsidian"
+  "protonvpn"
   "shottr"
   "soundsource"
-  "protonvpn"
+  "superwhisper"
 
   # Entertainment Tools
 
   # Productivity Tools
-  "raycast"
   "forklift"
   "google-drive"
+  "raycast"
 
   # Browsers
   "google-chrome"

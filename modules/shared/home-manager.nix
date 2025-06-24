@@ -61,6 +61,9 @@ let name = "Edwin Hu";
         # Ripgrep alias
         alias search=rg -p --glob '!node_modules/*'  $@
 
+        # lazygit alias
+        alias lg='lazygit'
+
         # Neovim is my editor
         export ALTERNATE_EDITOR=""
         export EDITOR="nvim"
@@ -98,12 +101,16 @@ let name = "Edwin Hu";
     extraConfig = {
       init.defaultBranch = "main";
       core = {
-	    editor = "vim";
+	      editor = "nvim";
         autocrlf = "input";
       };
+      gpg.format = "ssh";
       commit.gpgsign = true;
+      user = {
+        signingkey = "${config.home.homeDirectory}/.ssh/id_github.pub";
+      };
       pull.rebase = true;
-      rebase.autoStash = true;
+      rebase.autoStash = true; 
     };
   };
 
@@ -146,7 +153,7 @@ let name = "Edwin Hu";
       sensible
       yank
       prefix-highlight
-      dracula
+      catppuccin
       {
         plugin = resurrect; # Used by tmux-continuum
 
@@ -166,18 +173,22 @@ let name = "Edwin Hu";
         '';
       }
       {
-        plugin = dracula;
+        plugin = catppuccin;
         extraConfig = ''
-        set -g @dracula-show-powerline true
-        set -g @dracula-show-flags true
-        set -g @dracula-left-icon session # or window
-        set -g @dracula-fixed-location "Washington, DC"
-        set -g @dracula-plugins "weather"
+          set -g @catppuccin_flavor "mocha"
+          set -g @catppuccin_window_status_style "rounded"
+          # Make the status line pretty and add some modules
+          set -g status-right-length 100
+          set -g status-left-length 100
+          set -g status-left ""
+          set -g status-right "#{E:@catppuccin_status_application}"
+          set -ag status-right "#{E:@catppuccin_status_session}"
+          set -ag status-right "#{E:@catppuccin_status_uptime}"
         '';
       }
     ];
     terminal = "screen-256color";
-    prefix = "C-s";
+    prefix = "C-a";
     escapeTime = 10;
     historyLimit = 50000;
     extraConfig = ''
