@@ -1,6 +1,6 @@
 { config, pkgs, ... }:
 
-let user = "edwinhu"; in
+let user = "vwh7mb"; in
 
 {
 
@@ -77,4 +77,6 @@ let user = "edwinhu"; in
       };
     };
   };
+  # Enable Touch ID authentication for sudo
+  security.pam.services.sudo_local.touchIdAuth = true;
 }

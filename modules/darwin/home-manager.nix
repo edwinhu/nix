@@ -1,7 +1,7 @@
-{ config, pkgs, lib, home-manager, homebrew-emacsmacport, catppuccin, ... }:
+{ config, pkgs, lib, home-manager, homebrew-emacsmacport, stylix, ... }:
 
 let
-  user = "edwinhu";
+  user = "vwh7mb";
 in
 {
   imports = [
@@ -60,6 +60,22 @@ in
       };
       programs = {} // import ../shared/home-manager.nix { inherit config pkgs lib; };
     };
+  };
+
+  stylix = {
+    enable = true;
+    autoEnable = true;
+    base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
+    targets = {
+    };
+    fonts = {
+      monospace = {
+        package = pkgs.nerd-fonts.jetbrains-mono;
+        name = "JetBrainsMono Nerd Font Mono";
+      };
+      sizes.terminal = 13;
+    };
+    opacity.terminal = 0.8;
   };
 
   # Fully declarative dock using the latest from Nix Store

@@ -8,6 +8,7 @@ with pkgs; [
   coreutils
   gh
   gh-copilot
+  ifstat-legacy
   killall
   lazygit
   localsend
@@ -15,6 +16,7 @@ with pkgs; [
   neovim
   nodejs
   openssh
+  sioyek
   sox
   sqlite
   stow

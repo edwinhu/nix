@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-    catppuccin.url = "github:catppuccin/nix";
     home-manager.url = "github:nix-community/home-manager";
     darwin = {
       url = "github:LnL7/nix-darwin/master";
@@ -28,11 +27,14 @@
       url = "github:homebrew/homebrew-cask";
       flake = false;
     };
+    stylix = {
+      url = "github:danth/stylix";
+    };
   };
 
-  outputs = { self, catppuccin, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix} @inputs:
     let
-      user = "edwinhu";
+      user = "vwh7mb";
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
       darwinSystems = [ "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs (linuxSystems ++ darwinSystems) f;
@@ -81,9 +83,8 @@
           inherit system;
           specialArgs = inputs;
           modules = [
-            # 20250527 Currently no catppuccin.darwinModules support
-            # catppuccin.darwinModules.catppuccin
-            home-manager.darwinModules.home-manager
+            inputs.stylix.darwinModules.stylix
+            inputs.home-manager.darwinModules.home-manager
             nix-homebrew.darwinModules.nix-homebrew
             {
               nix-homebrew = {

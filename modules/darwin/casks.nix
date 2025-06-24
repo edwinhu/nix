@@ -6,9 +6,10 @@ _:
   #"railwaycat/emacsmacport/emacs-mac"
   "visual-studio-code"
   "wezterm"
+  "ghostty"
+  "github"
 
   # Communication Tools
-  "zoom"
   "beeper"
 
   # Utility Tools
@@ -26,6 +27,7 @@ _:
   # Productivity Tools
   "raycast"
   "forklift"
+  "google-drive"
 
   # Browsers
   "google-chrome"

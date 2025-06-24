@@ -6,6 +6,4 @@ shared-packages ++ [
   aerospace
   dockutil
   jankyborders
-  karabiner-elements
-  sketchybar
 ]
