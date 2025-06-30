@@ -44,6 +44,7 @@ with pkgs; [
 
   # data science tools
   pixi
+  pixi-pack
 
   # Text and terminal utilities
   atuin

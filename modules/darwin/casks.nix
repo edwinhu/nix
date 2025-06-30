@@ -17,6 +17,7 @@ _:
   "logseq"
   "morgen"
   "obsidian"
+  "paletro"
   "protonvpn"
   "shottr"
   "soundsource"

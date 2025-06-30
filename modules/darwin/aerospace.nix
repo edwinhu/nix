@@ -216,7 +216,7 @@
         ctrl-alt-cmd-shift-e = "workspace E";
         ctrl-alt-cmd-shift-n = "workspace N";
         ctrl-alt-cmd-shift-o = "workspace O";
-        ctrl-alt-cmd-shift-p = "workspace P";
+        # ctrl-alt-cmd-shift-p = "workspace P";
         ctrl-alt-cmd-shift-t = "workspace T";
         ctrl-alt-cmd-shift-w = "workspace W";
         

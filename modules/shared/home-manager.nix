@@ -40,6 +40,10 @@ let name = "Edwin Hu";
 
         cdpath = [ "~/.local/share/src" ];
         plugins = [
+          {
+            name = "fzf-tab";
+            src = "${pkgs.zsh-fzf-tab}/share/fzf-tab";
+          }
         ];
         initContent = lib.mkBefore ''
         if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
@@ -80,13 +84,7 @@ let name = "Edwin Hu";
         alias lt='eza --tree --level=2 --color=always --group-directories-first --icons'
         alias l.="eza -a | grep -E '^\.'"
 
-        # fzf colors
-        export FZF_DEFAULT_OPTS=" \
-        --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8 \
-        --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc \
-        --color=marker:#b4befe,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8 \
-        --color=selected-bg:#45475a \
-        --multi"
+        # fzf colors are managed by stylix
         '';
     };
 
