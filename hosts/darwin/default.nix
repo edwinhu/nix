@@ -6,6 +6,7 @@ let user = "vwh7mb"; in
 
   imports = [
     ../../modules/shared
+    ../../modules/shared/secrets.nix
     ../../modules/darwin/home-manager.nix
     ../../modules/darwin/aerospace.nix
   ];

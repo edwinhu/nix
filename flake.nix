@@ -30,9 +30,13 @@
     stylix = {
       url = "github:danth/stylix";
     };
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, sops-nix} @inputs:
     let
       user = "vwh7mb";
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
@@ -40,7 +44,7 @@
       forAllSystems = f: nixpkgs.lib.genAttrs (linuxSystems ++ darwinSystems) f;
       devShell = system: let pkgs = nixpkgs.legacyPackages.${system}; in {
         default = with pkgs; mkShell {
-          nativeBuildInputs = with pkgs; [ bashInteractive git ];
+          nativeBuildInputs = with pkgs; [ bashInteractive git sops ];
           shellHook = with pkgs; ''
             export EDITOR=vim
           '';
@@ -83,6 +87,7 @@
           inherit system;
           specialArgs = inputs;
           modules = [
+            sops-nix.darwinModules.sops
             inputs.stylix.darwinModules.stylix
             inputs.home-manager.darwinModules.home-manager
             nix-homebrew.darwinModules.nix-homebrew

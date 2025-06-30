@@ -28,6 +28,7 @@ with pkgs; [
   # Encryption and security tools
   gnupg
   libfido2
+  sops
 
   # Cloud-related tools and SDKs
   rclone

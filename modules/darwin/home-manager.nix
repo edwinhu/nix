@@ -1,4 +1,4 @@
-{ config, pkgs, lib, home-manager, homebrew-emacsmacport, stylix, ... }:
+{ config, pkgs, lib, home-manager, homebrew-emacport, stylix, sops-nix, ... }:
 
 let
   user = "vwh7mb";
@@ -48,19 +48,32 @@ in
       "microsoft powerpoint" = 462062816;
     };
   };
-
+  
   # Enable home-manager
   home-manager = {
     useGlobalPkgs = true;
-    users.${user} = { pkgs, config, lib, ... }:{
+    users.${user} = { pkgs, config, lib, ... }: {
+      imports = [
+        sops-nix.homeManagerModules.sops
+        ../shared/secrets.nix
+      ];
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527
         enableNixpkgsReleaseCheck = false;
         packages = pkgs.callPackage ./packages.nix {};
+        sessionVariables = {
+          # Make sops secrets available as environment variables
+          GOOGLE_SEARCH_API_KEY = "$(cat ${config.sops.secrets.GOOGLE_SEARCH_API_KEY.path})";
+          GOOGLE_SEARCH_ENGINE_ID = "$(cat ${config.sops.secrets.GOOGLE_SEARCH_ENGINE_ID.path})";
+          GEMINI_API_KEY = "$(cat ${config.sops.secrets.GEMINI_API_KEY.path})";
+          CLAUDE_API_KEY = "$(cat ${config.sops.secrets.CLAUDE_API_KEY.path})";
+        };
       };
       programs = {} // import ../shared/home-manager.nix { inherit config pkgs lib; };
     };
   };
+
+  
 
   stylix = {
     enable = true;
