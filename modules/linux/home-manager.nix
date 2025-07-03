@@ -36,10 +36,9 @@
       enable = true;
       enableCompletion = true;
       initExtra = ''
-        # Auto-start zsh if it exists and we're in an interactive session
-        if [[ -x "$(command -v zsh)" ]] && [[ $- == *i* ]] && [[ ! "$SHELL" == *zsh* ]]; then
-          export SHELL="$(command -v zsh)"
-          exec -l zsh
+        # Source shared shell configuration
+        if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
+            source "$HOME/dotfiles/.shell_common"
         fi
       '';
     };
