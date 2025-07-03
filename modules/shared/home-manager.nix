@@ -45,7 +45,6 @@
           VISUAL = "nvim";
           ALTERNATE_EDITOR = "";
           HISTIGNORE = "pwd:ls:cd";
-          _ZO_DOCTOR = "0";  # Suppress zoxide warning
         };
         initExtra = ''
         # Source shared shell configuration
