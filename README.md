@@ -9,6 +9,7 @@ This repository contains a minimal Nix configuration that starts with [Determina
 - **nix-darwin:** Manages macOS system configuration declaratively.
 - **home-manager:** Manages user-level configuration with flakes support.
 - **Flakes enabled:** Uses Nix flakes for reproducible and modular configuration.
+- **sops-nix:** Secure secrets management using age encryption for API keys and sensitive data.
 - **Up-to-date:** Updated to work with recent versions of Nix, nix-flakes, and home-manager.
 
 ## Inspiration
@@ -36,11 +37,18 @@ While this setup is focused on macOS (nix-darwin + home-manager), it could be ex
 3. **Set up nix-darwin and home-manager:**
    Follow the instructions in the respective modules and flake files.
 
+4. **Set up secrets (sops-nix):**
+   - Generate age key: `age-keygen -o ~/.config/sops/age/keys.txt`
+   - Create `.sops.yaml` with your age public key
+   - Encrypt secrets: `sops secrets.yaml`
+   - Rebuild: `nix run .#build-switch`
+
 ## References
 
 - [Determinate Nix Installer](https://github.com/determinateSystems/nix-installer)
 - [nix-darwin](https://github.com/LnL7/nix-darwin)
 - [home-manager](https://github.com/nix-community/home-manager)
+- [sops-nix](https://github.com/Mic92/sops-nix)
 - [dustinlyons/nixos-config](https://github.com/dustinlyons/nixos-config)
 
 ---

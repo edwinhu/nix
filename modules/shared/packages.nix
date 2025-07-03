@@ -7,6 +7,7 @@ with pkgs; [
   bash-completion
   cmake
   coreutils
+  go
   gh
   gh-copilot
   ifstat-legacy
@@ -26,6 +27,7 @@ with pkgs; [
   zip
 
   # Encryption and security tools
+  age
   gnupg
   libfido2
   sops
@@ -65,6 +67,7 @@ with pkgs; [
   jq
   pandoc
   ripgrep
+  tailspin
   tectonic
   tmux
   tree
