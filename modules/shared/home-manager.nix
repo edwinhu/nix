@@ -42,18 +42,12 @@
           }
         ];
         sessionVariables = {
-          PATH = "$HOME/.local/share/bin:$HOME/go/bin:$HOME/.npm-packages/bin:$HOME/bin:$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH";
           EDITOR = "nvim";
           VISUAL = "nvim";
           ALTERNATE_EDITOR = "";
           HISTIGNORE = "pwd:ls:cd";
         };
         initContent = ''
-        if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
-            . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-            . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
-        fi
-
         # yazi alias
         alias y='yazi'
 
@@ -82,6 +76,9 @@
             . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
             . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
         fi
+        
+        # Add our custom paths AFTER nix.sh resets the PATH
+        export PATH="$HOME/.local/share/bin:$HOME/go/bin:$HOME/.npm-packages/bin:$HOME/bin:$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH"
         '';
     };
 
