@@ -19,6 +19,7 @@
     
     sessionVariables = {
       # Add Linux-specific environment variables
+      SHELL = "${pkgs.zsh}/bin/zsh";
     };
   };
 
