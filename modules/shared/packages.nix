@@ -5,9 +5,11 @@ with pkgs; [
   aspell
   aspellDicts.en
   bash-completion
+  claude-code
   cmake
   coreutils
   go
+  gemini-cli
   gh
   gh-copilot
   ifstat-legacy

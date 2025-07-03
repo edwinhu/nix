@@ -1,30 +1,47 @@
 #!/bin/sh -e
 
-VERSION=1.0
-
 GREEN='\033[1;32m'
 RED='\033[1;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-SYSTEM=$(uname -m)
+# Get current username
+USERNAME=$(whoami)
 
-case "$SYSTEM" in
-  x86_64)
-    FLAKE_TARGET="x86_64-linux"
-    ;;
-  aarch64)
-    FLAKE_TARGET="aarch64-linux"
-    ;;
-  *)
-    echo -e "${RED}Unsupported architecture: $SYSTEM${NC}"
-    exit 1
-    ;;
-esac
-
-echo -e "${YELLOW}Starting...${NC}"
-
-# We pass SSH from user to root so root can download secrets from our private Github
-sudo SSH_AUTH_SOCK=$SSH_AUTH_SOCK /run/current-system/sw/bin/nixos-rebuild switch --flake .#$FLAKE_TARGET $@
-
-echo -e "${GREEN}Switch to new generation complete!${NC}"
+# Detect if we're on NixOS
+if [ -f /etc/nixos/configuration.nix ] || [ -d /run/current-system ] || command -v nixos-rebuild >/dev/null 2>&1; then
+    echo -e "${YELLOW}Detected NixOS system${NC}"
+    echo -e "${YELLOW}Starting NixOS rebuild...${NC}"
+    
+    # Get system architecture for NixOS
+    SYSTEM=$(uname -m)
+    case "$SYSTEM" in
+      x86_64)
+        FLAKE_TARGET="x86_64-linux"
+        ;;
+      aarch64)
+        FLAKE_TARGET="aarch64-linux"
+        ;;
+      *)
+        echo -e "${RED}Unsupported architecture: $SYSTEM${NC}"
+        exit 1
+        ;;
+    esac
+    
+    # NixOS rebuild (keeping the SSH_AUTH_SOCK for private repos)
+    sudo SSH_AUTH_SOCK=$SSH_AUTH_SOCK /run/current-system/sw/bin/nixos-rebuild switch --flake .#$FLAKE_TARGET $@
+    echo -e "${GREEN}NixOS switch complete!${NC}"
+else
+    echo -e "${YELLOW}Detected non-NixOS Linux system${NC}"
+    echo -e "${YELLOW}Using home-manager standalone...${NC}"
+    
+    export NIXPKGS_ALLOW_UNFREE=1
+    
+    echo -e "${YELLOW}Building home-manager configuration for user: ${USERNAME}${NC}"
+    echo -e "${YELLOW}Starting build...${NC}"
+    
+    # Build and activate home-manager configuration
+    nix --extra-experimental-features 'nix-command flakes' run .#homeConfigurations.${USERNAME}.activationPackage $@
+    
+    echo -e "${GREEN}Home-manager switch complete!${NC}"
+fi

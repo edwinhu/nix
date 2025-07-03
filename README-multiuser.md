@@ -9,24 +9,35 @@ This nix configuration now supports multiple users across different platforms.
 
 ## Usage
 
-### For macOS (nix-darwin)
+### Universal Command (All Platforms)
 
 ```bash
-# Build and switch for vwh7mb
-darwin-rebuild switch --flake .#vwh7mb
-
-# Or use the nix run command
-nix run .#darwinConfigurations.vwh7mb.system.build.switch
+# Works on macOS, NixOS, and other Linux distributions
+nix run .#build-switch
 ```
 
-### For Linux (home-manager standalone)
+The build-switch script automatically detects:
+- **macOS**: Uses darwin-rebuild
+- **NixOS**: Uses nixos-rebuild with system architecture
+- **Other Linux**: Uses home-manager standalone with current user
 
+### Platform-Specific Commands
+
+If you prefer explicit commands:
+
+**macOS (nix-darwin)**
 ```bash
-# Build and switch for eh2889
-home-manager switch --flake .#eh2889
+darwin-rebuild switch --flake .#vwh7mb
+```
 
-# Or use nix run
-nix run .#homeConfigurations.eh2889.activationPackage
+**Linux (home-manager standalone)**  
+```bash
+home-manager switch --flake .#eh2889
+```
+
+**NixOS**
+```bash
+sudo nixos-rebuild switch --flake .#x86_64-linux
 ```
 
 ## Adding a New User

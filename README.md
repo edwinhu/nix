@@ -39,21 +39,21 @@ This configuration is based on [dustinlyons/nixos-config](https://github.com/dus
    cd nix-config
    ```
 
-### For macOS Users
+### For All Users (macOS, Linux, NixOS)
 
 Build and switch to your configuration:
 ```sh
 nix run .#build-switch
-# Or explicitly: darwin-rebuild switch --flake .#yourusername
 ```
 
-### For Linux Users
+The script automatically detects your system type:
+- **macOS**: Uses darwin-rebuild
+- **NixOS**: Uses nixos-rebuild  
+- **Other Linux**: Uses home-manager standalone
 
-Build and activate home-manager configuration:
-```sh
-nix run .#build-switch-home
-# Or explicitly: home-manager switch --flake .#yourusername
-```
+You can also use explicit commands:
+- macOS: `darwin-rebuild switch --flake .#yourusername`
+- Linux: `home-manager switch --flake .#yourusername`
 
 ### Setting up Secrets (sops-nix)
 
