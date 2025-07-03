@@ -41,20 +41,18 @@
             src = "${pkgs.zsh-fzf-tab}/share/fzf-tab";
           }
         ];
+        sessionVariables = {
+          PATH = "$HOME/.local/share/bin:$HOME/go/bin:$HOME/.npm-packages/bin:$HOME/bin:$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH";
+          EDITOR = "nvim";
+          VISUAL = "nvim";
+          ALTERNATE_EDITOR = "";
+          HISTIGNORE = "pwd:ls:cd";
+        };
         initContent = ''
         if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
             . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
             . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
         fi
-
-        # Define variables for directories
-        export PATH=$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH
-        export PATH=$HOME/.npm-packages/bin:$HOME/bin:$PATH
-        export PATH=$HOME/go/bin:$PATH
-        export PATH=$HOME/.local/share/bin:$PATH
-
-        # Remove history data we don't want to see
-        export HISTIGNORE="pwd:ls:cd"
 
         # yazi alias
         alias y='yazi'
@@ -64,11 +62,6 @@
 
         # lazygit alias
         alias lg='lazygit'
-
-        # Neovim is my editor
-        export ALTERNATE_EDITOR=""
-        export EDITOR="nvim"
-        export VISUAL="nvim"
 
         # eza aliases
         alias ls='eza --color=always --group-directories-first --icons'
@@ -84,46 +77,11 @@
         # fzf colors are managed by stylix
         '';
         profileExtra = ''
+        # Source nix profiles for login shells
         if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
             . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
             . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
         fi
-
-        # Define variables for directories
-        export PATH=$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH
-        export PATH=$HOME/.npm-packages/bin:$HOME/bin:$PATH
-        export PATH=$HOME/go/bin:$PATH
-        export PATH=$HOME/.local/share/bin:$PATH
-
-        # Remove history data we don't want to see
-        export HISTIGNORE="pwd:ls:cd"
-
-        # yazi alias
-        alias y='yazi'
-
-        # Ripgrep alias
-        alias search=rg -p --glob '!node_modules/*'  $@
-
-        # lazygit alias
-        alias lg='lazygit'
-
-        # Neovim is my editor
-        export ALTERNATE_EDITOR=""
-        export EDITOR="nvim"
-        export VISUAL="nvim"
-
-        # eza aliases
-        alias ls='eza --color=always --group-directories-first --icons'
-        alias ll='eza -la --icons --octal-permissions --group-directories-first'
-        alias l='eza -bGF --header --git --color=always --group-directories-first --icons'
-        alias llm='eza -lbGd --header --git --sort=modified --color=always --group-directories-first --icons' 
-        alias la='eza --long --all --group --group-directories-first'
-        alias lx='eza -lbhHigUmuSa@ --time-style=long-iso --git --color-scale --color=always --group-directories-first --icons'
-        alias lS='eza -1 --color=always --group-directories-first --icons'
-        alias lt='eza --tree --level=2 --color=always --group-directories-first --icons'
-        alias l.="eza -a | grep -E '^\.'"
-
-        # fzf colors are managed by stylix
         '';
     };
 
