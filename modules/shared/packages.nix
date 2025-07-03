@@ -5,11 +5,11 @@ with pkgs; [
   aspell
   aspellDicts.en
   bash-completion
-  claude-code
+  # claude-code  # TODO: verify correct package name
   cmake
   coreutils
   go
-  gemini-cli
+  # gemini-cli  # TODO: verify correct package name
   gh
   gh-copilot
   ifstat-legacy
