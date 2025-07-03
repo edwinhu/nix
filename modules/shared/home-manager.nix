@@ -46,7 +46,7 @@
           ALTERNATE_EDITOR = "";
           HISTIGNORE = "pwd:ls:cd";
         };
-        initExtra = ''
+        initContent = ''
         # Source shared shell configuration
         if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
             source "$HOME/dotfiles/.shell_common"
