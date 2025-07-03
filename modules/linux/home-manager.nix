@@ -3,6 +3,7 @@
 {
   imports = [
     ../../users/${user}
+    ../shared/bash-aliases.nix
   ];
 
   # Linux-specific configurations
@@ -35,10 +36,24 @@
     bash = {
       enable = true;
       enableCompletion = true;
+      profileExtra = ''
+        # PATH and nix profile sourcing is now handled in dotfiles/.shell_env
+      '';
+      
+      bashrcExtra = ''
+        # Aliases are now sourced from dotfiles/.shell_aliases via .shell_common
+      '';
+      
       initExtra = ''
         # Source shared shell configuration
         if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
             source "$HOME/dotfiles/.shell_common"
+        fi
+        
+        # Auto-start zsh if it exists and we're in an interactive session
+        if [[ -x "$(command -v zsh)" ]] && [[ $- == *i* ]] && [[ ! "$SHELL" == *zsh* ]]; then
+          export SHELL="$(command -v zsh)"
+          exec -l zsh
         fi
       '';
     };

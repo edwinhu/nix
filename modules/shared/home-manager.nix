@@ -1,10 +1,9 @@
 { config, pkgs, lib, user, userInfo, ... }:
 
 {
-
   # Shared shell configuration
 
-    atuin = {
+  atuin = {
         enable = true;
         settings = {
         style = "compact"; 
@@ -41,7 +40,14 @@
             src = "${pkgs.zsh-fzf-tab}/share/fzf-tab";
           }
         ];
-        initContent = ''
+        sessionVariables = {
+          EDITOR = "nvim";
+          VISUAL = "nvim";
+          ALTERNATE_EDITOR = "";
+          HISTIGNORE = "pwd:ls:cd";
+          _ZO_DOCTOR = "0";  # Suppress zoxide warning
+        };
+        initExtra = ''
         # Source shared shell configuration
         if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
             source "$HOME/dotfiles/.shell_common"
@@ -51,7 +57,7 @@
         '';
         profileExtra = ''
         # Login shell configuration
-        # The PATH is already set in initExtra for both login and non-login shells
+        # Environment variables and PATH are set in dotfiles/.shell_env
         '';
     };
 
