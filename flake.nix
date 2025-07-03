@@ -38,7 +38,22 @@
 
   outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, sops-nix} @inputs:
     let
-      user = "vwh7mb";
+      # Define user-host mappings
+      userHosts = {
+        vwh7mb = { 
+          system = "aarch64-darwin"; 
+          host = "macbook-pro";
+          fullName = "Edwin Hu";
+          email = "eddyhu@gmail.com";
+        };
+        eh2889 = { 
+          system = "x86_64-linux"; 
+          host = "rjds";
+          fullName = "Edwin Hu";
+          email = "eddyhu@gmail.com";
+        };
+      };
+      
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
       darwinSystems = [ "aarch64-darwin" "x86_64-darwin" ];
       forAllSystems = f: nixpkgs.lib.genAttrs (linuxSystems ++ darwinSystems) f;
@@ -62,6 +77,7 @@
       mkLinuxApps = system: {
         "apply" = mkApp "apply" system;
         "build-switch" = mkApp "build-switch" system;
+        "build-switch-home" = mkApp "build-switch-home" system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -82,10 +98,13 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
-      darwinConfigurations = nixpkgs.lib.genAttrs darwinSystems (system:
+      # Darwin configurations for macOS hosts
+      darwinConfigurations = let
+        darwinUsers = nixpkgs.lib.filterAttrs (user: info: nixpkgs.lib.hasSuffix "darwin" info.system) userHosts;
+      in nixpkgs.lib.mapAttrs (user: info:
         darwin.lib.darwinSystem {
-          inherit system;
-          specialArgs = inputs;
+          system = info.system;
+          specialArgs = inputs // { inherit user; userInfo = info; };
           modules = [
             sops-nix.darwinModules.sops
             inputs.stylix.darwinModules.stylix
@@ -105,21 +124,31 @@
                 autoMigrate = true;
               };
             }
-            # 2025-01-29
-            # - There is now a `nix.enable` toggle to disable management of the Nix
-            #   installation. Nix installation management has been made more
-            #   opinionated as a consequence; nix-darwin now only supports managing a
-            #   multi‐user daemon installation of Nix, and unconditionally takes
-            #   ownership of the nix-daemon launchd daemon and the `_nixbld*` build
-            #   users when Nix installation management is enabled.
-
-            #   If the new constraints do not work with your setup, you can disable
-            #   the `nix.enable` option to opt out of Nix installation management
-            #   entirely; see the option documentation for caveats.
             { nix.enable = false; }
-            ./hosts/darwin
+            ./hosts/darwin/${info.host}
           ];
         }
-      );
+      ) darwinUsers;
+
+      # Home-manager configurations for Linux hosts
+      homeConfigurations = let
+        linuxUsers = nixpkgs.lib.filterAttrs (user: info: nixpkgs.lib.hasSuffix "linux" info.system) userHosts;
+      in nixpkgs.lib.mapAttrs (user: info:
+        home-manager.lib.homeManagerConfiguration {
+          pkgs = nixpkgs.legacyPackages.${info.system};
+          modules = [
+            sops-nix.homeManagerModules.sops
+            inputs.stylix.homeManagerModules.stylix
+            ./hosts/linux/${info.host}
+            {
+              home = {
+                username = user;
+                homeDirectory = "/home/${user}";
+              };
+            }
+          ];
+          extraSpecialArgs = inputs // { inherit user; userInfo = info; };
+        }
+      ) linuxUsers;
   };
 }

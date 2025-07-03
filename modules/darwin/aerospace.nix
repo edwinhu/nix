@@ -166,7 +166,7 @@
             app-id = "com.mitchellh.ghostty";
           };
           run = [
-            "move-node-to-workspace T"
+            "layout floating" "move-node-to-workspace T"
           ];
         }
         {
@@ -185,6 +185,15 @@
           };
           run = [
             "move-node-to-workspace P"
+          ];
+        }
+        {
+          check-further-callbacks = false;
+          "if" = {
+            app-id = "com.anthropic.claudefordesktop";
+          };
+          run = [
+            "layout floating"
           ];
         }
       ];

@@ -1,9 +1,5 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, user, userInfo, ... }:
 
-let name = "Edwin Hu";
-    user = "vwh7mb";
-    email = "eddyhu@gmail.com";
-    in
 {
 
   # Shared shell configuration
@@ -92,8 +88,8 @@ let name = "Edwin Hu";
   git = {
     enable = true;
     ignores = [ "*.swp" ];
-    userName = name;
-    userEmail = email;
+    userName = userInfo.fullName;
+    userEmail = userInfo.email;
     lfs = {
       enable = true;
     };
@@ -117,23 +113,13 @@ let name = "Edwin Hu";
     enable = true;
     serverAliveInterval = 180;
     includes = [
-      (lib.mkIf pkgs.stdenv.hostPlatform.isLinux
-        "/home/${user}/.ssh/config_external"
-      )
-      (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin
-        "/Users/${user}/.ssh/config_external"
-      )
+      "${config.home.homeDirectory}/.ssh/config_external"
     ];
     matchBlocks = {
       "github.com" = {
         identitiesOnly = true;
         identityFile = [
-          (lib.mkIf pkgs.stdenv.hostPlatform.isLinux
-            "/home/${user}/.ssh/id_github"
-          )
-          (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin
-            "/Users/${user}/.ssh/id_github"
-          )
+          "${config.home.homeDirectory}/.ssh/id_github"
         ];
       };
     };

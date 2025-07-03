@@ -1,8 +1,5 @@
-{ config, pkgs, lib, home-manager, homebrew-emacport, stylix, sops-nix, ... }:
+{ config, pkgs, lib, home-manager, homebrew-emacport, stylix, sops-nix, user, userInfo, ... }:
 
-let
-  user = "vwh7mb";
-in
 {
   imports = [
    ./dock
@@ -56,6 +53,7 @@ in
       imports = [
         sops-nix.homeManagerModules.sops
         ../shared/secrets.nix
+        ../../users/${user}
       ];
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527
@@ -69,8 +67,9 @@ in
           CLAUDE_API_KEY = "$(cat ${config.sops.secrets.CLAUDE_API_KEY.path})";
         };
       };
-      programs = {} // import ../shared/home-manager.nix { inherit config pkgs lib; };
+      programs = {} // import ../shared/home-manager.nix { inherit config pkgs lib user userInfo; };
     };
+    extraSpecialArgs = { inherit user userInfo; };
   };
 
   

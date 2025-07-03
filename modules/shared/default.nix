@@ -1,9 +1,5 @@
-{ config, pkgs, ... }:
+{ config, pkgs, user, ... }:
 
-# this does nothing right now but the build script expects overlays
-let
-    user = "vwh7mb";
-in
 {
 
   nixpkgs = {

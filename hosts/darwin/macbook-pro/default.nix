@@ -1,14 +1,12 @@
-{ config, pkgs, ... }:
-
-let user = "vwh7mb"; in
+{ config, pkgs, user, userInfo, ... }:
 
 {
 
   imports = [
-    ../../modules/shared
-    ../../modules/shared/secrets.nix
-    ../../modules/darwin/home-manager.nix
-    ../../modules/darwin/aerospace.nix
+    ../../../modules/shared
+    ../../../modules/shared/secrets.nix
+    ../../../modules/darwin/home-manager.nix
+    ../../../modules/darwin/aerospace.nix
   ];
 
   # Auto upgrade nix package and the daemon service.
@@ -33,7 +31,7 @@ let user = "vwh7mb"; in
 
   # Load configuration that is shared across systems
   environment.systemPackages = with pkgs; [
-  ] ++ (import ../../modules/shared/packages.nix { inherit pkgs; });
+  ] ++ (import ../../../modules/shared/packages.nix { inherit pkgs; });
 
   system = {
     stateVersion = 4;
