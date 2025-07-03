@@ -13,6 +13,7 @@ _:
   "granola"
 
   # Utility Tools
+  "claude"
   "bitwarden"
   "logseq"
   "morgen"
@@ -24,6 +25,7 @@ _:
   "superwhisper"
 
   # Entertainment Tools
+  "inkscape"
 
   # Productivity Tools
   "forklift"

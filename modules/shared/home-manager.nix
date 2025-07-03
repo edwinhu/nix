@@ -54,6 +54,7 @@ let name = "Edwin Hu";
         # Define variables for directories
         export PATH=$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH
         export PATH=$HOME/.npm-packages/bin:$HOME/bin:$PATH
+        export PATH=$HOME/go/bin:$PATH
         export PATH=$HOME/.local/share/bin:$PATH
 
         # Remove history data we don't want to see
