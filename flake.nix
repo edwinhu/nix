@@ -135,10 +135,13 @@
         linuxUsers = nixpkgs.lib.filterAttrs (user: info: nixpkgs.lib.hasSuffix "linux" info.system) userHosts;
       in nixpkgs.lib.mapAttrs (user: info:
         home-manager.lib.homeManagerConfiguration {
-          pkgs = nixpkgs.legacyPackages.${info.system};
+          pkgs = import nixpkgs {
+            system = info.system;
+            config.allowUnfree = true;
+          };
           modules = [
             sops-nix.homeManagerModules.sops
-            inputs.stylix.homeManagerModules.stylix
+            inputs.stylix.homeModules.stylix
             ./hosts/linux/${info.host}
             {
               home = {

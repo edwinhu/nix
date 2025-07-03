@@ -22,6 +22,9 @@
     };
   };
 
+  # Allow unfree packages
+  nixpkgs.config.allowUnfree = true;
+
   # Enable fonts for Linux
   fonts.fontconfig.enable = true;
 
