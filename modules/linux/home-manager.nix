@@ -39,7 +39,7 @@
         # Auto-start zsh if it exists and we're in an interactive session
         if [[ -x "$(command -v zsh)" ]] && [[ $- == *i* ]] && [[ ! "$SHELL" == *zsh* ]]; then
           export SHELL="$(command -v zsh)"
-          exec zsh -l
+          exec -l zsh
         fi
       '';
     };
