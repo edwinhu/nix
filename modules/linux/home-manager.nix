@@ -3,7 +3,6 @@
 {
   imports = [
     ../../users/${user}
-    ../shared/bash-aliases.nix
   ];
 
   # Linux-specific configurations
