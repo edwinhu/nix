@@ -71,7 +71,7 @@
           #!/usr/bin/env bash
           PATH=${nixpkgs.legacyPackages.${system}.git}/bin:$PATH
           echo "Running ${scriptName} for ${system}"
-          exec ${self}/apps/${system}/${scriptName}
+          exec bash ${self}/apps/${system}/${scriptName}
         '')}/bin/${scriptName}";
       };
       mkLinuxApps = system: {
