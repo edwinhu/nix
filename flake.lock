@@ -359,6 +359,22 @@
         "type": "github"
       }
     },
+    "nix-secrets": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1751582490,
+        "narHash": "sha256-sbfW0n985uUdrXZYhktubXujt/EsVHYeiuX/YeiD3AA=",
+        "ref": "refs/heads/main",
+        "rev": "f245999ecd2e07eb5386131af2a7a318211dae97",
+        "revCount": 1,
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1748026106,
@@ -442,6 +458,7 @@
         "homebrew-cask": "homebrew-cask",
         "homebrew-core": "homebrew-core",
         "nix-homebrew": "nix-homebrew",
+        "nix-secrets": "nix-secrets",
         "nixpkgs": "nixpkgs_2",
         "sops-nix": "sops-nix",
         "stylix": "stylix"

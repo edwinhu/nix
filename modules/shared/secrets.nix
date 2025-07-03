@@ -1,12 +1,13 @@
-{ config, pkgs, user, ... }:
+{ config, pkgs, user, nix-secrets, ... }:
 
 {
-  sops.defaultSopsFile = ./../../secrets.yaml;
+  sops.defaultSopsFile = "${nix-secrets}/secrets.yaml";
   sops.age.keyFile = 
     if pkgs.stdenv.isDarwin then
-      "/Users/${user}/.config/sops/age/keys.txt"
+      "/Users/${user}/.ssh/id_ed25519_agenix"
     else
-      "/home/${user}/.config/sops/age/keys.txt";
+      "/home/${user}/.ssh/id_ed25519_agenix";
+  sops.age.sshKeyPaths = [ ];
   sops.secrets.GOOGLE_SEARCH_API_KEY = { };
   sops.secrets.GOOGLE_SEARCH_ENGINE_ID = { };
   sops.secrets.GEMINI_API_KEY = { };

@@ -1,1 +1,5 @@
 .claude/
+secrets.yaml
+.sops.yaml
+*.age
+id_ed25519_agenix*

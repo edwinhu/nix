@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+username=${USER}
+export SSH_DIR=/home/${username}/.ssh
+
+create_ssh_directory() {
+  mkdir -p ${SSH_DIR}
+}
+
+prompt_for_usb() {
+  echo -e "${YELLOW}Please insert the USB drive containing the SSH keys.${NC}"
+  read -p "Press Enter to continue after inserting the USB drive..."
+}
+
+find_usb_mount() {
+  # Look for common USB mount points
+  local possible_mounts=(
+    "/media/${username}"
+    "/mnt"
+    "/run/media/${username}"
+    "/media"
+  )
+  
+  for mount_base in "${possible_mounts[@]}"; do
+    if [[ -d "$mount_base" ]]; then
+      local mounts=$(find "$mount_base" -maxdepth 2 -type d 2>/dev/null | grep -v "^$mount_base$")
+      if [[ -n "$mounts" ]]; then
+        echo -e "${GREEN}Found potential USB mount points:${NC}"
+        echo "$mounts"
+        read -p "Enter the path to your USB drive: " USB_PATH
+        if [[ -d "$USB_PATH" ]]; then
+          export USB_PATH
+          return 0
+        fi
+      fi
+    fi
+  done
+  
+  echo -e "${RED}No USB drive found. Please ensure it's properly mounted.${NC}"
+  return 1
+}
+
+copy_key() {
+  local key_name=$1
+  local source_key="${USB_PATH}/${key_name}"
+  local dest_key="${SSH_DIR}/${key_name}"
+  
+  if [[ -f "$source_key" ]]; then
+    if [[ -f "$dest_key" ]]; then
+      echo -e "${YELLOW}Existing key found: ${key_name}${NC}"
+      read -p "Do you want to replace it? (y/n) " -n 1 -r
+      echo
+      if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${GREEN}Kept existing ${key_name}.${NC}"
+        return
+      fi
+    fi
+    
+    cp "$source_key" "$dest_key"
+    cp "${source_key}.pub" "${dest_key}.pub" 2>/dev/null || true
+    chown ${username} "$dest_key"
+    chmod 600 "$dest_key"
+    if [[ -f "${dest_key}.pub" ]]; then
+      chown ${username} "${dest_key}.pub"
+      chmod 644 "${dest_key}.pub"
+    fi
+    echo -e "${GREEN}Successfully copied ${key_name}.${NC}"
+  else
+    echo -e "${YELLOW}Key ${key_name} not found on USB drive.${NC}"
+  fi
+}
+
+create_ssh_directory
+prompt_for_usb
+
+if find_usb_mount; then
+  copy_key "id_ed25519"
+  copy_key "id_ed25519_agenix"
+  echo -e "${GREEN}Key copying complete.${NC}"
+else
+  echo -e "${RED}Failed to find USB drive.${NC}"
+  exit 1
+fi

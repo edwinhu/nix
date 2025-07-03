@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${YELLOW}Installing nix configuration...${NC}"
+
+# Run home-manager switch
+if home-manager switch --flake .#${USER}; then
+  echo -e "${GREEN}Installation complete!${NC}"
+else
+  echo -e "${RED}Installation failed!${NC}"
+  exit 1
+fi

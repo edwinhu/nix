@@ -34,9 +34,13 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-secrets = {
+      url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
+      flake = false;
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, sops-nix} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, sops-nix, nix-secrets} @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -103,7 +107,7 @@
       in nixpkgs.lib.mapAttrs (user: info:
         darwin.lib.darwinSystem {
           system = info.system;
-          specialArgs = inputs // { inherit user; userInfo = info; };
+          specialArgs = inputs // { inherit user nix-secrets; userInfo = info; };
           modules = [
             sops-nix.darwinModules.sops
             inputs.stylix.darwinModules.stylix
@@ -149,7 +153,7 @@
               };
             }
           ];
-          extraSpecialArgs = inputs // { inherit user; userInfo = info; };
+          extraSpecialArgs = inputs // { inherit user nix-secrets; userInfo = info; };
         }
       ) linuxUsers;
   };

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+username=${USER}
+export SSH_DIR=/home/${username}/.ssh
+
+check_key() {
+  local key_name=$1
+  local key_path="${SSH_DIR}/${key_name}"
+  
+  if [[ -f "$key_path" ]]; then
+    echo -e "${GREEN}✓ Found ${key_name}${NC}"
+    
+    # Check permissions
+    local perms=$(stat -c %a "$key_path")
+    if [[ "$perms" != "600" ]]; then
+      echo -e "${YELLOW}  Warning: Incorrect permissions ($perms). Should be 600.${NC}"
+    fi
+    
+    # Show public key if it exists
+    if [[ -f "${key_path}.pub" ]]; then
+      echo -e "  Public key: $(cat ${key_path}.pub)"
+    fi
+    
+    # For agenix key, also show the age public key
+    if [[ "$key_name" == "id_ed25519_agenix" ]]; then
+      if command -v ssh-to-age &> /dev/null; then
+        local age_key=$(ssh-to-age < "${key_path}.pub" 2>/dev/null)
+        if [[ -n "$age_key" ]]; then
+          echo -e "  Age public key: ${age_key}"
+        fi
+      else
+        echo -e "${YELLOW}  Note: ssh-to-age not found. Install it to see age public key.${NC}"
+      fi
+    fi
+  else
+    echo -e "${RED}✗ Missing ${key_name}${NC}"
+    return 1
+  fi
+}
+
+check_sops_age_key() {
+  local age_key_path="/home/${username}/.config/sops/age/keys.txt"
+  
+  echo -e "\nChecking SOPS age key:"
+  if [[ -f "$age_key_path" ]]; then
+    echo -e "${GREEN}✓ Found SOPS age key${NC}"
+    echo -e "  Path: ${age_key_path}"
+    
+    # Extract and show public key
+    local public_key=$(grep -o 'public key: age[a-z0-9]*' "$age_key_path" | cut -d' ' -f3)
+    if [[ -n "$public_key" ]]; then
+      echo -e "  Public key: ${public_key}"
+    fi
+  else
+    echo -e "${RED}✗ Missing SOPS age key${NC}"
+    echo -e "  Expected at: ${age_key_path}"
+  fi
+}
+
+echo -e "${YELLOW}Checking SSH keys...${NC}\n"
+
+all_good=true
+check_key "id_ed25519" || all_good=false
+check_key "id_ed25519_agenix" || all_good=false
+
+check_sops_age_key
+
+echo ""
+if [[ "$all_good" == "true" ]]; then
+  echo -e "${GREEN}All SSH keys are present!${NC}"
+else
+  echo -e "${RED}Some keys are missing. Run 'nix run .#create-keys' or 'nix run .#copy-keys' to set them up.${NC}"
+fi
