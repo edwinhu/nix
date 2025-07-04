@@ -33,6 +33,7 @@
   environment.systemPackages = with pkgs; [
   ] ++ (import ../../../modules/shared/packages.nix { inherit pkgs; });
 
+
   system = {
     stateVersion = 4;
     # 2025-01-30

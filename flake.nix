@@ -30,8 +30,8 @@
     stylix = {
       url = "github:danth/stylix";
     };
-    sops-nix = {
-      url = "github:Mic92/sops-nix";
+    agenix = {
+      url = "github:ryantm/agenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-secrets = {
@@ -40,7 +40,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, sops-nix, nix-secrets} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, agenix, nix-secrets} @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -109,7 +109,7 @@
           system = info.system;
           specialArgs = inputs // { inherit user nix-secrets; userInfo = info; };
           modules = [
-            sops-nix.darwinModules.sops
+            agenix.darwinModules.default
             inputs.stylix.darwinModules.stylix
             inputs.home-manager.darwinModules.home-manager
             nix-homebrew.darwinModules.nix-homebrew
@@ -143,7 +143,7 @@
             config.allowUnfree = true;
           };
           modules = [
-            sops-nix.homeManagerModules.sops
+            agenix.homeManagerModules.default
             inputs.stylix.homeModules.stylix
             ./hosts/linux/${info.host}
             {

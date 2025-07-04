@@ -1,19 +1,30 @@
-{ config, pkgs, user, nix-secrets, ... }:
+{ config, pkgs, agenix, user, nix-secrets, ... }:
 
 {
-  sops.defaultSopsFile = "${nix-secrets}/secrets.yaml";
-  sops.age.keyFile = "/home/${user}/.config/sops/age/keys.txt";
-  sops.age.sshKeyPaths = [ ];
-  sops.secrets.GOOGLE_SEARCH_API_KEY = { 
-    mode = "0400";
+  age.secrets = {
+    google-search-api-key = {
+      file = "${nix-secrets}/google-search-api-key.age";
+      owner = user;
+      mode = "400";
+    };
+    google-search-engine-id = {
+      file = "${nix-secrets}/google-search-engine-id.age";
+      owner = user;
+      mode = "400";
+    };
+    gemini-api-key = {
+      file = "${nix-secrets}/gemini-api-key.age";
+      owner = user;
+      mode = "400";
+    };
+    claude-api-key = {
+      file = "${nix-secrets}/claude-api-key.age";
+      owner = user;
+      mode = "400";
+    };
   };
-  sops.secrets.GOOGLE_SEARCH_ENGINE_ID = { 
-    mode = "0400";
-  };
-  sops.secrets.GEMINI_API_KEY = { 
-    mode = "0400";
-  };
-  sops.secrets.CLAUDE_API_KEY = { 
-    mode = "0400";
-  };
+  
+  age.identityPaths = [
+    (if pkgs.stdenv.isDarwin then "/Users/${user}/.ssh/id_ed25519" else "/home/${user}/.ssh/id_ed25519")
+  ];
 }

@@ -1,4 +1,4 @@
-{ config, pkgs, lib, home-manager, homebrew-emacport, stylix, sops-nix, user, userInfo, ... }:
+{ config, pkgs, lib, home-manager, homebrew-emacport, stylix, agenix, user, userInfo, nix-secrets, ... }:
 
 {
   imports = [
@@ -49,10 +49,9 @@
   # Enable home-manager
   home-manager = {
     useGlobalPkgs = true;
-    users.${user} = { pkgs, config, lib, ... }: {
+    users.${user} = { pkgs, lib, ... }: {
       imports = [
-        sops-nix.homeManagerModules.sops
-        ../shared/secrets.nix
+        ../shared/home-secrets.nix
         ../../users/${user}
       ];
       home = {
@@ -60,16 +59,12 @@
         enableNixpkgsReleaseCheck = false;
         packages = pkgs.callPackage ./packages.nix {};
         sessionVariables = {
-          # Make sops secrets available as environment variables
-          GOOGLE_SEARCH_API_KEY = "$(cat ${config.sops.secrets.GOOGLE_SEARCH_API_KEY.path})";
-          GOOGLE_SEARCH_ENGINE_ID = "$(cat ${config.sops.secrets.GOOGLE_SEARCH_ENGINE_ID.path})";
-          GEMINI_API_KEY = "$(cat ${config.sops.secrets.GEMINI_API_KEY.path})";
-          CLAUDE_API_KEY = "$(cat ${config.sops.secrets.CLAUDE_API_KEY.path})";
+          # Secret paths will be set by the system
         };
       };
-      programs = {} // import ../shared/home-manager.nix { inherit config pkgs lib user userInfo; };
+      programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
     };
-    extraSpecialArgs = { inherit user userInfo; };
+    extraSpecialArgs = { inherit user userInfo nix-secrets; };
   };
 
   

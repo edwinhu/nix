@@ -1,4 +1,8 @@
-{ config, pkgs, lib, user, userInfo, ... }:
+{ pkgs, lib, user, userInfo, ... }:
+
+let
+  homeDir = if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}";
+in
 
 {
   # Shared shell configuration
@@ -77,7 +81,7 @@
       gpg.format = "ssh";
       commit.gpgsign = true;
       user = {
-        signingkey = "${config.home.homeDirectory}/.ssh/id_github.pub";
+        signingkey = "${homeDir}/.ssh/id_github.pub";
       };
       pull.rebase = true;
       rebase.autoStash = true; 
@@ -88,13 +92,13 @@
     enable = true;
     serverAliveInterval = 180;
     includes = [
-      "${config.home.homeDirectory}/.ssh/config_external"
+      "${homeDir}/.ssh/config_external"
     ];
     matchBlocks = {
       "github.com" = {
         identitiesOnly = true;
         identityFile = [
-          "${config.home.homeDirectory}/.ssh/id_github"
+          "${homeDir}/.ssh/id_github"
         ];
       };
     };
