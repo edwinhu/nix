@@ -49,8 +49,9 @@
   # Enable home-manager
   home-manager = {
     useGlobalPkgs = true;
-    users.${user} = { pkgs, lib, ... }: {
+    users.${user} = { pkgs, lib, config, ... }: {
       imports = [
+        agenix.homeManagerModules.default
         ../shared/home-secrets.nix
         ../../users/${user}
       ];
@@ -64,7 +65,7 @@
       };
       programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
     };
-    extraSpecialArgs = { inherit user userInfo nix-secrets; };
+    extraSpecialArgs = { inherit user userInfo nix-secrets agenix; };
   };
 
   
