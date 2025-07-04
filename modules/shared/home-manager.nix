@@ -28,8 +28,6 @@ in
 
     zoxide = {
         enable = true;
-        enableZshIntegration = false;
-        enableBashIntegration = false;
         options = [
         "--cmd cd"
         ];
