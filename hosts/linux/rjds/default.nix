@@ -3,7 +3,8 @@
 {
   imports = [
     ../../../modules/linux/home-manager.nix
-    ../../../modules/shared/secrets.nix
+    ../../../modules/shared/secrets-home-manager-standalone.nix
+    ../../../modules/shared/home-secrets.nix
   ];
 
   # Basic home-manager configuration
