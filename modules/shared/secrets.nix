@@ -22,6 +22,11 @@
       owner = user;
       mode = "400";
     };
+    readwise-token = {
+      file = "${nix-secrets}/readwise-token.age";
+      owner = user;
+      mode = "400";
+    };
   };
   
   age.identityPaths = [
