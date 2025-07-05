@@ -18,6 +18,10 @@
       file = "${nix-secrets}/claude-api-key.age";
       mode = "400";
     };
+    readwise-token = {
+      file = "${nix-secrets}/readwise-token.age";
+      mode = "400";
+    };
   };
   
   age.identityPaths = [
@@ -30,5 +34,6 @@
     GOOGLE_SEARCH_ENGINE_ID = "$(cat ${config.age.secrets.google-search-engine-id.path})";
     GEMINI_API_KEY = "$(cat ${config.age.secrets.gemini-api-key.path})";
     CLAUDE_API_KEY = "$(cat ${config.age.secrets.claude-api-key.path})";
+    READWISE_TOKEN = "$(cat ${config.age.secrets.readwise-token.path})";
   };
 }
