@@ -7,6 +7,7 @@
     ../../../modules/shared/secrets.nix
     ../../../modules/darwin/home-manager.nix
     ../../../modules/darwin/aerospace.nix
+    ../../../modules/darwin/sketchybar
   ];
 
   # Auto upgrade nix package and the daemon service.
@@ -100,7 +101,8 @@
   # Enable Touch ID authentication for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
 
-  services.sketchybar = {
+  # Sketchybar is now configured through the new module
+  programs.sketchybar = {
     enable = true;
     package = pkgs.sketchybar;
   };

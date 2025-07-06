@@ -1,0 +1,133 @@
+#!/bin/bash
+
+# This is a hybrid config that uses shell commands but maintains the modular structure
+# Color definitions (Catppuccin Mocha)
+export BLACK=0xff181926
+export WHITE=0xffcad3f5
+export RED=0xffed8796
+export GREEN=0xffa6da95
+export BLUE=0xff8aadf4
+export YELLOW=0xffeed49f
+export ORANGE=0xfff5a97f
+export MAGENTA=0xffc6a0f6
+export GREY=0xff939ab7
+export TRANSPARENT=0x00000000
+export BAR_COLOR=0x40000000
+
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+ITEM_DIR="$CONFIG_DIR/items"
+
+# Bar configuration
+sketchybar --bar position=top \
+                  height=40 \
+                  blur_radius=30 \
+                  color=$BAR_COLOR \
+                  padding_left=10 \
+                  padding_right=10
+
+# Default values
+sketchybar --default padding_left=5 \
+                     padding_right=5 \
+                     icon.font="Hack Nerd Font:Regular:14.0" \
+                     label.font="Hack Nerd Font:Bold:13.0" \
+                     icon.color=$WHITE \
+                     label.color=$WHITE \
+                     icon.padding_left=6 \
+                     icon.padding_right=6 \
+                     label.padding_left=6 \
+                     label.padding_right=6 \
+                     background.color=$TRANSPARENT \
+                     background.corner_radius=6 \
+                     background.height=26
+
+# Aerospace workspace integration
+sketchybar --add event aerospace_workspace_change
+
+for sid in $(aerospace list-workspaces --all); do
+    sketchybar --add item space.$sid left \
+        --subscribe space.$sid aerospace_workspace_change \
+        --set space.$sid \
+        background.color=0x44ffffff \
+        background.corner_radius=6 \
+        background.height=26 \
+        background.drawing=off \
+        background.border_width=2 \
+        background.border_color=$TRANSPARENT \
+        icon="$sid" \
+        icon.padding_left=7 \
+        icon.padding_right=7 \
+        icon.color=$WHITE \
+        icon.font="Hack Nerd Font Mono:Bold:14.0" \
+        label.drawing=off \
+        click_script="aerospace workspace $sid" \
+        script="$ITEM_DIR/space.sh $sid"
+done
+
+# Front app
+sketchybar --add item front_app left \
+           --set front_app \
+           icon.drawing=off \
+           label.font="Hack Nerd Font:Bold:13.0" \
+           label.color=$WHITE \
+           background.color=0x10ffffff \
+           background.height=26 \
+           background.corner_radius=6 \
+           background.padding_right=5 \
+           background.padding_left=5 \
+           script="$ITEM_DIR/front_app.sh" \
+           --subscribe front_app front_app_switched
+
+# Calendar/Clock
+sketchybar --add item calendar right \
+           --set calendar \
+           icon=󰃰 \
+           icon.font="Hack Nerd Font:Regular:16.0" \
+           label.font="Hack Nerd Font:Regular:13.0" \
+           background.color=0x10ffffff \
+           update_freq=30 \
+           script="$ITEM_DIR/calendar.sh" \
+           click_script="open -a Calendar"
+
+# Battery
+sketchybar --add item battery right \
+           --set battery \
+           icon.font="Hack Nerd Font:Regular:16.0" \
+           label.font="Hack Nerd Font:Regular:13.0" \
+           background.color=0x10ffffff \
+           update_freq=60 \
+           script="$ITEM_DIR/battery.sh"
+
+# WiFi
+sketchybar --add item wifi right \
+           --set wifi \
+           icon.font="Hack Nerd Font:Regular:16.0" \
+           label.font="Hack Nerd Font:Regular:13.0" \
+           background.color=0x10ffffff \
+           update_freq=30 \
+           script="$ITEM_DIR/wifi.sh" \
+           click_script="open /System/Library/PreferencePanes/Network.prefPane"
+
+# Volume
+sketchybar --add item volume right \
+           --set volume \
+           icon.font="Hack Nerd Font:Regular:16.0" \
+           label.font="Hack Nerd Font:Regular:13.0" \
+           background.color=0x10ffffff \
+           script="$ITEM_DIR/volume.sh" \
+           click_script="$ITEM_DIR/volume_click.sh"
+
+# CPU (optional - commented out by default)
+# sketchybar --add item cpu right \
+#            --set cpu \
+#            icon=󰍛 \
+#            icon.font="Hack Nerd Font:Regular:16.0" \
+#            label.font="Hack Nerd Font:Regular:13.0" \
+#            background.color=0x10ffffff \
+#            update_freq=5 \
+#            script="$ITEM_DIR/cpu.sh"
+
+# Trigger initial workspace update
+sketchybar --trigger aerospace_workspace_change
+
+##### Force all scripts to run the first time (never do this in a script) #####
+sketchybar --update
