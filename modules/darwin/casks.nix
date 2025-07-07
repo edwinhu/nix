@@ -15,6 +15,7 @@ _:
   # Utility Tools
   "claude"
   "bitwarden"
+  "homerow"
   "logseq"
   "morgen"
   "obsidian"
