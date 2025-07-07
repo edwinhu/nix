@@ -53,7 +53,6 @@
       imports = [
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
-        ../../users/${user}
       ];
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527

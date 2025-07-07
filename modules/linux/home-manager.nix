@@ -2,7 +2,6 @@
 
 {
   imports = [
-    ../../users/${user}
   ];
 
   # Linux-specific configurations
