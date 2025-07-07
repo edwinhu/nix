@@ -9,7 +9,11 @@ TRANSPARENT=0x00000000
 SPACE_ID=$1
 
 # Check if this space is currently focused
-FOCUSED_WORKSPACE=$(aerospace list-workspaces --focused)
+# FOCUSED_WORKSPACE is passed as an environment variable from the aerospace event
+# If not available (e.g., during initial load), query aerospace
+if [ -z "$FOCUSED_WORKSPACE" ]; then
+  FOCUSED_WORKSPACE=$(aerospace list-workspaces --focused)
+fi
 
 if [ "$SPACE_ID" = "$FOCUSED_WORKSPACE" ]; then
   sketchybar --set space.$SPACE_ID \

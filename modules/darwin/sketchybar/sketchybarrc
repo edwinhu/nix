@@ -41,11 +41,11 @@ sketchybar --default padding_left=5 \
                      background.height=26
 
 # Aerospace workspace integration
-sketchybar --add event aerospace_workspace_change
+sketchybar --add event aerospace_workspace_changed
 
 for sid in $(aerospace list-workspaces --all); do
     sketchybar --add item space.$sid left \
-        --subscribe space.$sid aerospace_workspace_change \
+        --subscribe space.$sid aerospace_workspace_changed \
         --set space.$sid \
         background.color=0x44ffffff \
         background.corner_radius=6 \
@@ -127,7 +127,7 @@ sketchybar --add item volume right \
 #            script="$ITEM_DIR/cpu.sh"
 
 # Trigger initial workspace update
-sketchybar --trigger aerospace_workspace_change
+sketchybar --trigger aerospace_workspace_changed
 
 ##### Force all scripts to run the first time (never do this in a script) #####
 sketchybar --update
