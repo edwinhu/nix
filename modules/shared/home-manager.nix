@@ -49,6 +49,7 @@ in
           VISUAL = "nvim";
           ALTERNATE_EDITOR = "";
           HISTIGNORE = "pwd:ls:cd";
+          NOSYSZSHRC = "1";  # Prevent system zshrc from running after user config
         };
         initContent = ''
         # Source shared shell configuration
