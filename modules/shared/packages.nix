@@ -7,8 +7,6 @@ with pkgs; [
   bash-completion
   cmake
   coreutils
-  dust
-  go
   gh
   gh-copilot
   killall
