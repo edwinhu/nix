@@ -56,12 +56,6 @@
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
-        eddyhu   = { 
-          system = "x86_64-linux"; 
-          host = "wrds";
-          fullName = "Edwin Hu";
-          email = "eddyhu@gmail.com";
-        };
       };
       
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
