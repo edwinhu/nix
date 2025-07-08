@@ -7,8 +7,6 @@ with pkgs; [
   bash-completion
   cmake
   coreutils
-  dust
-  go
   gh
   gh-copilot
   killall
@@ -18,6 +16,7 @@ with pkgs; [
   neovim
   nodejs
   openssh
+  postgresql
   sioyek
   sox
   sqlite
@@ -47,7 +46,6 @@ with pkgs; [
 
   # data science tools
   pixi
-  pixi-pack
 
   # Text and terminal utilities
   atuin
