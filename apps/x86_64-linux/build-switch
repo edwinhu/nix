@@ -44,12 +44,14 @@ else
     echo -e "${YELLOW}Building configuration...${NC}"
     
     # Build using the correct flake reference
-    RESULT=$(nix build --no-link --print-out-paths --extra-experimental-features 'nix-command flakes' path:$(pwd)#homeConfigurations.${USERNAME}.activationPackage 2>&1)
+    CURRENT_DIR=$(pwd)
+    RESULT=$(nix build --no-link --print-out-paths --extra-experimental-features 'nix-command flakes' "path:${CURRENT_DIR}#homeConfigurations.${USERNAME}.activationPackage" 2>&1)
+    BUILD_EXIT_CODE=$?
     
-    if [ $? -ne 0 ]; then
+    if [ $BUILD_EXIT_CODE -ne 0 ]; then
         echo -e "${RED}Build failed. Trying alternative method...${NC}"
         # Fallback: use home-manager directly from nixpkgs
-        nix run nixpkgs#home-manager -- switch --flake path:$(pwd)#${USERNAME} -b backup $@
+        nix run nixpkgs#home-manager -- switch --flake "path:${CURRENT_DIR}#${USERNAME}" -b backup $@
     else
         echo -e "${YELLOW}Activating configuration...${NC}"
         $RESULT/activate
