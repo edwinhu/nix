@@ -41,7 +41,8 @@ else
     echo -e "${YELLOW}Starting build...${NC}"
     
     # Build and activate home-manager configuration
-    nix --extra-experimental-features 'nix-command flakes' run .#homeConfigurations.${USERNAME}.activationPackage $@
+    nix build --extra-experimental-features 'nix-command flakes' .#homeConfigurations.${USERNAME}.activationPackage
+    ./result/activate
     
     echo -e "${GREEN}Home-manager switch complete!${NC}"
 fi
