@@ -45,13 +45,26 @@ else
     
     # Build using the correct flake reference
     CURRENT_DIR=$(pwd)
-    RESULT=$(nix build --no-link --print-out-paths --extra-experimental-features 'nix-command flakes' "path:${CURRENT_DIR}#homeConfigurations.${USERNAME}.activationPackage" 2>&1)
+    
+    # First, let's make sure we're in a git repo and have committed changes
+    if [ -d .git ]; then
+        echo -e "${YELLOW}Using git flake reference...${NC}"
+        FLAKE_REF="."
+    else
+        echo -e "${YELLOW}Using path flake reference...${NC}"
+        FLAKE_REF="path:${CURRENT_DIR}"
+    fi
+    
+    # Try to build the activation package
+    echo -e "${YELLOW}Attempting to build activation package...${NC}"
+    RESULT=$(nix build --no-link --print-out-paths --extra-experimental-features 'nix-command flakes' "${FLAKE_REF}#homeConfigurations.\"${USERNAME}\".activationPackage" 2>&1)
     BUILD_EXIT_CODE=$?
     
     if [ $BUILD_EXIT_CODE -ne 0 ]; then
-        echo -e "${RED}Build failed. Trying alternative method...${NC}"
-        # Fallback: use home-manager directly from nixpkgs
-        nix run nixpkgs#home-manager -- switch --flake "path:${CURRENT_DIR}#${USERNAME}" -b backup $@
+        echo -e "${YELLOW}Direct build failed, using home-manager command...${NC}"
+        # Use home-manager directly - this is the most reliable method
+        export HOME_MANAGER_BACKUP_EXT=backup
+        nix run --extra-experimental-features 'nix-command flakes' nixpkgs#home-manager -- switch --flake "${FLAKE_REF}#${USERNAME}"
     else
         echo -e "${YELLOW}Activating configuration...${NC}"
         $RESULT/activate
