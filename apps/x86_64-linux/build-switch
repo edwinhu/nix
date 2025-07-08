@@ -40,8 +40,12 @@ else
     echo -e "${YELLOW}Building home-manager configuration for user: ${USERNAME}${NC}"
     echo -e "${YELLOW}Starting build...${NC}"
     
-    # Build and activate home-manager configuration using home-manager
-    nix run --extra-experimental-features 'nix-command flakes' home-manager/master -- switch --flake .#${USERNAME} -b backup $@
+    # Build and activate home-manager configuration
+    echo -e "${YELLOW}Building configuration...${NC}"
+    ACTIVATION_PACKAGE=$(nix build --no-link --print-out-paths --extra-experimental-features 'nix-command flakes' .#homeConfigurations.${USERNAME}.activationPackage)
+    
+    echo -e "${YELLOW}Activating configuration...${NC}"
+    $ACTIVATION_PACKAGE/activate
     
     echo -e "${GREEN}Home-manager switch complete!${NC}"
 fi
