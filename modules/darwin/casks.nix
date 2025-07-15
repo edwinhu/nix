@@ -2,8 +2,6 @@ _:
 
 [
   # Development Tools
-  # for some reason this always fails, so just brew install it afterwards
-  "ghostty"
   "github"
   "visual-studio-code"
   "wezterm"
@@ -32,6 +30,7 @@ _:
   "forklift"
   "google-drive"
   "raycast"
+  "reader"
 
   # Browsers
   "google-chrome"
