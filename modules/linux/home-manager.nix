@@ -1,4 +1,4 @@
-{ config, pkgs, lib, user, userInfo, ... }:
+{ config, pkgs, lib, user, userInfo, agenix, ... }:
 
 {
   imports = [
@@ -14,11 +14,15 @@
       # Add Linux-specific packages here
       xclip
       xdg-utils
+      agenix.packages.${pkgs.system}.default
     ] ++ (import ../shared/packages.nix { inherit pkgs; });
     
     sessionVariables = {
       # Add Linux-specific environment variables
       SHELL = "${pkgs.zsh}/bin/zsh";
+      EDITOR = "nvim";
+      VISUAL = "nvim";
+      ALTERNATE_EDITOR = "";
     };
   };
 
