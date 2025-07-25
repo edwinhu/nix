@@ -29,16 +29,13 @@
   ];
 
   # Set environment variables to read from agenix-decrypted secret files
-  # Note: We'll source these from shell scripts instead since home.sessionVariables
-  # doesn't support command substitution
-  home.file.".config/agenix-env.sh" = {
-    text = ''
-      export GOOGLE_SEARCH_API_KEY="$(cat ${config.age.secrets.google-search-api-key.path})"
-      export GOOGLE_SEARCH_ENGINE_ID="$(cat ${config.age.secrets.google-search-engine-id.path})"
-      export GEMINI_API_KEY="$(cat ${config.age.secrets.gemini-api-key.path})"
-      export CLAUDE_API_KEY="$(cat ${config.age.secrets.claude-api-key.path})"
-      export READWISE_TOKEN="$(cat ${config.age.secrets.readwise-token.path})"
-    '';
-    executable = true;
+  # On Darwin, home-manager automatically sets these in hm-session-vars.sh
+  # using the Darwin temp directory path
+  home.sessionVariables = {
+    GOOGLE_SEARCH_API_KEY = "$(cat ${config.age.secrets.google-search-api-key.path})";
+    GOOGLE_SEARCH_ENGINE_ID = "$(cat ${config.age.secrets.google-search-engine-id.path})";
+    GEMINI_API_KEY = "$(cat ${config.age.secrets.gemini-api-key.path})";
+    CLAUDE_API_KEY = "$(cat ${config.age.secrets.claude-api-key.path})";
+    READWISE_TOKEN = "$(cat ${config.age.secrets.readwise-token.path})";
   };
 }
