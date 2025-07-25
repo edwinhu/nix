@@ -110,23 +110,14 @@ This configuration uses agenix with SSH key encryption for managing secrets like
    nix run github:ryantm/agenix -- -e newsecret.age
    ```
 
-2. **Update THREE configuration files**:
+2. **Update TWO configuration files**:
    
    a. In `~/nix-secrets/secrets.nix`:
    ```nix
    "newsecret.age".publicKeys = users ++ systems;
    ```
    
-   b. In `~/nix/modules/shared/secrets.nix` (for system-level access):
-   ```nix
-   newsecret = {
-     file = "${nix-secrets}/newsecret.age";
-     owner = user;
-     mode = "400";
-   };
-   ```
-   
-   c. In `~/nix/modules/shared/home-secrets.nix` (for environment variables):
+   b. In `~/nix/modules/shared/home-secrets.nix`:
    ```nix
    # Add to age.secrets block
    newsecret = {
@@ -134,7 +125,7 @@ This configuration uses agenix with SSH key encryption for managing secrets like
      mode = "400";
    };
    
-   # Add to home.sessionVariables if needed
+   # Add to home.sessionVariables if needed as environment variable
    NEWSECRET_VAR = "$(cat ${config.age.secrets.newsecret.path})";
    ```
 
@@ -148,7 +139,7 @@ This configuration uses agenix with SSH key encryption for managing secrets like
    
    # In nix repo
    cd ~/nix
-   git add modules/shared/secrets.nix modules/shared/home-secrets.nix
+   git add modules/shared/home-secrets.nix
    git commit -m "Add newsecret configuration"
    git push
    ```
@@ -295,13 +286,13 @@ sudo chown -R $(whoami) /nix
 
 ## Troubleshooting Secrets
 
-### Secret not appearing in `/run/agenix/`
+### Secret not appearing or environment variable not set
 
-If your secret exists in nix-secrets but doesn't appear in `/run/agenix/`:
+If your secret exists in nix-secrets but doesn't work:
 
-1. **Ensure you updated BOTH files** (for Darwin systems):
-   - `modules/shared/secrets.nix` - Creates the decrypted file
-   - `modules/shared/home-secrets.nix` - Sets environment variables
+1. **Ensure you updated the configuration file**:
+   - `modules/shared/home-secrets.nix` - This is the ONLY place secrets are configured
+   - Add to both `age.secrets` block and `home.sessionVariables` if you need it as an environment variable
 
 2. **Update the flake input**:
    ```bash
@@ -314,10 +305,11 @@ If your secret exists in nix-secrets but doesn't appear in `/run/agenix/`:
 
 ### Common Secret Issues
 
-- **Decryption fails**: Ensure your SSH key matches what's in `nix-secrets/secrets.nix`
-- **Environment variable empty**: Start a new shell after rebuild
+- **Decryption fails**: Ensure your SSH key (`id_ed25519_agenix`) matches what's in `nix-secrets/secrets.nix`
+- **Environment variable empty**: Start a new shell after rebuild or source `~/.nix-profile/etc/profile.d/hm-session-vars.sh`
 - **Build errors**: Check that the `.age` file exists in nix-secrets
 - **Wrong agenix command**: Use `nix run github:ryantm/agenix --` not just `agenix`
+- **macOS location**: Secrets are decrypted to `$(getconf DARWIN_USER_TEMP_DIR)/agenix/` not `/run/agenix/`
 
 ## References
 
