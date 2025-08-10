@@ -92,6 +92,7 @@ in
   ssh = {
     enable = true;
     serverAliveInterval = 180;
+    addKeysToAgent = "yes";
     includes = [
       "${homeDir}/.ssh/config_external"
     ];
@@ -100,6 +101,11 @@ in
         identitiesOnly = true;
         identityFile = [
           "${homeDir}/.ssh/id_github"
+        ];
+      };
+      "*" = {
+        identityFile = [
+          "${homeDir}/.ssh/id_ed25519_agenix"
         ];
       };
     };
