@@ -11,6 +11,7 @@ shared-packages ++ [
   aerospace
   dockutil
   ((emacsPackagesFor emacs-macport).emacsWithPackages (epkgs: [ epkgs.vterm ])) 
+  ffmpeg-full
   jankyborders
   sketchybar
   wezterm-cli

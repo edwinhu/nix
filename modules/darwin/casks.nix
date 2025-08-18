@@ -9,11 +9,13 @@ _:
   # Communication Tools
   "beeper"
   "granola"
+  "macwhisper"
 
   # Utility Tools
-  "claude"
   "bitwarden"
+  "claude"
   "homerow"
+  "lm-studio"
   "logseq"
   "morgen"
   "obsidian"

@@ -181,7 +181,7 @@
         {
           check-further-callbacks = false;
           "if" = {
-            app-id = "info.sioyek.sioyek";
+            app-id = "com.sioyek.readwise-sync";
           };
           run = [
             "move-node-to-workspace P"
@@ -282,16 +282,16 @@
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
 
-        ctrl-cmd-shift-space = "layout floating tiling";
-        ctrl-cmd-shift-minus = "resize smart -50";
-        ctrl-cmd-shift-equal = "resize smart +50";
+        ctrl-alt-cmd-shift-p = "layout floating tiling";
+        ctrl-alt-cmd-shift-minus = "resize smart -50";
+        ctrl-alt-cmd-shift-equal = "resize smart +50";
 
         alt-leftSquareBracket = "join-with left";
         alt-rightSquareBracket = "join-with right";
 
         alt-slash = "layout horizontal vertical";
 
-        ctrl-cmd-shift-r = "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --reload && aerospace reload-config";
+        ctrl-alt-cmd-shift-r = "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --reload && aerospace reload-config";
       };
     };
   };

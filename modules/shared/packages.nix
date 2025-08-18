@@ -23,6 +23,7 @@ with pkgs; [
   stow
   wget
   yazi
+  zeromq
   zip
 
   # Encryption and security tools
