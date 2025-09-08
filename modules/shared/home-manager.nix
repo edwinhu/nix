@@ -65,6 +65,10 @@ in
         '';
     };
 
+  zellij = {
+    enable = true;
+  };
+
   git = {
     enable = true;
     ignores = [ "*.swp" ];

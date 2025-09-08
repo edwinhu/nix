@@ -394,11 +394,11 @@
     "homebrew-core": {
       "flake": false,
       "locked": {
-        "lastModified": 1748403026,
-        "narHash": "sha256-/c3d24x+aQnhazXb6vH4lBd0bhy1rELPB/hCWy5gifI=",
+        "lastModified": 1756783546,
+        "narHash": "sha256-AIJBIRSxvsRfPFPCnr11Ex3noR9YSxZDz83eMrTSDDs=",
         "owner": "homebrew",
         "repo": "homebrew-core",
-        "rev": "1ae9395062db021f7408b70b376410c2e0438549",
+        "rev": "7b0f5044e8381149a7a5549c7f053a2284d0f7f8",
         "type": "github"
       },
       "original": {
@@ -527,7 +527,8 @@
         "nix-homebrew": "nix-homebrew",
         "nix-secrets": "nix-secrets",
         "nixpkgs": "nixpkgs_2",
-        "stylix": "stylix"
+        "stylix": "stylix",
+        "zellij-switch-wasm": "zellij-switch-wasm"
       }
     },
     "stylix": {
@@ -696,6 +697,18 @@
         "owner": "numtide",
         "repo": "treefmt-nix",
         "type": "github"
+      }
+    },
+    "zellij-switch-wasm": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-5BTynJ3hDd/dTDb1b5BCMdZJrCYT4cqpJe9hrkfpqIo=",
+        "type": "file",
+        "url": "https://github.com/mostafaqanbaryan/zellij-switch/releases/latest/download/zellij-switch.wasm"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/mostafaqanbaryan/zellij-switch/releases/latest/download/zellij-switch.wasm"
       }
     }
   },

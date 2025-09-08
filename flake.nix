@@ -19,6 +19,10 @@
       url = "github:homebrew/homebrew-bundle";
       flake = false;
     };
+    zellij-switch-wasm = {
+      url = "https://github.com/mostafaqanbaryan/zellij-switch/releases/latest/download/zellij-switch.wasm";
+      flake = false;
+    };
     homebrew-core = {
       url = "github:homebrew/homebrew-core";
       flake = false;
@@ -40,7 +44,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, agenix, nix-secrets} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm} @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -109,6 +113,20 @@
           system = info.system;
           specialArgs = inputs // { inherit user nix-secrets; userInfo = info; };
           modules = [
+            ({ pkgs, ... }: {
+              nixpkgs.overlays = [
+                (final: prev: {
+                  zellij-switch = prev.runCommand "zellij-switch" {} ''
+                    mkdir -p $out/share/zellij/plugins
+                    cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
+                  '';
+                })
+              ];
+              
+              environment.variables = {
+                ZELLIJ_SWITCH_PLUGIN = "${pkgs.zellij-switch}/share/zellij/plugins/zellij-switch.wasm";
+              };
+            })
             agenix.darwinModules.default
             inputs.stylix.darwinModules.stylix
             inputs.home-manager.darwinModules.home-manager

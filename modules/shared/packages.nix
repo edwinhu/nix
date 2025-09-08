@@ -36,11 +36,13 @@ with pkgs; [
   rclone
 
   # Media-related packages
+  chafa
   cm_unicode
   dejavu_fonts
   font-awesome
   hack-font
   jetbrains-mono
+  libsixel
   meslo-lgs-nf
   noto-fonts
   noto-fonts-emoji
@@ -64,6 +66,7 @@ with pkgs; [
   hunspell
   fzf
   jq
+  ollama
   pandoc
   ripgrep
   tailspin
@@ -75,6 +78,8 @@ with pkgs; [
   unrar
   unzip
   xan
+  zellij
+  zellij-switch
   zoxide
 ] 
 # nerd fonts unbundled

@@ -130,5 +130,8 @@ sketchybar --add item volume right \
 # Trigger initial workspace update
 sketchybar --trigger aerospace_workspace_changed
 
+# Set initial power-aware polling rates
+$CONFIG_DIR/helpers/power_aware_config.sh
+
 ##### Force all scripts to run the first time (never do this in a script) #####
 sketchybar --update

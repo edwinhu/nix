@@ -11,6 +11,16 @@ BATTERY_INFO=$(pmset -g batt)
 PERCENTAGE=$(echo "$BATTERY_INFO" | grep -Eo '[0-9]+%' | tr -d '%')
 CHARGING=$(echo "$BATTERY_INFO" | grep 'AC Power')
 
+# Check if power state has changed and update polling rates accordingly
+POWER_STATE_FILE="/tmp/sketchybar_power_state"
+CURRENT_STATE=$([ -n "$CHARGING" ] && echo "AC" || echo "BATTERY")
+
+if [ ! -f "$POWER_STATE_FILE" ] || [ "$(cat "$POWER_STATE_FILE")" != "$CURRENT_STATE" ]; then
+    echo "$CURRENT_STATE" > "$POWER_STATE_FILE"
+    # Trigger power-aware configuration update
+    "$CONFIG_DIR/helpers/power_aware_config.sh" &
+fi
+
 # Set icon based on battery level and charging status
 if [ -n "$CHARGING" ]; then
   ICON="󰂄"

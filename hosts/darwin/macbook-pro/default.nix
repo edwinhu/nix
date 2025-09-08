@@ -108,4 +108,21 @@
 
   services.emacs.enable = true;
 
+  # Simple approach: just run SSH on port 420 using system default config but override port
+  system.activationScripts.sshPort420.text = ''
+    # Start SSH daemon on port 420 using a copy of system config with port changed
+    if [ -f /etc/ssh/sshd_config.before-nix-darwin ]; then
+      cp /etc/ssh/sshd_config.before-nix-darwin /tmp/sshd_config_420
+      sed -i "" "s/#Port 22/Port 420/" /tmp/sshd_config_420
+      sed -i "" "s/^Port 22/Port 420/" /tmp/sshd_config_420
+      echo "Port 420" >> /tmp/sshd_config_420
+      
+      # Kill any existing SSH daemon on port 420
+      pkill -f "sshd.*420" || true
+      
+      # Start new SSH daemon on port 420
+      /usr/sbin/sshd -f /tmp/sshd_config_420
+    fi
+  '';
+
 }

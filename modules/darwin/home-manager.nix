@@ -16,6 +16,9 @@
   homebrew = {
     enable = true;
     casks = pkgs.callPackage ./casks.nix {};
+    brews = [
+      "doxx"
+    ];
     onActivation = {
       autoUpdate = true;
       upgrade = true;

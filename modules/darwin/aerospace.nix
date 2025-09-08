@@ -49,13 +49,13 @@
       "3" = [ "main" ];
       "4" = [ "main" ];
       "5" = [ "main" ];
+      "B" = [ "main" ];
       "C" = [ "main" ];
-      "O" = [ "main" ];
-      "N" = [ "main" ];
       "E" = [ "main" ];
+      "N" = [ "main" ];
+      "O" = [ "main" ];
       "P" = [ "main" ];
       "T" = [ "main" ];
-      "W" = [ "main" ];
     };
 
       on-window-detected = [
@@ -184,7 +184,7 @@
             app-id = "com.sioyek.readwise-sync";
           };
           run = [
-            "move-node-to-workspace P"
+            "move-node-to-workspace S"
           ];
         }
         {
@@ -203,15 +203,15 @@
 
         alt-tab = "workspace-back-and-forth";
 
-        # alt-left = "focus left";
-        # alt-down = "focus down";
-        # alt-up = "focus up";
-        # alt-right = "focus right";
+        alt-left = "focus left";
+        alt-down = "focus down";
+        alt-up = "focus up";
+        alt-right = "focus right";
 
-        # ctrl-cmd-shift-left = "move left";
-        # ctrl-cmd-shift-down = "move down";
-        # ctrl-cmd-shift-up = "move up";
-        # ctrl-cmd-shift-right = "move right";
+        ctrl-cmd-shift-left = "move left";
+        ctrl-cmd-shift-down = "move down";
+        ctrl-cmd-shift-up = "move up";
+        ctrl-cmd-shift-right = "move right";
 
         ctrl-cmd-shift-0 = "balance-sizes";
 
@@ -221,13 +221,12 @@
         ctrl-alt-cmd-shift-3 = "workspace 3";
         ctrl-alt-cmd-shift-4 = "workspace 4";
         ctrl-alt-cmd-shift-5 = "workspace 5";
+        ctrl-alt-cmd-shift-b = "workspace B";
         ctrl-alt-cmd-shift-c = "workspace C";
         ctrl-alt-cmd-shift-e = "workspace E";
         ctrl-alt-cmd-shift-n = "workspace N";
         ctrl-alt-cmd-shift-o = "workspace O";
-        # ctrl-alt-cmd-shift-p = "workspace P";
         ctrl-alt-cmd-shift-t = "workspace T";
-        ctrl-alt-cmd-shift-w = "workspace W";
         
         alt-shift-0 = [
           "move-node-to-workspace 0"
@@ -253,6 +252,10 @@
           "move-node-to-workspace 5"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
+        alt-shift-b = [
+          "move-node-to-workspace B"
+          "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
+        ];
         alt-shift-c = [
           "move-node-to-workspace C"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
@@ -269,16 +272,12 @@
           "move-node-to-workspace O"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
-        alt-shift-p = [
-          "move-node-to-workspace P"
+        alt-shift-s = [
+          "move-node-to-workspace S"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
         alt-shift-t = [
           "move-node-to-workspace T"
-          "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
-        ];
-        alt-shift-w = [
-          "move-node-to-workspace W"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
 
