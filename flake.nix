@@ -31,6 +31,10 @@
       url = "github:homebrew/homebrew-cask";
       flake = false;
     };
+    presmihaylov-taps = {
+      url = "github:presmihaylov/homebrew-taps";
+      flake = false;
+    };
     stylix = {
       url = "github:danth/stylix";
     };
@@ -44,7 +48,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm} @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -140,6 +144,7 @@
                   "homebrew/homebrew-cask" = homebrew-cask;
                   "homebrew/homebrew-bundle" = homebrew-bundle;
                   "railwaycat/homebrew-emacsmacport" = emacsmacport;
+                  "presmihaylov/homebrew-taps" = presmihaylov-taps;
                 };
                 mutableTaps = false;
                 autoMigrate = true;

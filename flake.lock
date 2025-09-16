@@ -515,6 +515,22 @@
         "type": "github"
       }
     },
+    "presmihaylov-taps": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1754987605,
+        "narHash": "sha256-s4mSEwp6gtsRLin7GgRUMBQYeyL6tZQAo4DKbU+yJNQ=",
+        "owner": "presmihaylov",
+        "repo": "homebrew-taps",
+        "rev": "06e6ca1a7233cd621d71c195fe6058ca6a849a14",
+        "type": "github"
+      },
+      "original": {
+        "owner": "presmihaylov",
+        "repo": "homebrew-taps",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "agenix": "agenix",
@@ -527,6 +543,7 @@
         "nix-homebrew": "nix-homebrew",
         "nix-secrets": "nix-secrets",
         "nixpkgs": "nixpkgs_2",
+        "presmihaylov-taps": "presmihaylov-taps",
         "stylix": "stylix",
         "zellij-switch-wasm": "zellij-switch-wasm"
       }

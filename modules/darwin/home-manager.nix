@@ -18,6 +18,7 @@
     casks = pkgs.callPackage ./casks.nix {};
     brews = [
       "doxx"
+      "presmihaylov/taps/ccagent"
     ];
     onActivation = {
       autoUpdate = true;

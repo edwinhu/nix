@@ -28,14 +28,24 @@
     (if pkgs.stdenv.isDarwin then "/Users/${user}/.ssh/id_ed25519_agenix" else "/home/${user}/.ssh/id_ed25519_agenix")
   ];
 
-  # Set environment variables to read from agenix-decrypted secret files
-  # On Darwin, home-manager automatically sets these in hm-session-vars.sh
-  # using the Darwin temp directory path
-  home.sessionVariables = {
-    GOOGLE_SEARCH_API_KEY = "$(cat ${config.age.secrets.google-search-api-key.path})";
-    GOOGLE_SEARCH_ENGINE_ID = "$(cat ${config.age.secrets.google-search-engine-id.path})";
-    GEMINI_API_KEY = "$(cat ${config.age.secrets.gemini-api-key.path})";
-    CLAUDE_API_KEY = "$(cat ${config.age.secrets.claude-api-key.path})";
-    READWISE_TOKEN = "$(cat ${config.age.secrets.readwise-token.path})";
+  # Set environment variables pointing to agenix secret file paths
+  # Applications can read from these paths at runtime
+  home.sessionVariables = let
+    tempDir = if pkgs.stdenv.isDarwin then "$(getconf DARWIN_USER_TEMP_DIR)agenix" else "/run/agenix";
+  in {
+    GOOGLE_SEARCH_API_KEY_FILE = "${tempDir}/google-search-api-key";
+    GOOGLE_SEARCH_ENGINE_ID_FILE = "${tempDir}/google-search-engine-id";
+    GEMINI_API_KEY_FILE = "${tempDir}/gemini-api-key";
+    CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
+    READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
+  };
+
+  # Create shell aliases for reading secrets when needed
+  home.shellAliases = {
+    get-google-search-api-key = "cat $GOOGLE_SEARCH_API_KEY_FILE";
+    get-google-search-engine-id = "cat $GOOGLE_SEARCH_ENGINE_ID_FILE";
+    get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
+    get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
+    get-readwise-token = "cat $READWISE_TOKEN_FILE";
   };
 }

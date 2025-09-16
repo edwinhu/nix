@@ -201,12 +201,12 @@
     mode.main.binding = {
         cmd-alt-h = [ ];
 
-        alt-tab = "workspace-back-and-forth";
-
-        alt-left = "focus left";
-        alt-down = "focus down";
-        alt-up = "focus up";
-        alt-right = "focus right";
+        # alt-tab = "workspace-back-and-forth";
+        #
+        # alt-left = "focus left";
+        # alt-down = "focus down";
+        # alt-up = "focus up";
+        # alt-right = "focus right";
 
         ctrl-cmd-shift-left = "move left";
         ctrl-cmd-shift-down = "move down";
