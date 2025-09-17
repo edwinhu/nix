@@ -21,6 +21,7 @@ with pkgs; [
   sox
   sqlite
   stow
+  tldr
   wget
   yazi
   zeromq
