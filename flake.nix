@@ -46,9 +46,13 @@
       url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
       flake = false;
     };
+    emacs-overlay = {
+      url = "github:nix-community/emacs-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay} @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -119,6 +123,7 @@
           modules = [
             ({ pkgs, ... }: {
               nixpkgs.overlays = [
+                emacs-overlay.overlays.default
                 (final: prev: {
                   zellij-switch = prev.runCommand "zellij-switch" {} ''
                     mkdir -p $out/share/zellij/plugins
