@@ -9,15 +9,15 @@ let
 
     buildPhase = ''
       # Create app bundle structure
-      mkdir -p $out/Applications/Sioyek\ with\ Sync.app/Contents/{MacOS,Resources}
+      mkdir -p "Applications/Sioyek with Sync.app/Contents/"{MacOS,Resources}
 
       # Extract and convert icon from original Sioyek using macOS sips
       cp ${pkgs.sioyek}/Applications/sioyek.app/Contents/Resources/icon2.ico ./
       /usr/bin/sips -s format icns icon2.ico --out sioyek.icns
-      cp sioyek.icns "$out/Applications/Sioyek with Sync.app/Contents/Resources/"
+      cp sioyek.icns "Applications/Sioyek with Sync.app/Contents/Resources/"
 
       # Create wrapper script
-      cat > "$out/Applications/Sioyek with Sync.app/Contents/MacOS/sioyek-wrapper" << 'EOF'
+      cat > "Applications/Sioyek with Sync.app/Contents/MacOS/sioyek-wrapper" << 'EOF'
 #!/bin/bash
 # Run Sioyek with all passed arguments
 ${pkgs.sioyek}/bin/sioyek "$@"
@@ -34,10 +34,10 @@ if [ -x "$SYNC_SCRIPT" ]; then
     fi
 fi
 EOF
-      chmod +x "$out/Applications/Sioyek with Sync.app/Contents/MacOS/sioyek-wrapper"
+      chmod +x "Applications/Sioyek with Sync.app/Contents/MacOS/sioyek-wrapper"
 
       # Create Info.plist
-      cat > "$out/Applications/Sioyek with Sync.app/Contents/Info.plist" << 'EOF'
+      cat > "Applications/Sioyek with Sync.app/Contents/Info.plist" << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -84,6 +84,7 @@ EOF
 
     installPhase = ''
       # Copy the app bundle to output
+      mkdir -p "$out/Applications/"
       cp -r "Applications/Sioyek with Sync.app" "$out/Applications/"
     '';
 

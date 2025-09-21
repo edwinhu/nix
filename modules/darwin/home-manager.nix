@@ -3,6 +3,7 @@
 {
   imports = [
    ./dock
+   ./sioyek-with-sync.nix
   ];
 
   # It me

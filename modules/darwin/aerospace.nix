@@ -53,8 +53,7 @@
       "C" = [ "main" ];
       "E" = [ "main" ];
       "N" = [ "main" ];
-      "O" = [ "main" ];
-      "P" = [ "main" ];
+      "R" = [ "main" ];
       "T" = [ "main" ];
     };
 
@@ -139,7 +138,7 @@
             app-id = "md.obsidian";
           };
           run = [
-            "move-node-to-workspace O"
+            "move-node-to-workspace N"
           ];
         }
         {
@@ -172,19 +171,28 @@
         {
           check-further-callbacks = false;
           "if" = {
-            app-id = "org.gnu.Emacs";
+            app-id = "com.sioyek.readwise-sync";
           };
           run = [
-            "move-node-to-workspace E"
+            "move-node-to-workspace R"
           ];
         }
         {
           check-further-callbacks = false;
           "if" = {
-            app-id = "com.sioyek.readwise-sync";
+            app-id = "io.readwise.read";
           };
           run = [
-            "move-node-to-workspace S"
+            "move-node-to-workspace R"
+          ];
+        }
+        {
+          check-further-callbacks = false;
+          "if" = {
+            app-id = "com.superhuman.electron";
+          };
+          run = [
+            "move-node-to-workspace E"
           ];
         }
         {
@@ -225,7 +233,7 @@
         ctrl-alt-cmd-shift-c = "workspace C";
         ctrl-alt-cmd-shift-e = "workspace E";
         ctrl-alt-cmd-shift-n = "workspace N";
-        ctrl-alt-cmd-shift-o = "workspace O";
+        ctrl-alt-cmd-shift-r = "workspace R";
         ctrl-alt-cmd-shift-t = "workspace T";
         
         alt-shift-0 = [
@@ -268,12 +276,8 @@
           "move-node-to-workspace N"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
-        alt-shift-o = [
-          "move-node-to-workspace O"
-          "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
-        ];
-        alt-shift-s = [
-          "move-node-to-workspace S"
+        alt-shift-r = [
+          "move-node-to-workspace R"
           "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --trigger space_windows_change"
         ];
         alt-shift-t = [
@@ -290,7 +294,7 @@
 
         alt-slash = "layout horizontal vertical";
 
-        ctrl-alt-cmd-shift-r = "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --reload && aerospace reload-config";
+        ctrl-alt-cmd-shift-backslash = "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar --reload && aerospace reload-config";
       };
     };
   };
