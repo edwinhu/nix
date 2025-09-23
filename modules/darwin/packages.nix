@@ -10,9 +10,9 @@ in
 shared-packages ++ [
   aerospace
   dockutil
-  # Option 1: railwaycat emacs-macport
+  # Option 1: railwaycat emacs-macport with packages
   # ((emacsPackagesFor emacs-macport).emacsWithPackages (epkgs: [ epkgs.vterm ]))
-  # Option 2: emacs with native compilation (current)
+  # Option 2: emacs with native compilation + vterm (back to working config)
   ((emacsPackagesFor emacs-unstable).emacsWithPackages (epkgs: [ epkgs.vterm ]))
   ffmpeg-full
   jankyborders

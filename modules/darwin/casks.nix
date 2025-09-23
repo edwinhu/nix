@@ -10,6 +10,7 @@ _:
   "beeper"
   "granola"
   "macwhisper"
+  "superhuman"
 
   # Utility Tools
   "bitwarden"
