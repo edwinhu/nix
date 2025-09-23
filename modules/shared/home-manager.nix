@@ -50,6 +50,15 @@ in
           ALTERNATE_EDITOR = "";
           HISTIGNORE = "pwd:ls:cd";
           NOSYSZSHRC = "1";  # Prevent system zshrc from running after user config
+          # Zellij environment variables
+          ZELLIJ_LOG_LEVEL = "off";
+          ZELLIJ_LOG_DIR = "/tmp";
+          ZELLIJ_CONFIG_DIR = "$HOME/.config/zellij";
+        };
+        shellAliases = {
+          # NOTE: zellij requires Full Disk Access on macOS Sequoia
+          # Grant permissions in: System Settings → Privacy & Security → Full Disk Access
+          zj = "${pkgs.zellij}/bin/zellij";
         };
         initContent = ''
         # Source shared shell configuration
@@ -65,9 +74,27 @@ in
         '';
     };
 
-  zellij = {
-    enable = true;
-  };
+  # zellij configuration disabled since we use custom wrapper
+  # zellij = {
+  #   enable = true;
+  #   settings = {
+  #     theme = "catppuccin-mocha";
+  #     default_shell = "zsh";
+  #     pane_frames = false;
+  #     mouse_mode = false;
+  #     copy_command = "pbcopy";
+  #     copy_clipboard = "primary";
+  #     show_startup_tips = false;
+  #     session_serialization = false;
+  #     auto_layout = true;
+  #     scroll_buffer_size = 10000;
+  #     log = {
+  #       filter = "off";
+  #       destination = "file";
+  #       file = "/tmp/zellij.log";
+  #     };
+  #   };
+  # };
 
   git = {
     enable = true;
@@ -95,8 +122,7 @@ in
 
   ssh = {
     enable = true;
-    serverAliveInterval = 180;
-    addKeysToAgent = "yes";
+    enableDefaultConfig = false;
     includes = [
       "${homeDir}/.ssh/config_external"
     ];
@@ -108,6 +134,8 @@ in
         ];
       };
       "*" = {
+        serverAliveInterval = 180;
+        addKeysToAgent = "yes";
         identityFile = [
           "${homeDir}/.ssh/id_ed25519_agenix"
         ];
