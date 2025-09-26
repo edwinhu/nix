@@ -216,6 +216,8 @@
         # alt-up = "focus up";
         # alt-right = "focus right";
 
+        alt-shift-f = "fullscreen";
+
         ctrl-cmd-shift-left = "move left";
         ctrl-cmd-shift-down = "move down";
         ctrl-cmd-shift-up = "move up";

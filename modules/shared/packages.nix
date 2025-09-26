@@ -36,6 +36,9 @@ with pkgs; [
   # Cloud-related tools and SDKs
   rclone
 
+  # Virtualization
+  lima
+
   # Media-related packages
   chafa
   cm_unicode
@@ -70,6 +73,7 @@ with pkgs; [
   ollama
   pandoc
   ripgrep
+  tabiew
   tailspin
   tectonic
   tmux
