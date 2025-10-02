@@ -5,7 +5,8 @@
     package = pkgs.aerospace;
     settings = {
       after-login-command = [ ];
-      after-startup-command = [ 
+      after-startup-command = [
+        "exec-and-forget ${pkgs.sketchybar}/bin/sketchybar"
         "exec-and-forget ${pkgs.jankyborders}/bin/borders active_color=0xffe1e3e4 inactive_color=0xff494d64 width=5.0"
       ];
 
