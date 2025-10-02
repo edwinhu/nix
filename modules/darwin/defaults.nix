@@ -106,7 +106,7 @@
       {
         path = "${config.users.users.${user}.home}/Downloads";
         section = "others";
-        options = "--view list --display stack --sort datemodified";
+        options = "--view auto --display stack --sort datemodified";
       }
     ];
   };
