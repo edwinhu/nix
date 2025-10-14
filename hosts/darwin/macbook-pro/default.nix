@@ -16,56 +16,54 @@
     echo "   This is required for zellij and other terminal tools to work properly"
   '';
 
-  # Configure SSH daemon on port 420
-  system.activationScripts.sshPort420.text = ''
-    echo "Configuring SSH daemon on port 420..."
+  # Create SSH config for port 420
+  environment.etc."ssh/sshd_config_420".text = ''
+    # SSH daemon configuration for port 420
+    Port 420
 
-    # Create SSH config for port 420 based on the system default
-    if [ -f /etc/ssh/sshd_config.before-nix-darwin ]; then
-      cp /etc/ssh/sshd_config.before-nix-darwin /tmp/sshd_config_420
+    # Security settings
+    PasswordAuthentication no
+    PermitRootLogin no
+    PubkeyAuthentication yes
+    ChallengeResponseAuthentication no
+    UsePAM yes
 
-      # Update port configuration - handle both commented and uncommented port lines
-      sed -i "" "s/#Port 22/Port 420/" /tmp/sshd_config_420
-      sed -i "" "s/^Port 22/Port 420/" /tmp/sshd_config_420
+    # Protocol and key settings
+    Protocol 2
+    HostKey /etc/ssh/ssh_host_rsa_key
+    HostKey /etc/ssh/ssh_host_ecdsa_key
+    HostKey /etc/ssh/ssh_host_ed25519_key
 
-      # Add port 420 if no port line exists
-      if ! grep -q "^Port" /tmp/sshd_config_420; then
-        sed -i "" "1i\\
-Port 420
-" /tmp/sshd_config_420
-      fi
+    # Logging
+    SyslogFacility AUTH
+    LogLevel INFO
 
-      # Disable password authentication
-      sed -i "" "s/#PasswordAuthentication yes/PasswordAuthentication no/" /tmp/sshd_config_420
-      sed -i "" "s/^PasswordAuthentication yes/PasswordAuthentication no/" /tmp/sshd_config_420
+    # Authentication
+    AuthorizedKeysFile .ssh/authorized_keys
 
-      # Ensure root login is disabled
-      sed -i "" "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /tmp/sshd_config_420
-      sed -i "" "s/^PermitRootLogin.*/PermitRootLogin no/" /tmp/sshd_config_420
-
-      # Kill any existing SSH daemon on port 420
-      pkill -f "sshd.*-f /tmp/sshd_config_420" 2>/dev/null || true
-      sleep 1
-
-      # Test configuration before starting
-      if /usr/sbin/sshd -t -f /tmp/sshd_config_420 2>/dev/null; then
-        # Start SSH daemon on port 420
-        /usr/sbin/sshd -f /tmp/sshd_config_420
-        echo "SSH daemon started on port 420"
-
-        # Verify it's listening
-        sleep 2
-        if lsof -i :420 >/dev/null 2>&1; then
-          echo "Confirmed: SSH is listening on port 420"
-        else
-          echo "Warning: SSH may not be listening on port 420"
-        fi
-      else
-        echo "Error: SSH configuration test failed for port 420"
-      fi
-    else
-      echo "Error: SSH config backup not found at /etc/ssh/sshd_config.before-nix-darwin"
-    fi
+    # Misc settings
+    X11Forwarding yes
+    PrintMotd yes
+    AcceptEnv LANG LC_*
+    Subsystem sftp /usr/libexec/sftp-server
   '';
+
+  # Configure SSH daemon on port 420 via launchd
+  launchd.daemons.sshd-420 = {
+    serviceConfig = {
+      Label = "org.nixos.sshd-420";
+      Program = "/usr/sbin/sshd";
+      ProgramArguments = [
+        "/usr/sbin/sshd"
+        "-D"  # Don't daemonize
+        "-f"
+        "/etc/ssh/sshd_config_420"
+      ];
+      KeepAlive = true;
+      RunAtLoad = true;
+      StandardErrorPath = "/var/log/sshd_420.log";
+      StandardOutPath = "/var/log/sshd_420.log";
+    };
+  };
 
 }

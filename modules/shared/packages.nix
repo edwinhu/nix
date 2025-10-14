@@ -11,6 +11,7 @@ with pkgs; [
   gh-copilot
   killall
   lazygit
+  libtool
   localsend
   neofetch
   neovim
