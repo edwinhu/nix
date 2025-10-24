@@ -17,7 +17,8 @@
   '';
 
   # Add system-level zsh configuration to source .zshrc.local
-  programs.zsh.interactiveShellInit = ''
+  # Use promptInit instead of interactiveShellInit to run AFTER user's .zshrc
+  programs.zsh.promptInit = ''
     # Source local user overrides
     if [[ -f "$HOME/.zshrc.local" ]]; then
       source "$HOME/.zshrc.local"
