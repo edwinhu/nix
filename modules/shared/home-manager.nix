@@ -85,15 +85,10 @@ in
           zj = "${pkgs.zellij}/bin/zellij";
         };
         initContent = ''
-        # Add ~/.local/bin to PATH for tools like claude
-        export PATH="$HOME/.local/bin:$PATH"
-
-        # Source shared shell configuration
-        if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
-            source "$HOME/dotfiles/.shell_common"
+        # Source local zsh configuration if it exists
+        if [[ -f "$HOME/.zshrc.local" ]]; then
+            source "$HOME/.zshrc.local"
         fi
-
-        # fzf colors are managed by stylix
         '';
         profileExtra = ''
         # Login shell configuration
