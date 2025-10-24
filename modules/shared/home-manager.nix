@@ -58,6 +58,10 @@ in
         '';
 
         cdpath = [ "~/.local/share/src" ];
+        envExtra = ''
+          # Add ~/.local/bin to PATH
+          export PATH="$HOME/.local/bin:$PATH"
+        '';
         plugins = [
           {
             name = "fzf-tab";
