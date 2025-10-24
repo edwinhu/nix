@@ -16,4 +16,12 @@
     echo "   This is required for zellij and other terminal tools to work properly"
   '';
 
+  # Add system-level zsh configuration to source .zshrc.local
+  programs.zsh.interactiveShellInit = ''
+    # Source local user overrides
+    if [[ -f "$HOME/.zshrc.local" ]]; then
+      source "$HOME/.zshrc.local"
+    fi
+  '';
+
 }
