@@ -80,7 +80,7 @@ in
           # Grant permissions in: System Settings → Privacy & Security → Full Disk Access
           zj = "${pkgs.zellij}/bin/zellij";
         };
-        initExtra = ''
+        initContent = ''
         # Add ~/.local/bin to PATH for tools like claude
         export PATH="$HOME/.local/bin:$PATH"
 
