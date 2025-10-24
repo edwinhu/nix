@@ -66,6 +66,9 @@
         sessionVariables = {
           # Secret paths will be set by the system
         };
+        sessionPath = [
+          "$HOME/.local/bin"
+        ];
       };
       programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
     };
