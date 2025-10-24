@@ -88,6 +88,9 @@ with pkgs; [
   zellij
   zellij-switch
   zoxide
-] 
-# nerd fonts unbundled
-++ builtins.filter lib.attrsets.isDerivation (builtins.attrValues pkgs.nerd-fonts)
+
+  # Fonts - only install needed nerd fonts to save space
+  # Changed from: builtins.attrValues pkgs.nerd-fonts (installs all ~7GB!)
+  # To: only jetbrains-mono (saves ~6GB)
+  nerd-fonts.jetbrains-mono
+]

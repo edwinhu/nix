@@ -81,6 +81,9 @@ in
           zj = "${pkgs.zellij}/bin/zellij";
         };
         initExtra = ''
+        # Add ~/.local/bin to PATH for tools like claude
+        export PATH="$HOME/.local/bin:$PATH"
+
         # Source shared shell configuration
         if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
             source "$HOME/dotfiles/.shell_common"

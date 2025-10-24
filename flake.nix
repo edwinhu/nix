@@ -56,14 +56,20 @@
     let
       # Define user-host mappings
       userHosts = {
-        vwh7mb = { 
-          system = "aarch64-darwin"; 
+        vwh7mb = {
+          system = "aarch64-darwin";
           host = "macbook-pro";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
-        eh2889 = { 
-          system = "x86_64-linux"; 
+        edwinhu = {
+          system = "aarch64-darwin";
+          host = "mba";
+          fullName = "Edwin Hu";
+          email = "eddyhu@gmail.com";
+        };
+        eh2889 = {
+          system = "x86_64-linux";
           host = "rjds";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
