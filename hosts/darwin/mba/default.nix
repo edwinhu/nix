@@ -16,23 +16,13 @@
     echo "   This is required for zellij and other terminal tools to work properly"
   '';
 
-  # Add ~/.local/bin to PATH via environment
-  # Note: user's .zshrc may override this, so we also source .zshrc.local
-  environment.variables = {
-    # Prepend to PATH - but this gets set early and may be overridden
-  };
-
+  # Configure system-level zsh to source local user overrides
   programs.zsh = {
     enable = true;
-    # This runs after user's .zshrc via the prompt initialization
-    promptInit = ''
-      # Final PATH adjustment to ensure ~/.local/bin is first
-      if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-        export PATH="$HOME/.local/bin:$PATH"
-      fi
-    '';
     interactiveShellInit = ''
-      # Source local user overrides early
+      # Source local user overrides from ~/.zshrc.local
+      # This allows users to add custom PATH entries and other config
+      # without modifying nix-managed files
       if [[ -f "$HOME/.zshrc.local" ]]; then
         source "$HOME/.zshrc.local"
       fi

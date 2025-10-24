@@ -65,11 +65,7 @@
         packages = pkgs.callPackage ./packages.nix {};
         sessionVariables = {
           # Secret paths will be set by the system
-          PATH = "$HOME/.local/bin:$PATH";
         };
-        sessionPath = [
-          "$HOME/.local/bin"
-        ];
       };
       programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
     };

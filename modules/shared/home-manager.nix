@@ -58,15 +58,6 @@ in
         '';
 
         cdpath = [ "~/.local/share/src" ];
-        # Login shell environment
-        loginExtra = ''
-          # Add ~/.local/bin to PATH
-          export PATH="$HOME/.local/bin:$PATH"
-        '';
-        # Also try localVariables which go into .zshenv
-        localVariables = {
-          PATH = "$HOME/.local/bin:$PATH";
-        };
         plugins = [
           {
             name = "fzf-tab";
@@ -89,12 +80,6 @@ in
           # Grant permissions in: System Settings → Privacy & Security → Full Disk Access
           zj = "${pkgs.zellij}/bin/zellij";
         };
-        initContent = ''
-        # Source local zsh configuration if it exists
-        if [[ -f "$HOME/.zshrc.local" ]]; then
-            source "$HOME/.zshrc.local"
-        fi
-        '';
         profileExtra = ''
         # Login shell configuration
         # Environment variables and PATH are set in dotfiles/.shell_env
