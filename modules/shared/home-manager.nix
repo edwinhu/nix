@@ -58,10 +58,15 @@ in
         '';
 
         cdpath = [ "~/.local/share/src" ];
-        envExtra = ''
+        # Login shell environment
+        loginExtra = ''
           # Add ~/.local/bin to PATH
           export PATH="$HOME/.local/bin:$PATH"
         '';
+        # Also try localVariables which go into .zshenv
+        localVariables = {
+          PATH = "$HOME/.local/bin:$PATH";
+        };
         plugins = [
           {
             name = "fzf-tab";
