@@ -16,13 +16,27 @@
     echo "   This is required for zellij and other terminal tools to work properly"
   '';
 
-  # Add system-level zsh configuration to source .zshrc.local
-  # Use promptInit instead of interactiveShellInit to run AFTER user's .zshrc
-  programs.zsh.promptInit = ''
-    # Source local user overrides
-    if [[ -f "$HOME/.zshrc.local" ]]; then
-      source "$HOME/.zshrc.local"
-    fi
-  '';
+  # Add ~/.local/bin to PATH via environment
+  # Note: user's .zshrc may override this, so we also source .zshrc.local
+  environment.variables = {
+    # Prepend to PATH - but this gets set early and may be overridden
+  };
+
+  programs.zsh = {
+    enable = true;
+    # This runs after user's .zshrc via the prompt initialization
+    promptInit = ''
+      # Final PATH adjustment to ensure ~/.local/bin is first
+      if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+      fi
+    '';
+    interactiveShellInit = ''
+      # Source local user overrides early
+      if [[ -f "$HOME/.zshrc.local" ]]; then
+        source "$HOME/.zshrc.local"
+      fi
+    '';
+  };
 
 }
