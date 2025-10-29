@@ -25,6 +25,7 @@ _:
   "shottr"
   "soundsource"
   "superwhisper"
+  "typora"
 
   # Entertainment Tools
   "inkscape"
