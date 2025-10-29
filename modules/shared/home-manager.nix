@@ -24,18 +24,38 @@ in
 
     direnv = {
         enable = true;
+        config = {
+          global = {
+            hide_env_diff = true;
+          };
+        };
+        # Ensure direnv doesn't interfere with other hooks
+        nix-direnv = {
+          enable = true;
+        };
     };
 
     zoxide = {
         enable = true;
-        options = [
-        "--cmd cd"
-        ];
+        # Removed "--cmd cd" to prevent conflict with direnv in VSCode
+        # Use 'z' command instead of overriding 'cd'
+        options = [];
     };
 
     zsh = {
         enable = true;
         autocd = false;
+        enableCompletion = true;
+        completionInit = ''
+          # Safe compinit to prevent double-free errors in VSCode
+          autoload -Uz compinit
+          # Only regenerate dump once a day for performance
+          if [[ -n ''${HOME}/.zcompdump(#qN.mh+24) ]]; then
+            compinit -i
+          else
+            compinit -C -i
+          fi
+        '';
 
         cdpath = [ "~/.local/share/src" ];
         plugins = [
@@ -60,12 +80,12 @@ in
           # Grant permissions in: System Settings → Privacy & Security → Full Disk Access
           zj = "${pkgs.zellij}/bin/zellij";
         };
-        initContent = ''
+        initExtra = ''
         # Source shared shell configuration
         if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
             source "$HOME/dotfiles/.shell_common"
         fi
-        
+
         # fzf colors are managed by stylix
         '';
         profileExtra = ''
