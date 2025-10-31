@@ -54,6 +54,7 @@ with pkgs; [
 
   # data science tools
   pixi
+  uv
 
   # Text and terminal utilities
   atuin
