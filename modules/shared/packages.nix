@@ -35,6 +35,7 @@ with pkgs; [
   sops
 
   # Cloud-related tools and SDKs
+  google-cloud-sdk
   rclone
 
   # Virtualization
@@ -56,6 +57,9 @@ with pkgs; [
   pixi
   uv
 
+  # AI tools
+  claude-code
+
   # Text and terminal utilities
   atuin
   bat
@@ -69,18 +73,20 @@ with pkgs; [
   du-dust
   eza
   fd
-  hunspell
   fzf
+  hunspell
   jq
   ollama
   pandoc
   ripgrep
+  ripgrep-all
+  starship
   tabiew
   tailspin
   tectonic
   tmux
   tree
-  starship
+  tv
   typst
   unrar
   unzip
