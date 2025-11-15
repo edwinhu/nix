@@ -60,6 +60,10 @@ with pkgs; [
   # AI tools
   claude-code
 
+  # Rust toolchain for Zed extension development
+  rustup
+  emscripten
+
   # Text and terminal utilities
   atuin
   bat
@@ -73,6 +77,7 @@ with pkgs; [
   du-dust
   eza
   fd
+  fswatch
   fzf
   hunspell
   jq
@@ -88,6 +93,7 @@ with pkgs; [
   tree
   tv
   typst
+  tinymist
   unrar
   unzip
   xan

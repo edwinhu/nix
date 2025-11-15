@@ -9,6 +9,12 @@
     ../../../modules/darwin/defaults.nix
   ];
 
+  # Set environment variables for GUI applications
+  # This makes nix binaries (like direnv) available to apps launched from Finder/Dock
+  launchd.user.envVariables = {
+    PATH = config.environment.systemPath;
+  };
+
   # Reminder for terminal app permissions
   system.activationScripts.checkTerminalPermissions.text = ''
     echo "⚠️  Remember to grant Full Disk Access to terminal apps in System Settings"

@@ -50,9 +50,13 @@
       url = "github:nix-community/emacs-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    claude-code-nix = {
+      url = "github:sadjow/claude-code-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, claude-code-nix} @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -96,9 +100,32 @@
           exec bash ${self}/apps/${system}/${scriptName}
         '')}/bin/${scriptName}";
       };
+      mkClaudeUpdateApp = system: {
+        type = "app";
+        program = "${(nixpkgs.legacyPackages.${system}.writeScriptBin "claude-update" ''
+          #!/usr/bin/env bash
+          set -e
+
+          GREEN='\033[1;32m'
+          YELLOW='\033[1;33m'
+          RED='\033[1;31m'
+          NC='\033[0m'
+
+          echo -e "''${YELLOW}Updating claude-code-nix flake input...''${NC}"
+          ${nixpkgs.legacyPackages.${system}.nix}/bin/nix flake update claude-code-nix
+
+          echo -e "''${GREEN}Claude Code flake input updated!''${NC}"
+          echo -e "''${YELLOW}Running build-switch to apply changes...''${NC}"
+          echo ""
+
+          # Run build-switch
+          ${nixpkgs.legacyPackages.${system}.nix}/bin/nix run .#build-switch
+        '')}/bin/claude-update";
+      };
       mkLinuxApps = system: {
         "apply" = mkApp "apply" system;
         "build-switch" = mkApp "build-switch" system;
+        "claude-update" = mkClaudeUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -109,6 +136,7 @@
         "apply" = mkApp "apply" system;
         "build" = mkApp "build" system;
         "build-switch" = mkApp "build-switch" system;
+        "claude-update" = mkClaudeUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -135,6 +163,7 @@
                     mkdir -p $out/share/zellij/plugins
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
+                  claude-code = claude-code-nix.packages.${prev.system}.default;
                 })
               ];
               
@@ -175,6 +204,12 @@
           pkgs = import nixpkgs {
             system = info.system;
             config.allowUnfree = true;
+            overlays = [
+              emacs-overlay.overlays.default
+              (final: prev: {
+                claude-code = claude-code-nix.packages.${prev.system}.default;
+              })
+            ];
           };
           modules = [
             agenix.homeManagerModules.default

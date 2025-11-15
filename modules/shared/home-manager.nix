@@ -79,7 +79,30 @@ in
           # NOTE: zellij requires Full Disk Access on macOS Sequoia
           # Grant permissions in: System Settings → Privacy & Security → Full Disk Access
           zj = "${pkgs.zellij}/bin/zellij";
+          # API key retrieval aliases
+          get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
+          get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
+          get-google-search-api-key = "cat $GOOGLE_SEARCH_API_KEY_FILE";
+          get-google-search-engine-id = "cat $GOOGLE_SEARCH_ENGINE_ID_FILE";
+          get-readwise-token = "cat $READWISE_TOKEN_FILE";
         };
+        envExtra = ''
+          # Source nix daemon early (before .zshrc) to make nix commands available
+          if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
+            . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+          fi
+        '';
+        initExtra = ''
+          # Source common shell configuration early (loads .shell_env with nix and PATH)
+          if [[ -f "$HOME/.shell_common" ]]; then
+            source "$HOME/.shell_common"
+          fi
+
+          # Source shell aliases
+          if [[ -f ~/.shell_aliases ]]; then
+            source ~/.shell_aliases
+          fi
+        '';
         profileExtra = ''
         # Login shell configuration
         # Environment variables and PATH are set in dotfiles/.shell_env

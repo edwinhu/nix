@@ -5,12 +5,14 @@ _:
   "github"
   "visual-studio-code"
   "wezterm"
+  "zed"
 
   # Communication Tools
   "beeper"
   "granola"
   "macwhisper"
   "superhuman"
+  "zoom"
 
   # Utility Tools
   "bitwarden"
@@ -23,7 +25,6 @@ _:
   "paletro"
   "protonvpn"
   "shottr"
-  "soundsource"
   "superwhisper"
   "typora"
 

@@ -24,6 +24,10 @@
       VISUAL = "nvim";
       ALTERNATE_EDITOR = "";
     };
+
+    file.".local/bin/claude" = {
+      source = "${pkgs.claude-code}/bin/claude";
+    };
   };
 
   # Allow unfree packages
