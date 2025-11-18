@@ -96,7 +96,6 @@ with pkgs; [
   tinymist
   unrar
   unzip
-  wezterm
   xan
   zellij
   zellij-switch
