@@ -1,11 +1,8 @@
 { pkgs }:
 
 with pkgs;
-let 
+let
   shared-packages = import ../shared/packages.nix { inherit pkgs; };
-  wezterm-cli = pkgs.writeShellScriptBin "wezterm" ''
-    exec /Applications/WezTerm.app/Contents/MacOS/wezterm "$@"
-  '';
 in
 shared-packages ++ [
   aerospace
@@ -17,5 +14,5 @@ shared-packages ++ [
   ffmpeg-full
   jankyborders
   sketchybar
-  wezterm-cli
+  # wezterm-cli removed: using nix wezterm package from shared instead
 ]

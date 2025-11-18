@@ -4,7 +4,7 @@ _:
   # Development Tools
   "github"
   "visual-studio-code"
-  "wezterm"
+  # "wezterm"  # Removed: using nix package for version consistency across systems
   "zed"
 
   # Communication Tools
