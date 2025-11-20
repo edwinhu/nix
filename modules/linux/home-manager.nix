@@ -2,6 +2,7 @@
 
 {
   imports = [
+    ../shared/stylix.nix
   ];
 
   # Linux-specific configurations
@@ -47,6 +48,11 @@
       '';
       
       bashrcExtra = ''
+        # Suppress groups command warnings (must be early to catch /etc/bash.bashrc)
+        groups() {
+          command groups "$@" 2>/dev/null
+        }
+
         # Aliases are now sourced from dotfiles/.shell_aliases via .shell_common
       '';
       

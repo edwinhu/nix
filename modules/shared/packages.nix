@@ -25,6 +25,9 @@ with pkgs; [
   tldr
   wget
   yazi
+  ueberzugpp      # Image rendering backend for yazi
+  ffmpegthumbnailer  # Video thumbnails for yazi
+  poppler_utils   # PDF previews for yazi
   zeromq
   zip
 
@@ -99,7 +102,6 @@ with pkgs; [
   wezterm
   xan
   zellij
-  zellij-switch
   zoxide
 
   # Fonts - only install needed nerd fonts to save space
