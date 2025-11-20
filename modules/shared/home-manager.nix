@@ -22,6 +22,12 @@ in
         enable = true;
     };
 
+    fzf = {
+        enable = true;
+        enableZshIntegration = true;
+        # Catppuccin Mocha theme is already handled by Stylix
+    };
+
     direnv = {
         enable = true;
         config = {

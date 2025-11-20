@@ -59,6 +59,7 @@
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
       ];
+
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527
         enableNixpkgsReleaseCheck = false;
