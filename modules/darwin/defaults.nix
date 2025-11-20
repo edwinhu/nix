@@ -93,7 +93,7 @@
     enable = true;
     username = user;
     entries = [
-      { path = "/Applications/Ghostty.app"; }
+      { path = "/Applications/Nix Apps/WezTerm.app"; }
       { path = "/Applications/Superhuman.app"; }
       { path = "/Applications/Reader.app"; }
       { path = "/Applications/Dia.app"; }
