@@ -5,6 +5,7 @@ with pkgs; [
   aspell
   aspellDicts.en
   bash-completion
+  # chromium - not supported on darwin (driverLink error), use Google Chrome instead
   cmake
   coreutils
   gh

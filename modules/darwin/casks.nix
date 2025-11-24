@@ -38,5 +38,6 @@ _:
   "reader"
 
   # Browsers
+  # "chromium"  # Deprecated, doesn't install properly on macOS - using google-chrome for tunnel browser instead
   "google-chrome"
 ]
