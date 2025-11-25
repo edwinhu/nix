@@ -13,13 +13,5 @@
       sizes.terminal = 13;
     };
     opacity.terminal = 0.8;
-
-    # Explicitly enable targets
-    targets = {
-      fzf.enable = true;
-      btop.enable = true;
-      tmux.enable = true;
-      bat.enable = true;
-    };
   };
 }

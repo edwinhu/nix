@@ -28,7 +28,7 @@ with pkgs; [
   yazi
   ueberzugpp      # Image rendering backend for yazi
   ffmpegthumbnailer  # Video thumbnails for yazi
-  poppler_utils   # PDF previews for yazi
+  poppler-utils   # PDF previews for yazi
   zeromq
   zip
 
@@ -55,7 +55,7 @@ with pkgs; [
   libsixel
   meslo-lgs-nf
   noto-fonts
-  noto-fonts-emoji
+  noto-fonts-color-emoji
 
   # data science tools
   pixi
@@ -78,14 +78,13 @@ with pkgs; [
   bat-extras.prettybat
   btop
   direnv
-  du-dust
+  dust
   eza
   fd
   fswatch
   fzf
   hunspell
   jq
-  ollama
   pandoc
   ripgrep
   ripgrep-all

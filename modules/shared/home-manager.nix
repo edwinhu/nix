@@ -140,12 +140,15 @@ in
   git = {
     enable = true;
     ignores = [ "*.swp" ];
-    userName = userInfo.fullName;
-    userEmail = userInfo.email;
     lfs = {
       enable = true;
     };
-    extraConfig = {
+    settings = {
+      user = {
+        name = userInfo.fullName;
+        email = userInfo.email;
+        signingkey = "${homeDir}/.ssh/id_github.pub";
+      };
       init.defaultBranch = "main";
       core = {
 	      editor = "nvim";
@@ -153,11 +156,8 @@ in
       };
       gpg.format = "ssh";
       commit.gpgsign = true;
-      user = {
-        signingkey = "${homeDir}/.ssh/id_github.pub";
-      };
       pull.rebase = true;
-      rebase.autoStash = true; 
+      rebase.autoStash = true;
     };
   };
 
