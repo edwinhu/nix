@@ -26,6 +26,7 @@ _:
   "protonvpn"
   "shottr"
   "superwhisper"
+  "tailscale"
   "typora"
 
   # Entertainment Tools

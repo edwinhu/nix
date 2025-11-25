@@ -43,7 +43,6 @@
     # https://github.com/nix-darwin/nix-darwin/issues/1323
     # run brew install mas to make sure you have > 2.0.0
     masApps = {
-      "tailscale" = 1475387142;
       "microsoft to-do" = 1274495053;
       "amazon kindle" = 302584613;
       "microsoft word" = 462054704;
