@@ -29,9 +29,6 @@ _:
   "tailscale"
   "typora"
 
-  # Entertainment Tools
-  "inkscape"
-
   # Productivity Tools
   "forklift"
   "google-drive"

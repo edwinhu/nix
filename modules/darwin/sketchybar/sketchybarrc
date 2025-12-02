@@ -1,6 +1,13 @@
 #!/bin/bash
 
 # This is a hybrid config that uses shell commands but maintains the modular structure
+
+# Wait for AeroSpace to be ready (up to 10 seconds)
+for i in {1..10}; do
+  aerospace list-workspaces --all &>/dev/null && break
+  sleep 1
+done
+
 # Color definitions (Catppuccin Mocha)
 export BLACK=0xff181926
 export WHITE=0xffcad3f5

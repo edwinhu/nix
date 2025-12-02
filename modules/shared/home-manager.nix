@@ -43,9 +43,8 @@ in
 
     zoxide = {
         enable = true;
-        # Removed "--cmd cd" to prevent conflict with direnv in VSCode
-        # Use 'z' command instead of overriding 'cd'
-        options = [];
+        # Override cd command with zoxide for smart navigation
+        options = [ "--cmd cd" ];
     };
 
     zsh = {
@@ -98,7 +97,7 @@ in
             . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
           fi
         '';
-        initExtra = ''
+        initContent = ''
           # Source common shell configuration early (loads .shell_env with nix and PATH)
           if [[ -f "$HOME/.shell_common" ]]; then
             source "$HOME/.shell_common"

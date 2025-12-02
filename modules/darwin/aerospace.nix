@@ -7,7 +7,9 @@
   launchd.user.agents.aerospace = {
     serviceConfig = {
       ProgramArguments = [
-        "${pkgs.aerospace}/Applications/AeroSpace.app/Contents/MacOS/AeroSpace"
+        "/usr/bin/open"
+        "-a"
+        "${pkgs.aerospace}/Applications/AeroSpace.app"
       ];
       KeepAlive = false;
       RunAtLoad = true;
