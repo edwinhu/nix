@@ -9,6 +9,8 @@
     ../../../modules/darwin/defaults.nix
   ];
 
+  # Karabiner-Elements: managed via Homebrew cask (nix-darwin service is broken for v15.7+)
+
   # Set environment variables for GUI applications
   # This makes nix binaries (like direnv) available to apps launched from Finder/Dock
   launchd.user.envVariables = {

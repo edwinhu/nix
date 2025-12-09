@@ -73,7 +73,30 @@
         # Disable "Displays have separate Spaces" for aerospace compatibility
         spans-displays = false;
       };
+
+      # Custom preferences not covered by nix-darwin options
+      CustomUserPreferences = {
+        NSGlobalDomain = {
+          # Set ForkLift as default file viewer
+          NSFileViewer = "com.binarynights.ForkLift";
+        };
+      };
     };
+
+    # Set default app handlers (idempotent activation script)
+    activationScripts.postActivation.text = ''
+      # ForkLift as default folder handler
+      if ! sudo -u ${user} defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null | grep -q "com.binarynights.ForkLift"; then
+        sudo -u ${user} defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType="public.folder";LSHandlerRoleAll="com.binarynights.ForkLift";}'
+      fi
+
+      # Neovide as default text/code editor
+      if ! sudo -u ${user} defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null | grep -q "com.neovide.neovide"; then
+        for uti in public.plain-text public.source-code public.shell-script public.python-script public.json public.xml net.daringfireball.markdown public.yaml; do
+          sudo -u ${user} defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add "{LSHandlerContentType=\"$uti\";LSHandlerRoleAll=\"com.neovide.neovide\";}"
+        done
+      fi
+    '';
   };
 
   # Enable Touch ID authentication for sudo

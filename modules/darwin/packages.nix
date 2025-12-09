@@ -11,8 +11,6 @@ shared-packages ++ [
   # ((emacsPackagesFor emacs-macport).emacsWithPackages (epkgs: [ epkgs.vterm ]))
   # Option 2: emacs with native compilation (current)
   ((emacsPackagesFor emacs-unstable).emacsWithPackages (epkgs: [ epkgs.vterm ]))
-  ffmpeg-full
   jankyborders
   sketchybar
-  # wezterm-cli removed: using nix wezterm package from shared instead
 ]

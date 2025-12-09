@@ -15,7 +15,7 @@
       # Add Linux-specific packages here
       xclip
       xdg-utils
-      agenix.packages.${pkgs.system}.default
+      agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
     ] ++ (import ../shared/packages.nix { inherit pkgs; });
     
     sessionVariables = {

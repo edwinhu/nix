@@ -44,7 +44,7 @@
     # run brew install mas to make sure you have > 2.0.0
     masApps = {
       "microsoft to-do" = 1274495053;
-      "amazon kindle" = 302584613;
+      # "amazon kindle" = 302584613;  # Temporarily disabled - Mac App Store install failing
       "microsoft word" = 462054704;
       "microsoft excel" = 462058435;
       "microsoft powerpoint" = 462062816;

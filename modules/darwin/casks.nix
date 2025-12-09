@@ -3,6 +3,7 @@ _:
 [
   # Development Tools
   "github"
+  "neovide-app"
   "visual-studio-code"
   # "wezterm"  # Removed: using nix package for version consistency across systems
   "zed"
@@ -16,6 +17,7 @@ _:
 
   # Utility Tools
   "bitwarden"
+  "karabiner-elements"
   "claude"
   "homerow"
   "lm-studio"
@@ -26,7 +28,7 @@ _:
   "protonvpn"
   "shottr"
   "superwhisper"
-  "tailscale"
+  "tailscale-app"
   "typora"
 
   # Productivity Tools

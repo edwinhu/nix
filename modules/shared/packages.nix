@@ -5,11 +5,9 @@ with pkgs; [
   aspell
   aspellDicts.en
   bash-completion
-  # chromium - not supported on darwin (driverLink error), use Google Chrome instead
   cmake
   coreutils
   gh
-  gh-copilot
   killall
   lazygit
   libtool
@@ -41,9 +39,7 @@ with pkgs; [
   # Cloud-related tools and SDKs
   google-cloud-sdk
   rclone
-
-  # Virtualization
-  lima
+  syncthing-macos
 
   # Media-related packages
   chafa
@@ -63,10 +59,6 @@ with pkgs; [
 
   # AI tools
   claude-code
-
-  # Rust toolchain for Zed extension development
-  rustup
-  emscripten
 
   # Text and terminal utilities
   atuin

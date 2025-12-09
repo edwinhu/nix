@@ -108,18 +108,26 @@
 
           GREEN='\033[1;32m'
           YELLOW='\033[1;33m'
-          RED='\033[1;31m'
           NC='\033[0m'
 
           echo -e "''${YELLOW}Updating claude-code-nix flake input...''${NC}"
           ${nixpkgs.legacyPackages.${system}.nix}/bin/nix flake update claude-code-nix
 
           echo -e "''${GREEN}Claude Code flake input updated!''${NC}"
-          echo -e "''${YELLOW}Running build-switch to apply changes...''${NC}"
-          echo ""
+          echo -e "''${YELLOW}Building updated claude-code package...''${NC}"
 
-          # Run build-switch
-          ${nixpkgs.legacyPackages.${system}.nix}/bin/nix run .#build-switch
+          # Build from local flake (uses updated flake.lock)
+          CLAUDE_PATH=$(${nixpkgs.legacyPackages.${system}.nix}/bin/nix build .#claude-code --print-out-paths --no-link)
+
+          echo -e "''${GREEN}Claude Code updated: $CLAUDE_PATH''${NC}"
+
+          # Update symlink in ~/.local/bin for immediate use
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$CLAUDE_PATH/bin/claude" "$HOME/.local/bin/claude"
+
+          echo -e "''${GREEN}Symlink updated: ~/.local/bin/claude -> $CLAUDE_PATH/bin/claude''${NC}"
+          echo ""
+          echo "Run 'hash -r' or start a new shell to use the updated version."
         '')}/bin/claude-update";
       };
       mkLinuxApps = system: {
@@ -147,6 +155,11 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
+      # Expose claude-code as a package for quick updates without full rebuild
+      packages = forAllSystems (system: {
+        claude-code = claude-code-nix.packages.${system}.default;
+      });
+
       # Darwin configurations for macOS hosts
       darwinConfigurations = let
         darwinUsers = nixpkgs.lib.filterAttrs (user: info: nixpkgs.lib.hasSuffix "darwin" info.system) userHosts;
@@ -163,7 +176,7 @@
                     mkdir -p $out/share/zellij/plugins
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
-                  claude-code = claude-code-nix.packages.${prev.system}.default;
+                  claude-code = claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
                 })
               ];
               
