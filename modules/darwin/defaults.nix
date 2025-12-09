@@ -92,8 +92,13 @@
 
       # Neovide as default text/code editor
       if ! sudo -u ${user} defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null | grep -q "com.neovide.neovide"; then
-        for uti in public.plain-text public.source-code public.shell-script public.python-script public.json public.xml net.daringfireball.markdown public.yaml; do
+        # UTI-based handlers
+        for uti in public.plain-text public.text public.utf8-plain-text public.source-code public.shell-script public.python-script public.json public.xml net.daringfireball.markdown public.yaml public.toml public.data public.content public.ruby-script public.perl-script; do
           sudo -u ${user} defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add "{LSHandlerContentType=\"$uti\";LSHandlerRoleAll=\"com.neovide.neovide\";}"
+        done
+        # File extension-based handlers (covers Zed + VS Code defaults + extras)
+        for ext in c c++ cc cpp cxx css erb ex exs go h h++ hh hpp hxx htm html js cjs mjs json jsx md markdown mdown mdwn mkd mkdn mdoc mdtext mdtxt py pyi rb rkt rs scm toml ts tsx txt nix vue svelte yaml yml eyaml eyml sh bash zsh fish lua zig hs el lisp clj cljs edn sql graphql prisma tf hcl dockerfile makefile cmake asp aspx cshtml jshtm jsp phtml shtml bat cmd bowerrc config editorconfig ini cfg gitattributes gitconfig gitignore m mm cs csx csproj dtd java jav gemspec jade less sass scss ps1 psd1 psm1 plist wxi wxl wxs xaml xhtml xml php; do
+          sudo -u ${user} defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add "{LSHandlerContentTag=\"$ext\";LSHandlerContentTagClass=\"public.filename-extension\";LSHandlerRoleAll=\"com.neovide.neovide\";}"
         done
       fi
     '';
