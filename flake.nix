@@ -56,7 +56,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, claude-code-nix} @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, claude-code-nix } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -220,7 +220,7 @@
             overlays = [
               emacs-overlay.overlays.default
               (final: prev: {
-                claude-code = claude-code-nix.packages.${prev.system}.default;
+                claude-code = claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
               })
             ];
           };

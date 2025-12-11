@@ -26,6 +26,15 @@
       ALTERNATE_EDITOR = "";
     };
 
+    # rv (R package manager) - install from official installer if not present
+    activation.rv = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      RV_BIN="$HOME/.local/bin/rv"
+      if [ ! -x "$RV_BIN" ]; then
+        $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
+        $DRY_RUN_CMD ${pkgs.curl}/bin/curl -LsSf https://a2-ai.github.io/rv-docs/install.sh | $DRY_RUN_CMD ${pkgs.bash}/bin/bash -s -- --to "$HOME/.local/bin"
+      fi
+    '';
+
     file.".local/bin/claude" = {
       source = "${pkgs.claude-code}/bin/claude";
     };
@@ -55,13 +64,13 @@
 
         # Aliases are now sourced from dotfiles/.shell_aliases via .shell_common
       '';
-      
+
       initExtra = ''
         # Source shared shell configuration
         if [[ -f "$HOME/dotfiles/.shell_common" ]]; then
             source "$HOME/dotfiles/.shell_common"
         fi
-        
+
         # Auto-start zsh if it exists and we're in an interactive session
         if [[ -x "$(command -v zsh)" ]] && [[ $- == *i* ]] && [[ ! "$SHELL" == *zsh* ]]; then
           export SHELL="$(command -v zsh)"
