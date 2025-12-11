@@ -43,8 +43,8 @@ in
 
     zoxide = {
         enable = true;
-        # Override cd command with zoxide for smart navigation
-        options = [ "--cmd cd" ];
+        # Use z for zoxide, keep cd as regular cd
+        options = [ "--cmd z" ];
     };
 
     zsh = {
