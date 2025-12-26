@@ -39,7 +39,6 @@ with pkgs; [
   # Cloud-related tools and SDKs
   google-cloud-sdk
   rclone
-  syncthing-macos
 
   # Media-related packages
   chafa

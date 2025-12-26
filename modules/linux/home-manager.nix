@@ -15,6 +15,7 @@
       # Add Linux-specific packages here
       xclip
       xdg-utils
+      inotify-tools
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
     ] ++ (import ../shared/packages.nix { inherit pkgs; });
     

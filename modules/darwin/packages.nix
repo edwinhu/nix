@@ -13,5 +13,6 @@ shared-packages ++ [
   # ((emacsPackagesFor emacs-unstable).emacsWithPackages (epkgs: [ epkgs.vterm ]))
   jankyborders
   sketchybar
+  syncthing-macos
   zathuraApp
 ]
