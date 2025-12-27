@@ -7,8 +7,8 @@
     base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
     fonts = {
       monospace = {
-        package = pkgs.nerd-fonts.jetbrains-mono;
-        name = "JetBrainsMono Nerd Font Mono";
+        package = pkgs.maple-mono.NF;
+        name = "Maple Mono NF";
       };
       sizes.terminal = 13;
     };

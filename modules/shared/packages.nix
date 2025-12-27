@@ -46,10 +46,7 @@ with pkgs; [
   cm_unicode
   dejavu_fonts
   font-awesome
-  hack-font
-  jetbrains-mono
   libsixel
-  meslo-lgs-nf
   noto-fonts
   noto-fonts-color-emoji
 
@@ -98,6 +95,6 @@ with pkgs; [
 
   # Fonts - only install needed nerd fonts to save space
   # Changed from: builtins.attrValues pkgs.nerd-fonts (installs all ~7GB!)
-  # To: only jetbrains-mono (saves ~6GB)
-  nerd-fonts.jetbrains-mono
+  # To: only maple-mono (saves ~6GB)
+  maple-mono.NF
 ]

@@ -35,8 +35,8 @@ sketchybar --bar position=top \
 # Default values
 sketchybar --default padding_left=5 \
                      padding_right=5 \
-                     icon.font="Hack Nerd Font:Regular:14.0" \
-                     label.font="Hack Nerd Font:Bold:13.0" \
+                     icon.font="Maple Mono NF:Regular:14.0" \
+                     label.font="Maple Mono NF:Bold:13.0" \
                      icon.color=$WHITE \
                      label.color=$WHITE \
                      icon.padding_left=6 \
@@ -64,7 +64,7 @@ for sid in $(aerospace list-workspaces --all); do
         icon.padding_left=7 \
         icon.padding_right=7 \
         icon.color=$WHITE \
-        icon.font="Hack Nerd Font Mono:Bold:14.0" \
+        icon.font="Maple Mono NF Mono:Bold:14.0" \
         label.drawing=off \
         click_script="aerospace workspace $sid" \
         script="$ITEM_DIR/space.sh $sid"
@@ -74,7 +74,7 @@ done
 sketchybar --add item front_app left \
            --set front_app \
            icon.drawing=off \
-           label.font="Hack Nerd Font:Bold:13.0" \
+           label.font="Maple Mono NF:Bold:13.0" \
            label.color=$WHITE \
            background.color=0x10ffffff \
            background.height=26 \
@@ -88,8 +88,8 @@ sketchybar --add item front_app left \
 sketchybar --add item calendar right \
            --set calendar \
            icon=󰃰 \
-           icon.font="Hack Nerd Font:Regular:16.0" \
-           label.font="Hack Nerd Font:Regular:13.0" \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           label.font="Maple Mono NF:Regular:13.0" \
            background.color=0x10ffffff \
            update_freq=30 \
            script="$ITEM_DIR/calendar.sh" \
@@ -98,8 +98,8 @@ sketchybar --add item calendar right \
 # Battery
 sketchybar --add item battery right \
            --set battery \
-           icon.font="Hack Nerd Font:Regular:16.0" \
-           label.font="Hack Nerd Font:Regular:13.0" \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           label.font="Maple Mono NF:Regular:13.0" \
            background.color=0x10ffffff \
            update_freq=60 \
            script="$ITEM_DIR/battery.sh"
@@ -107,8 +107,8 @@ sketchybar --add item battery right \
 # WiFi/Network
 sketchybar --add item wifi right \
            --set wifi \
-           icon.font="Hack Nerd Font:Regular:16.0" \
-           label.font="Hack Nerd Font:Regular:13.0" \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           label.font="Maple Mono NF:Regular:13.0" \
            background.color=0x10ffffff \
            update_freq=2 \
            script="$ITEM_DIR/wifi.sh" \
@@ -117,8 +117,8 @@ sketchybar --add item wifi right \
 # Volume
 sketchybar --add item volume right \
            --set volume \
-           icon.font="Hack Nerd Font:Regular:16.0" \
-           label.font="Hack Nerd Font:Regular:13.0" \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           label.font="Maple Mono NF:Regular:13.0" \
            background.color=0x10ffffff \
            update_freq=1 \
            script="$ITEM_DIR/volume.sh" \
@@ -128,8 +128,8 @@ sketchybar --add item volume right \
 # sketchybar --add item cpu right \
 #            --set cpu \
 #            icon=󰍛 \
-#            icon.font="Hack Nerd Font:Regular:16.0" \
-#            label.font="Hack Nerd Font:Regular:13.0" \
+#            icon.font="Maple Mono NF:Regular:16.0" \
+#            label.font="Maple Mono NF:Regular:13.0" \
 #            background.color=0x10ffffff \
 #            update_freq=5 \
 #            script="$ITEM_DIR/cpu.sh"
