@@ -56,6 +56,7 @@ with pkgs; [
 
   # AI tools
   claude-code
+  opencode
 
   # Text and terminal utilities
   atuin

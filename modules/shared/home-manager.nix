@@ -43,8 +43,8 @@ in
 
     zoxide = {
         enable = true;
-        # Use z for zoxide, keep cd as regular cd
-        options = [ "--cmd z" ];
+        # Use default 'z' command instead of overriding 'cd' (prevents conflict with direnv in VSCode)
+        options = [];
     };
 
     zsh = {
