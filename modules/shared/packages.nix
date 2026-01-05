@@ -17,7 +17,7 @@ with pkgs; [
   nodejs
   openssh
   postgresql
-  sioyek
+  zathura
   sox
   sqlite
   stow
@@ -67,6 +67,7 @@ with pkgs; [
   bat-extras.batwatch
   bat-extras.prettybat
   btop
+  numr
   direnv
   dust
   eza

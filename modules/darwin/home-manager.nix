@@ -3,7 +3,6 @@
 {
   imports = [
    ./dock
-   ./sioyek-with-sync.nix
    ../shared/stylix.nix
   ];
 

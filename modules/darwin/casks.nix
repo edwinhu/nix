@@ -2,6 +2,7 @@ _:
 
 [
   # Development Tools
+  "docker"
   "github"
   "neovide-app"
   "visual-studio-code"

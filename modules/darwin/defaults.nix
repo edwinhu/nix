@@ -22,9 +22,9 @@
   # Turn off NIX_PATH warnings now that we're using flakes
   system.checks.verifyNixPath = false;
 
-  # Load shared packages
+  # Load darwin packages (includes shared)
   environment.systemPackages = with pkgs; [
-  ] ++ (import ../shared/packages.nix { inherit pkgs; });
+  ] ++ (import ./packages.nix { inherit pkgs; });
 
   system = {
     stateVersion = 4;

@@ -30,7 +30,7 @@
     Port 420
 
     # Security settings
-    PasswordAuthentication no
+    PasswordAuthentication yes
     PermitRootLogin no
     PubkeyAuthentication yes
     ChallengeResponseAuthentication no

@@ -54,9 +54,17 @@
       url = "github:sadjow/claude-code-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    zathura-src = {
+      url = "github:edwinhu/zathura";
+      flake = false;
+    };
+    zathura-pdf-mupdf-src = {
+      url = "github:edwinhu/zathura-pdf-mupdf";
+      flake = false;
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, claude-code-nix } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, claude-code-nix, zathura-src, zathura-pdf-mupdf-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -177,6 +185,83 @@
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
                   claude-code = claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
+                  zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
+                    zathura_core = zprev.zathura_core.overrideAttrs (old: {
+                      src = zathura-src;
+                      version = "0.5.8-annotations";
+                      buildInputs = (old.buildInputs or []) ++ [ prev.curl ];
+                    });
+                    zathura_pdf_mupdf = zprev.zathura_pdf_mupdf.overrideAttrs (old: {
+                      src = zathura-pdf-mupdf-src;
+                      version = "0.4.4-annotations";
+                      postPatch = (old.postPatch or "") + ''
+                        # Remove hardcoded dev include paths that don't exist in nix builds
+                        sed -i "/zathura_dev_include = include_directories/d" meson.build
+                        sed -i "/include_directories: zathura_dev_include/d" meson.build
+                      '';
+                    });
+                  });
+                  zathura = final.zathuraPkgs.zathuraWrapper.override {
+                    plugins = [ final.zathuraPkgs.zathura_pdf_mupdf ];
+                  };
+                  zathuraApp = prev.stdenv.mkDerivation {
+                    pname = "Zathura";
+                    version = "0.5.8";
+                    dontUnpack = true;
+                    nativeBuildInputs = [ prev.makeWrapper ];
+                    installPhase = ''
+                      mkdir -p "$out/Applications/Zathura.app/Contents/MacOS"
+                      mkdir -p "$out/Applications/Zathura.app/Contents/Resources"
+
+                      # Create the executable wrapper with HiDPI support
+                      cat > "$out/Applications/Zathura.app/Contents/MacOS/Zathura" <<'SCRIPT'
+                      #!/bin/bash
+                      # Use native macOS Quartz backend for proper Retina support
+                      export GDK_BACKEND=quartz
+                      exec ${final.zathura}/bin/zathura "$@"
+                      SCRIPT
+                      chmod +x "$out/Applications/Zathura.app/Contents/MacOS/Zathura"
+
+                      # Create Info.plist with PDF handler registration
+                      cat > "$out/Applications/Zathura.app/Contents/Info.plist" <<'PLIST'
+                      <?xml version="1.0" encoding="UTF-8"?>
+                      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                      <plist version="1.0">
+                      <dict>
+                        <key>CFBundleExecutable</key>
+                        <string>Zathura</string>
+                        <key>CFBundleIdentifier</key>
+                        <string>org.pwmt.zathura</string>
+                        <key>CFBundleName</key>
+                        <string>Zathura</string>
+                        <key>CFBundleDisplayName</key>
+                        <string>Zathura</string>
+                        <key>CFBundleVersion</key>
+                        <string>0.5.8</string>
+                        <key>CFBundleShortVersionString</key>
+                        <string>0.5.8</string>
+                        <key>CFBundlePackageType</key>
+                        <string>APPL</string>
+                        <key>LSApplicationCategoryType</key>
+                        <string>public.app-category.productivity</string>
+                        <key>CFBundleDocumentTypes</key>
+                        <array>
+                          <dict>
+                            <key>CFBundleTypeName</key>
+                            <string>PDF Document</string>
+                            <key>CFBundleTypeRole</key>
+                            <string>Viewer</string>
+                            <key>LSItemContentTypes</key>
+                            <array>
+                              <string>com.adobe.pdf</string>
+                            </array>
+                          </dict>
+                        </array>
+                      </dict>
+                      </plist>
+                      PLIST
+                    '';
+                  };
                 })
               ];
               
@@ -221,6 +306,25 @@
               emacs-overlay.overlays.default
               (final: prev: {
                 claude-code = claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
+                zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
+                  zathura_core = zprev.zathura_core.overrideAttrs (old: {
+                    src = zathura-src;
+                    version = "0.5.8-annotations";
+                    buildInputs = (old.buildInputs or []) ++ [ prev.curl ];
+                  });
+                  zathura_pdf_mupdf = zprev.zathura_pdf_mupdf.overrideAttrs (old: {
+                    src = zathura-pdf-mupdf-src;
+                    version = "0.4.4-annotations";
+                    postPatch = (old.postPatch or "") + ''
+                      # Remove hardcoded dev include paths that don't exist in nix builds
+                      sed -i "/zathura_dev_include = include_directories/d" meson.build
+                      sed -i "/include_directories: zathura_dev_include/d" meson.build
+                    '';
+                  });
+                });
+                zathura = final.zathuraPkgs.zathuraWrapper.override {
+                  plugins = [ final.zathuraPkgs.zathura_pdf_mupdf ];
+                };
               })
             ];
           };
