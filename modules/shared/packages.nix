@@ -58,6 +58,7 @@ with pkgs; [
   opencode
 
   # Text and terminal utilities
+  ast-grep
   atuin
   bat
   bat-extras.batdiff
