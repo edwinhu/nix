@@ -50,10 +50,6 @@
       url = "github:nix-community/emacs-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    claude-code-nix = {
-      url = "github:sadjow/claude-code-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     zathura-src = {
       url = "github:edwinhu/zathura";
       flake = false;
@@ -64,7 +60,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, claude-code-nix, zathura-src, zathura-pdf-mupdf-src } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -108,28 +104,74 @@
           exec bash ${self}/apps/${system}/${scriptName}
         '')}/bin/${scriptName}";
       };
-      mkClaudeUpdateApp = system: {
+      mkClaudeUpdateApp = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          platformMap = {
+            "x86_64-linux" = "linux-x64";
+            "aarch64-linux" = "linux-arm64";
+            "x86_64-darwin" = "darwin-x64";
+            "aarch64-darwin" = "darwin-arm64";
+          };
+        in {
         type = "app";
-        program = "${(nixpkgs.legacyPackages.${system}.writeScriptBin "claude-update" ''
+        program = "${(pkgs.writeScriptBin "claude-update" ''
           #!/usr/bin/env bash
           set -e
 
           GREEN='\033[1;32m'
           YELLOW='\033[1;33m'
+          RED='\033[1;31m'
           NC='\033[0m'
 
-          echo -e "''${YELLOW}Updating claude-code-nix flake input...''${NC}"
-          ${nixpkgs.legacyPackages.${system}.nix}/bin/nix flake update claude-code-nix
+          NATIVE_NIX="$HOME/nix/modules/shared/claude-code-native.nix"
+          GCS_BUCKET="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
-          echo -e "''${GREEN}Claude Code flake input updated!''${NC}"
+          echo -e "''${YELLOW}Fetching latest Claude Code version...''${NC}"
+          NEW_VERSION=$(${pkgs.curl}/bin/curl -sS "$GCS_BUCKET/latest")
+          CURRENT_VERSION=$(${pkgs.gnugrep}/bin/grep 'version = ' "$NATIVE_NIX" | head -1 | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
+
+          echo "Current version: $CURRENT_VERSION"
+          echo "Latest version:  $NEW_VERSION"
+
+          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+            echo -e "''${GREEN}Already up to date!''${NC}"
+            exit 0
+          fi
+
+          echo -e "''${YELLOW}Fetching new hashes for all platforms...''${NC}"
+
+          get_sri_hash() {
+            local platform=$1
+            local hex_hash=$(${pkgs.curl}/bin/curl -sS "$GCS_BUCKET/$NEW_VERSION/$platform/claude" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)
+            ${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$hex_hash"
+          }
+
+          HASH_LINUX_X64=$(get_sri_hash "linux-x64")
+          HASH_LINUX_ARM64=$(get_sri_hash "linux-arm64")
+          HASH_DARWIN_X64=$(get_sri_hash "darwin-x64")
+          HASH_DARWIN_ARM64=$(get_sri_hash "darwin-arm64")
+
+          echo -e "''${YELLOW}Updating $NATIVE_NIX...''${NC}"
+
+          ${pkgs.gnused}/bin/sed -i \
+            -e "s/version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" \
+            -e "s|x86_64-linux = {|x86_64-linux = {\n      platform = \"linux-x64\";\n      hash = \"$HASH_LINUX_X64\";\n    };|" \
+            "$NATIVE_NIX"
+
+          # Use perl for more reliable multi-line replacement
+          ${pkgs.perl}/bin/perl -i -0pe "s/version = \"[^\"]+\"/version = \"$NEW_VERSION\"/g" "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's/(x86_64-linux = \{)[^}]+\}/\1\n      platform = "linux-x64";\n      hash = "'"$HASH_LINUX_X64"'";\n    }/g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's/(aarch64-linux = \{)[^}]+\}/\1\n      platform = "linux-arm64";\n      hash = "'"$HASH_LINUX_ARM64"'";\n    }/g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's/(x86_64-darwin = \{)[^}]+\}/\1\n      platform = "darwin-x64";\n      hash = "'"$HASH_DARWIN_X64"'";\n    }/g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's/(aarch64-darwin = \{)[^}]+\}/\1\n      platform = "darwin-arm64";\n      hash = "'"$HASH_DARWIN_ARM64"'";\n    }/g' "$NATIVE_NIX"
+
           echo -e "''${YELLOW}Building updated claude-code package...''${NC}"
-
-          # Build from local flake (uses updated flake.lock)
-          CLAUDE_PATH=$(${nixpkgs.legacyPackages.${system}.nix}/bin/nix build .#claude-code --print-out-paths --no-link)
+          cd "$HOME/nix"
+          CLAUDE_PATH=$(${pkgs.nix}/bin/nix build .#claude-code --print-out-paths --no-link)
 
           echo -e "''${GREEN}Claude Code updated: $CLAUDE_PATH''${NC}"
 
-          # Update symlink in ~/.local/bin for immediate use
           mkdir -p "$HOME/.local/bin"
           ln -sf "$CLAUDE_PATH/bin/claude" "$HOME/.local/bin/claude"
 
@@ -165,7 +207,7 @@
 
       # Expose claude-code as a package for quick updates without full rebuild
       packages = forAllSystems (system: {
-        claude-code = claude-code-nix.packages.${system}.default;
+        claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -184,7 +226,7 @@
                     mkdir -p $out/share/zellij/plugins
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
-                  claude-code = claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
+                  claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                     zathura_core = zprev.zathura_core.overrideAttrs (old: {
                       src = zathura-src;
@@ -305,7 +347,7 @@
             overlays = [
               emacs-overlay.overlays.default
               (final: prev: {
-                claude-code = claude-code-nix.packages.${prev.stdenv.hostPlatform.system}.default;
+                claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                 zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                   zathura_core = zprev.zathura_core.overrideAttrs (old: {
                     src = zathura-src;
