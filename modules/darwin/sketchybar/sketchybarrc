@@ -50,6 +50,20 @@ sketchybar --default padding_left=5 \
 # Events
 sketchybar --add event aerospace_workspace_changed
 
+# Menu icon (leftmost) - matching omarchy custom/omarchy
+sketchybar --add item menu left \
+           --set menu \
+           icon="󰀵" \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           icon.color=$WHITE \
+           icon.padding_left=10 \
+           icon.padding_right=10 \
+           label.drawing=off \
+           background.color=0x10ffffff \
+           background.corner_radius=6 \
+           background.height=26 \
+           click_script="open -a 'System Preferences'"
+
 for sid in $(aerospace list-workspaces --all); do
     sketchybar --add item space.$sid left \
         --subscribe space.$sid aerospace_workspace_changed \
@@ -114,6 +128,16 @@ sketchybar --add item wifi right \
            script="$ITEM_DIR/wifi.sh" \
            click_script="open /System/Library/PreferencePanes/Network.prefPane"
 
+# Bluetooth
+sketchybar --add item bluetooth right \
+           --set bluetooth \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           label.font="Maple Mono NF:Regular:13.0" \
+           background.color=0x10ffffff \
+           update_freq=10 \
+           script="$ITEM_DIR/bluetooth.sh" \
+           click_script="open /System/Library/PreferencePanes/Bluetooth.prefPane"
+
 # Volume
 sketchybar --add item volume right \
            --set volume \
@@ -124,15 +148,15 @@ sketchybar --add item volume right \
            script="$ITEM_DIR/volume.sh" \
            click_script="$ITEM_DIR/volume_click.sh"
 
-# CPU (optional - commented out by default)
-# sketchybar --add item cpu right \
-#            --set cpu \
-#            icon=󰍛 \
-#            icon.font="Maple Mono NF:Regular:16.0" \
-#            label.font="Maple Mono NF:Regular:13.0" \
-#            background.color=0x10ffffff \
-#            update_freq=5 \
-#            script="$ITEM_DIR/cpu.sh"
+# CPU
+sketchybar --add item cpu right \
+           --set cpu \
+           icon=󰍛 \
+           icon.font="Maple Mono NF:Regular:16.0" \
+           label.font="Maple Mono NF:Regular:13.0" \
+           background.color=0x10ffffff \
+           update_freq=5 \
+           script="$ITEM_DIR/cpu.sh"
 
 # Trigger initial workspace update
 sketchybar --trigger aerospace_workspace_changed
