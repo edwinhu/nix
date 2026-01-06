@@ -49,6 +49,10 @@ sketchybar --default padding_left=5 \
 
 # Events
 sketchybar --add event aerospace_workspace_changed
+sketchybar --add event space_windows_change
+
+# Persistent workspaces (always visible like omarchy waybar)
+PERSISTENT_WORKSPACES="1 2 3 4 5"
 
 # Menu icon (leftmost) - matching omarchy custom/omarchy
 sketchybar --add item menu left \
@@ -65,9 +69,17 @@ sketchybar --add item menu left \
            click_script="open -a 'System Preferences'"
 
 for sid in $(aerospace list-workspaces --all); do
+    # Check if this is a persistent workspace
+    if echo "$PERSISTENT_WORKSPACES" | grep -qw "$sid"; then
+        INITIAL_DRAWING="on"
+    else
+        INITIAL_DRAWING="off"
+    fi
+
     sketchybar --add item space.$sid left \
-        --subscribe space.$sid aerospace_workspace_changed \
+        --subscribe space.$sid aerospace_workspace_changed space_windows_change \
         --set space.$sid \
+        drawing=$INITIAL_DRAWING \
         background.color=0x44ffffff \
         background.corner_radius=6 \
         background.height=26 \
