@@ -16,14 +16,8 @@ if [ -z "$FOCUSED_WORKSPACE" ]; then
   FOCUSED_WORKSPACE=$(aerospace list-workspaces --focused)
 fi
 
-# Check visibility conditions
-IS_PERSISTENT=$(echo "$PERSISTENT" | grep -qw "$SPACE_ID" && echo "yes")
-HAS_WINDOWS=$(aerospace list-windows --workspace "$SPACE_ID" 2>/dev/null | grep -c .)
-IS_FOCUSED=$([ "$SPACE_ID" = "$FOCUSED_WORKSPACE" ] && echo "yes")
-
-# Determine if workspace should be visible
-# Show if: persistent OR focused OR has windows
-if [ -n "$IS_PERSISTENT" ] || [ -n "$IS_FOCUSED" ] || [ "$HAS_WINDOWS" -gt 0 ]; then
+# Only show persistent workspaces (1-5)
+if echo "$PERSISTENT" | grep -qw "$SPACE_ID"; then
   SHOULD_DRAW="on"
 else
   SHOULD_DRAW="off"

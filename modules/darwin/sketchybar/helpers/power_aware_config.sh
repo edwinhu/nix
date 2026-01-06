@@ -5,10 +5,10 @@
 
 # Check if we're on battery or AC power
 BATTERY_INFO=$(pmset -g batt)
-ON_BATTERY=$(echo "$BATTERY_INFO" | grep -v 'AC Power')
+ON_AC=$(echo "$BATTERY_INFO" | grep -q 'AC Power' && echo "yes")
 
 # Define update frequencies
-if [ -n "$ON_BATTERY" ]; then
+if [ -z "$ON_AC" ]; then
     # On battery - reduced polling for power saving
     CALENDAR_FREQ=60
     NETWORK_FREQ=60
@@ -29,4 +29,4 @@ sketchybar --set volume update_freq=$VOLUME_FREQ
 sketchybar --set battery update_freq=$BATTERY_FREQ
 
 # Log the current power state for debugging
-echo "$(date): Power state - $([ -n "$ON_BATTERY" ] && echo "Battery" || echo "AC Power") - Calendar: ${CALENDAR_FREQ}s, Network: ${NETWORK_FREQ}s, Volume: ${VOLUME_FREQ}s" >> /tmp/sketchybar_power_log
+echo "$(date): Power state - $([ -n "$ON_AC" ] && echo "AC Power" || echo "Battery") - Calendar: ${CALENDAR_FREQ}s, Network: ${NETWORK_FREQ}s, Volume: ${VOLUME_FREQ}s" >> /tmp/sketchybar_power_log

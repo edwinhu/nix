@@ -68,18 +68,12 @@ sketchybar --add item menu left \
            background.height=26 \
            click_script="open -a 'System Preferences'"
 
-for sid in $(aerospace list-workspaces --all); do
-    # Check if this is a persistent workspace
-    if echo "$PERSISTENT_WORKSPACES" | grep -qw "$sid"; then
-        INITIAL_DRAWING="on"
-    else
-        INITIAL_DRAWING="off"
-    fi
-
+# Only create items for persistent workspaces (1-5)
+for sid in $PERSISTENT_WORKSPACES; do
     sketchybar --add item space.$sid left \
         --subscribe space.$sid aerospace_workspace_changed space_windows_change \
         --set space.$sid \
-        drawing=$INITIAL_DRAWING \
+        drawing=on \
         background.color=0x44ffffff \
         background.corner_radius=6 \
         background.height=26 \
