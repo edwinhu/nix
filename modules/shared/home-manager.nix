@@ -190,7 +190,7 @@ in
   };
 
   tmux = {
-    enable = true;
+    enable = false;  # Disabled - using zellij instead
     plugins = with pkgs.tmuxPlugins; [
       vim-tmux-navigator
       sensible

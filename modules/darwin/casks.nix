@@ -21,7 +21,6 @@ _:
   "karabiner-elements"
   "claude"
   "homerow"
-  "lm-studio"
   "logseq"
   "morgen"
   "obsidian"

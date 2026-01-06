@@ -2,15 +2,12 @@
 
 with pkgs; [
   # General packages for development and system management
-  aspell
-  aspellDicts.en
   bash-completion
   cmake
   coreutils
   gh
   killall
   lazygit
-  libtool
   localsend
   neofetch
   neovim
@@ -83,7 +80,6 @@ with pkgs; [
   tabiew
   tailspin
   tectonic
-  tmux
   tree
   tv
   typst
