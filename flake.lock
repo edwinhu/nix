@@ -415,11 +415,11 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1763966396,
-        "narHash": "sha256-6eeL1YPcY1MV3DDStIDIdy/zZCDKgHdkCmsrLJFiZf0=",
+        "lastModified": 1767379071,
+        "narHash": "sha256-EgE0pxsrW9jp9YFMkHL9JMXxcqi/OoumPJYwf+Okucw=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "5ae3b07d8d6527c42f17c876e404993199144b6a",
+        "rev": "fb7944c166a3b630f177938e478f0378e64ce108",
         "type": "github"
       },
       "original": {
@@ -501,6 +501,8 @@
         "nixpkgs": "nixpkgs_2",
         "presmihaylov-taps": "presmihaylov-taps",
         "stylix": "stylix",
+        "zathura-pdf-mupdf-src": "zathura-pdf-mupdf-src",
+        "zathura-src": "zathura-src",
         "zellij-switch-wasm": "zellij-switch-wasm"
       }
     },
@@ -644,6 +646,38 @@
       "original": {
         "owner": "tinted-theming",
         "repo": "base16-zed",
+        "type": "github"
+      }
+    },
+    "zathura-pdf-mupdf-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1767584212,
+        "narHash": "sha256-ZMIK6sGkCIB2WLM5IZAcSxqRo/kQUA+enovWCV6J6Dg=",
+        "owner": "edwinhu",
+        "repo": "zathura-pdf-mupdf",
+        "rev": "e4575aa7ecdd4e2d20d91612570deef48c047a47",
+        "type": "github"
+      },
+      "original": {
+        "owner": "edwinhu",
+        "repo": "zathura-pdf-mupdf",
+        "type": "github"
+      }
+    },
+    "zathura-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1767649066,
+        "narHash": "sha256-pv0D0bt7s8YK24ejjgq32ZePo6Ee4Ut8QasLXJVK568=",
+        "owner": "edwinhu",
+        "repo": "zathura",
+        "rev": "3eb7937adf00a87547dd8085a1e24f535f50a22a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "edwinhu",
+        "repo": "zathura",
         "type": "github"
       }
     },
