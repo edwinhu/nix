@@ -13,6 +13,7 @@
     # Linux-specific packages
     packages = with pkgs; [
       # Add Linux-specific packages here
+      zathura
       xclip
       xdg-utils
       inotify-tools

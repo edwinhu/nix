@@ -15,7 +15,6 @@ with pkgs; [
   bun
   openssh
   postgresql
-  zathura
   sox
   sqlite
   stow
