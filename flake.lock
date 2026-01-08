@@ -654,11 +654,11 @@
     "zathura-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1767884848,
-        "narHash": "sha256-Z4TTde3m7GP4wMpwY6e8oSkNLiPTfObm22KmpJ0qMHs=",
+        "lastModified": 1767897716,
+        "narHash": "sha256-W7uOoyZmaFwb41YNsGA9PRhQOwyFzhfy6RnYDNXsMqU=",
         "owner": "edwinhu",
         "repo": "zathura",
-        "rev": "b0ec20ae7458a5ffa637e0813259051771eeb0cd",
+        "rev": "89cec1e366a6d328d46d626f01111dcf3131900c",
         "type": "github"
       },
       "original": {
