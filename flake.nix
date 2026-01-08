@@ -85,6 +85,15 @@
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
+        # Omarchy (Arch Linux) desktop - uses minimal nix config, dotfiles managed separately
+        # Key is "edwinhu-alarm" to avoid conflict with MBA's edwinhu, but actual username is edwinhu
+        "edwinhu-alarm" = {
+          system = "aarch64-linux";
+          host = "alarm";
+          fullName = "Edwin Hu";
+          email = "eddyhu@gmail.com";
+          username = "edwinhu";  # Actual username on the system
+        };
       };
       
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
@@ -286,7 +295,6 @@
                       mkdir -p "$out/Applications/Zathura.app/Contents/MacOS"
                       mkdir -p "$out/Applications/Zathura.app/Contents/Resources"
 
-                      # Create the executable wrapper with HiDPI support
                       cat > "$out/Applications/Zathura.app/Contents/MacOS/Zathura" <<'SCRIPT'
                       #!/bin/bash
                       export GDK_BACKEND=quartz
@@ -294,13 +302,11 @@
                       SCRIPT
                       chmod +x "$out/Applications/Zathura.app/Contents/MacOS/Zathura"
 
-                      # Create icns icon from SVG using png2icns
                       for size in 16 32 48 128 256 512 1024; do
                         rsvg-convert -w $size -h $size ${zathura-src}/data/org.pwmt.zathura.svg -o icon_''${size}.png
                       done
                       png2icns "$out/Applications/Zathura.app/Contents/Resources/AppIcon.icns" icon_*.png
 
-                      # Create Info.plist with PDF handler registration and icon
                       cat > "$out/Applications/Zathura.app/Contents/Info.plist" <<'PLIST'
                       <?xml version="1.0" encoding="UTF-8"?>
                       <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -340,6 +346,9 @@
                       </dict>
                       </plist>
                       PLIST
+
+                      touch "$out/.metadata_never_index"
+                      touch "$out/Applications/.metadata_never_index"
                     '';
                   };
                 })
@@ -377,7 +386,11 @@
       # Home-manager configurations for Linux hosts
       homeConfigurations = let
         linuxUsers = nixpkgs.lib.filterAttrs (user: info: nixpkgs.lib.hasSuffix "linux" info.system) userHosts;
-      in nixpkgs.lib.mapAttrs (user: info:
+      in nixpkgs.lib.mapAttrs (configKey: info:
+        let
+          # Use info.username if set, otherwise fall back to the config key
+          user = info.username or configKey;
+        in
         home-manager.lib.homeManagerConfiguration {
           pkgs = import nixpkgs {
             system = info.system;

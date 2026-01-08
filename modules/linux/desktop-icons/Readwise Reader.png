@@ -1,0 +1,11 @@
+  <div class="section hero no-bg">
+    <div class="container">
+      <div class="row">
+        <div class="twelve columns">
+          <h1 class="hero-heading" id="step-heading">Not Found</h1>
+          <div>The requested URL was not found on this server.</div>
+          <p>If something went wrong, please <a href="mailto:hello@readwise.io?subject=404 error">let us know</a>.</p>
+        </div>
+      </div>
+    </div>
+  </div>

@@ -37,11 +37,19 @@ else
     
     export NIXPKGS_ALLOW_UNFREE=1
     
-    echo -e "${YELLOW}Building home-manager configuration for user: ${USERNAME}${NC}"
+    # Map username to config key (handles cases where username differs from config key)
+    # e.g., edwinhu on alarm uses config key "edwinhu-alarm"
+    HOSTNAME=$(hostname)
+    CONFIG_KEY="${USERNAME}"
+    if [ "$USERNAME" = "edwinhu" ] && [ "$HOSTNAME" = "alarm" ]; then
+        CONFIG_KEY="edwinhu-alarm"
+    fi
+    
+    echo -e "${YELLOW}Building home-manager configuration: ${CONFIG_KEY} (user: ${USERNAME})${NC}"
     echo -e "${YELLOW}Starting build...${NC}"
     
     # Build and activate home-manager configuration
-    nix --extra-experimental-features 'nix-command flakes' run .#homeConfigurations.${USERNAME}.activationPackage $@
+    nix --extra-experimental-features 'nix-command flakes' run ".#homeConfigurations.${CONFIG_KEY}.activationPackage" $@
     
     echo -e "${GREEN}Home-manager switch complete!${NC}"
 fi
