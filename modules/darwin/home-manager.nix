@@ -72,6 +72,28 @@
           force = true;
         };
       };
+
+      # Set agenix secret paths for GUI apps via launchd
+      # (home.sessionVariables only works for shell sessions)
+      launchd.agents.set-agenix-env = {
+        enable = true;
+        config = {
+          Label = "com.user.set-agenix-env";
+          ProgramArguments = [
+            "/bin/bash"
+            "-c"
+            ''
+              AGENIX_DIR="$(getconf DARWIN_USER_TEMP_DIR)agenix"
+              launchctl setenv GOOGLE_SEARCH_API_KEY_FILE "$AGENIX_DIR/google-search-api-key"
+              launchctl setenv GOOGLE_SEARCH_ENGINE_ID_FILE "$AGENIX_DIR/google-search-engine-id"
+              launchctl setenv GEMINI_API_KEY_FILE "$AGENIX_DIR/gemini-api-key"
+              launchctl setenv CLAUDE_API_KEY_FILE "$AGENIX_DIR/claude-api-key"
+              launchctl setenv READWISE_TOKEN_FILE "$AGENIX_DIR/readwise-token"
+            ''
+          ];
+          RunAtLoad = true;
+        };
+      };
       programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
     };
     extraSpecialArgs = { inherit user userInfo nix-secrets agenix; };
