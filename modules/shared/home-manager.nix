@@ -5,136 +5,16 @@ let
 in
 
 {
-  # Shared shell configuration
+  # Program configurations (shell config managed by dotfiles)
+  # Tools like starship, atuin, zoxide, direnv, fzf are initialized in dotfiles/.shell_common
 
-  atuin = {
-        enable = true;
-        settings = {
-        style = "compact"; 
-        };
-    };
+  bat = {
+    enable = true;
+  };
 
-    bat = {
-        enable = true;
-    };
-
-    btop = {
-        enable = true;
-    };
-
-    fzf = {
-        enable = true;
-        enableZshIntegration = true;
-        # Catppuccin Mocha theme is already handled by Stylix
-    };
-
-    direnv = {
-        enable = true;
-        config = {
-          global = {
-            hide_env_diff = true;
-          };
-        };
-        # Ensure direnv doesn't interfere with other hooks
-        nix-direnv = {
-          enable = true;
-        };
-    };
-
-    zoxide = {
-        enable = true;
-        # Use default 'z' command instead of overriding 'cd' (prevents conflict with direnv in VSCode)
-        options = [];
-    };
-
-    zsh = {
-        enable = true;
-        autocd = false;
-        enableCompletion = true;
-        completionInit = ''
-          # Safe compinit to prevent double-free errors in VSCode
-          autoload -Uz compinit
-          # Only regenerate dump once a day for performance
-          if [[ -n ''${HOME}/.zcompdump(#qN.mh+24) ]]; then
-            compinit -i
-          else
-            compinit -C -i
-          fi
-        '';
-
-        cdpath = [ "~/.local/share/src" ];
-        plugins = [
-          {
-            name = "fzf-tab";
-            src = "${pkgs.zsh-fzf-tab}/share/fzf-tab";
-          }
-        ];
-        sessionVariables = {
-          EDITOR = "nvim";
-          VISUAL = "nvim";
-          ALTERNATE_EDITOR = "";
-          HISTIGNORE = "pwd:ls:cd";
-          NOSYSZSHRC = "1";  # Prevent system zshrc from running after user config
-          # Zellij environment variables
-          ZELLIJ_LOG_LEVEL = "off";
-          ZELLIJ_LOG_DIR = "/tmp";
-          ZELLIJ_CONFIG_DIR = "$HOME/.config/zellij";
-        };
-        shellAliases = {
-          # NOTE: zellij requires Full Disk Access on macOS Sequoia
-          # Grant permissions in: System Settings → Privacy & Security → Full Disk Access
-          zj = "${pkgs.zellij}/bin/zellij";
-          # API key retrieval aliases
-          get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
-          get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
-          get-google-search-api-key = "cat $GOOGLE_SEARCH_API_KEY_FILE";
-          get-google-search-engine-id = "cat $GOOGLE_SEARCH_ENGINE_ID_FILE";
-          get-readwise-token = "cat $READWISE_TOKEN_FILE";
-        };
-        envExtra = ''
-          # Source nix daemon early (before .zshrc) to make nix commands available
-          if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
-            . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-          fi
-        '';
-        initContent = ''
-          # Source common shell configuration early (loads .shell_env with nix and PATH)
-          if [[ -f "$HOME/.shell_common" ]]; then
-            source "$HOME/.shell_common"
-          fi
-
-          # Source shell aliases
-          if [[ -f ~/.shell_aliases ]]; then
-            source ~/.shell_aliases
-          fi
-        '';
-        profileExtra = ''
-        # Login shell configuration
-        # Environment variables and PATH are set in dotfiles/.shell_env
-        '';
-    };
-
-  # zellij configuration disabled since we use custom wrapper
-  # zellij = {
-  #   enable = true;
-  #   settings = {
-  #     theme = "catppuccin-mocha";
-  #     default_shell = "zsh";
-  #     pane_frames = false;
-  #     mouse_mode = false;
-  #     copy_command = "pbcopy";
-  #     copy_clipboard = "primary";
-  #     show_startup_tips = false;
-  #     session_serialization = false;
-  #     auto_layout = true;
-  #     scroll_buffer_size = 10000;
-  #     log = {
-  #       filter = "off";
-  #       destination = "file";
-  #       file = "/tmp/zellij.log";
-  #     };
-  #   };
-  # };
+  btop = {
+    enable = true;
+  };
 
   git = {
     enable = true;
@@ -183,11 +63,8 @@ in
     };
   };
 
-  starship = {
-    enable = true;
-    settings = {
-    };
-  };
+  # Starship config managed by dotfiles/.config/starship.toml
+  # starship = { enable = true; };
 
   tmux = {
     enable = false;  # Disabled - using zellij instead
