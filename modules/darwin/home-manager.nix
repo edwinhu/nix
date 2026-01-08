@@ -53,6 +53,7 @@
   # Enable home-manager
   home-manager = {
     useGlobalPkgs = true;
+    backupFileExtension = "backup";
     users.${user} = { pkgs, lib, config, ... }: {
       imports = [
         agenix.homeManagerModules.default
@@ -68,6 +69,7 @@
         };
         file.".local/bin/claude" = {
           source = "${pkgs.claude-code}/bin/claude";
+          force = true;
         };
       };
       programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };

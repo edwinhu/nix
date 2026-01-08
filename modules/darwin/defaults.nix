@@ -107,6 +107,11 @@
   # Enable Touch ID authentication for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
 
+  # Allow admin group members to use sudo without password
+  security.sudo.extraConfig = ''
+    %admin ALL=(ALL) NOPASSWD: ALL
+  '';
+
   # Sketchybar configuration
   programs.sketchybar = {
     enable = true;

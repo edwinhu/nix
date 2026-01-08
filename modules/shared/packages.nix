@@ -12,6 +12,7 @@ with pkgs; [
   neofetch
   neovim
   nodejs
+  bun
   openssh
   postgresql
   zathura

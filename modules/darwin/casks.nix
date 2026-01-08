@@ -31,6 +31,9 @@ _:
   "tailscale-app"
   "typora"
 
+  # E2E Testing / Desktop Automation
+  "hammerspoon"
+
   # Productivity Tools
   "forklift"
   "google-drive"
