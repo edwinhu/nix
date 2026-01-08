@@ -30,8 +30,9 @@
 
   # Set environment variables pointing to agenix secret file paths
   # Applications can read from these paths at runtime
+  # macOS: uses Darwin temp dir, Linux: uses XDG_RUNTIME_DIR (works on both NixOS and standalone)
   home.sessionVariables = let
-    tempDir = if pkgs.stdenv.isDarwin then "$(getconf DARWIN_USER_TEMP_DIR)agenix" else "/run/agenix";
+    tempDir = if pkgs.stdenv.isDarwin then "$(getconf DARWIN_USER_TEMP_DIR)agenix" else "\${XDG_RUNTIME_DIR}/agenix";
   in {
     GOOGLE_SEARCH_API_KEY_FILE = "${tempDir}/google-search-api-key";
     GOOGLE_SEARCH_ENGINE_ID_FILE = "${tempDir}/google-search-engine-id";
