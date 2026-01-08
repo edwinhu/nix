@@ -6,6 +6,10 @@ let
   iconDir = ../../../modules/linux/desktop-icons;
 in
 {
+  imports = [
+    ../../../modules/shared/home-secrets.nix
+  ];
+
   # Basic home-manager configuration
   home = {
     stateVersion = "25.05";
