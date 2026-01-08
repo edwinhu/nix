@@ -254,6 +254,7 @@
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
+                  opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                   zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                     zathura_core = zprev.zathura_core.overrideAttrs (old: {
                       src = zathura-src;
@@ -382,6 +383,7 @@
               emacs-overlay.overlays.default
               (final: prev: {
                 claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
+                opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                 zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                   zathura_core = zprev.zathura_core.overrideAttrs (old: {
                     src = zathura-src;
