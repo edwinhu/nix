@@ -13,22 +13,10 @@
     # Linux-specific packages
     packages = with pkgs; [
       # Add Linux-specific packages here
-      zathura
-      xclip
       xdg-utils
       inotify-tools
+      imagemagick
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
-
-      # E2E Testing / Desktop Automation - Wayland
-      ydotool      # Wayland input simulation
-      wtype        # Wayland keyboard input
-      grim         # Wayland screenshots
-      slurp        # Wayland region selection
-
-      # E2E Testing / Desktop Automation - X11
-      xdotool      # X11 input simulation
-      scrot        # X11 screenshots
-      imagemagick  # Screenshot comparison (compare command)
     ] ++ (import ../shared/packages.nix { inherit pkgs; });
     
     sessionVariables = {

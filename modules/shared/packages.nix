@@ -8,21 +8,16 @@ with pkgs; [
   gh
   killall
   lazygit
-  localsend
-  neofetch
   neovim
   nodejs
   bun
   openssh
   postgresql
-  sox
   sqlite
   stow
   tldr
   wget
   yazi
-  ueberzugpp      # Image rendering backend for yazi
-  ffmpegthumbnailer  # Video thumbnails for yazi
   poppler-utils   # PDF previews for yazi
   zeromq
   zip
@@ -39,12 +34,7 @@ with pkgs; [
 
   # Media-related packages
   chafa
-  cm_unicode
-  dejavu_fonts
-  font-awesome
   libsixel
-  noto-fonts
-  noto-fonts-color-emoji
 
   # data science tools
   pixi
@@ -90,9 +80,4 @@ with pkgs; [
   xan
   zellij
   zoxide
-
-  # Fonts - only install needed nerd fonts to save space
-  # Changed from: builtins.attrValues pkgs.nerd-fonts (installs all ~7GB!)
-  # To: only maple-mono (saves ~6GB)
-  maple-mono.NF
 ]
