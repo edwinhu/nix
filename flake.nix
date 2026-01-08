@@ -94,6 +94,31 @@
             export EDITOR=vim
           '';
         };
+        zathura = with pkgs; mkShell {
+          nativeBuildInputs = [
+            meson
+            ninja
+            pkg-config
+            gettext
+            python3
+          ];
+          buildInputs = [
+            glib
+            gtk3
+            girara
+            sqlite
+            file
+            json-glib
+            curl
+            cairo
+          ] ++ lib.optionals stdenv.isDarwin [
+            gtk-mac-integration
+          ];
+          shellHook = ''
+            echo "Zathura development shell"
+            echo "Run: meson setup build && ninja -C build"
+          '';
+        };
       };
       mkApp = scriptName: system: {
         type = "app";
@@ -103,6 +128,7 @@
           echo "Running ${scriptName} for ${system}"
           exec bash ${self}/apps/${system}/${scriptName}
         '')}/bin/${scriptName}";
+        meta.description = "Run ${scriptName} for ${system}";
       };
       mkClaudeUpdateApp = system:
         let
@@ -115,6 +141,7 @@
           };
         in {
         type = "app";
+        meta.description = "Update Claude Code to latest version";
         program = "${(pkgs.writeScriptBin "claude-update" ''
           #!/usr/bin/env bash
           set -e
@@ -250,7 +277,7 @@
                     pname = "Zathura";
                     version = "0.5.8";
                     dontUnpack = true;
-                    nativeBuildInputs = [ prev.makeWrapper ];
+                    nativeBuildInputs = [ prev.makeWrapper prev.librsvg prev.libicns ];
                     installPhase = ''
                       mkdir -p "$out/Applications/Zathura.app/Contents/MacOS"
                       mkdir -p "$out/Applications/Zathura.app/Contents/Resources"
@@ -258,13 +285,18 @@
                       # Create the executable wrapper with HiDPI support
                       cat > "$out/Applications/Zathura.app/Contents/MacOS/Zathura" <<'SCRIPT'
                       #!/bin/bash
-                      # Use native macOS Quartz backend for proper Retina support
                       export GDK_BACKEND=quartz
                       exec ${final.zathura}/bin/zathura "$@"
                       SCRIPT
                       chmod +x "$out/Applications/Zathura.app/Contents/MacOS/Zathura"
 
-                      # Create Info.plist with PDF handler registration
+                      # Create icns icon from SVG using png2icns
+                      for size in 16 32 48 128 256 512 1024; do
+                        rsvg-convert -w $size -h $size ${zathura-src}/data/org.pwmt.zathura.svg -o icon_''${size}.png
+                      done
+                      png2icns "$out/Applications/Zathura.app/Contents/Resources/AppIcon.icns" icon_*.png
+
+                      # Create Info.plist with PDF handler registration and icon
                       cat > "$out/Applications/Zathura.app/Contents/Info.plist" <<'PLIST'
                       <?xml version="1.0" encoding="UTF-8"?>
                       <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -278,6 +310,8 @@
                         <string>Zathura</string>
                         <key>CFBundleDisplayName</key>
                         <string>Zathura</string>
+                        <key>CFBundleIconFile</key>
+                        <string>AppIcon</string>
                         <key>CFBundleVersion</key>
                         <string>0.5.8</string>
                         <key>CFBundleShortVersionString</key>
