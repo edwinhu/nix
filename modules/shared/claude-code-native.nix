@@ -3,7 +3,7 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "2.0.76";
+  version = "2.1.2";
 
   # Platform-specific binary sources
   platforms = {

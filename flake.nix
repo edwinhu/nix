@@ -193,17 +193,12 @@
 
           echo -e "''${YELLOW}Updating $NATIVE_NIX...''${NC}"
 
-          ${pkgs.gnused}/bin/sed -i \
-            -e "s/version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" \
-            -e "s|x86_64-linux = {|x86_64-linux = {\n      platform = \"linux-x64\";\n      hash = \"$HASH_LINUX_X64\";\n    };|" \
-            "$NATIVE_NIX"
-
-          # Use perl for more reliable multi-line replacement
-          ${pkgs.perl}/bin/perl -i -0pe "s/version = \"[^\"]+\"/version = \"$NEW_VERSION\"/g" "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's/(x86_64-linux = \{)[^}]+\}/\1\n      platform = "linux-x64";\n      hash = "'"$HASH_LINUX_X64"'";\n    }/g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's/(aarch64-linux = \{)[^}]+\}/\1\n      platform = "linux-arm64";\n      hash = "'"$HASH_LINUX_ARM64"'";\n    }/g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's/(x86_64-darwin = \{)[^}]+\}/\1\n      platform = "darwin-x64";\n      hash = "'"$HASH_DARWIN_X64"'";\n    }/g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's/(aarch64-darwin = \{)[^}]+\}/\1\n      platform = "darwin-arm64";\n      hash = "'"$HASH_DARWIN_ARM64"'";\n    }/g' "$NATIVE_NIX"
+          # Use perl for multi-line replacement with # delimiter to avoid conflicts with / in hashes
+          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-linux = \{)[^}]+\}#\1\n      platform = "linux-x64";\n      hash = "'"$HASH_LINUX_X64"'";\n    }#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-linux = \{)[^}]+\}#\1\n      platform = "linux-arm64";\n      hash = "'"$HASH_LINUX_ARM64"'";\n    }#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-x64";\n      hash = "'"$HASH_DARWIN_X64"'";\n    }#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-arm64";\n      hash = "'"$HASH_DARWIN_ARM64"'";\n    }#g' "$NATIVE_NIX"
 
           echo -e "''${YELLOW}Building updated claude-code package...''${NC}"
           cd "$HOME/nix"
