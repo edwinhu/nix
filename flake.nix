@@ -395,6 +395,53 @@
               (final: prev: {
                 claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                 opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
+
+                # Double Commander Qt6 from official releases
+                doublecmd = prev.stdenv.mkDerivation rec {
+                  pname = "doublecmd";
+                  version = "1.1.32";
+
+                  src = prev.fetchurl {
+                    url = "https://github.com/doublecmd/doublecmd/releases/download/v${version}/doublecmd-${version}.qt6.aarch64.tar.xz";
+                    hash = "sha256-jf0m/e0wCS/V3nCDPVK+AnD9Qb/FeP3wwuF3g7bJhP0=";
+                  };
+
+                  nativeBuildInputs = [
+                    prev.makeWrapper
+                    prev.autoPatchelfHook
+                    prev.qt6.wrapQtAppsHook
+                  ];
+
+                  buildInputs = [
+                    prev.qt6.qtbase
+                    prev.qt6.qtwayland
+                    prev.qt6.qtsvg
+                  ];
+
+                  installPhase = ''
+                    runHook preInstall
+                    mkdir -p $out/lib/doublecmd $out/bin
+                    cp -r * $out/lib/doublecmd/
+
+                    # Remove default settings directory - will use ~/.config/doublecmd
+                    rm -rf $out/lib/doublecmd/settings
+
+                    # Wrap with Qt6 environment variables
+                    makeWrapper $out/lib/doublecmd/doublecmd $out/bin/doublecmd \
+                      --set QT_QPA_PLATFORMTHEME qt6ct \
+                      --set QT_QPA_PLATFORM wayland
+
+                    runHook postInstall
+                  '';
+
+                  meta = with prev.lib; {
+                    description = "Two-panel graphical file manager (Qt6)";
+                    homepage = "https://doublecmd.sourceforge.io/";
+                    license = licenses.gpl2Plus;
+                    platforms = [ "aarch64-linux" ];
+                  };
+                };
+
                 zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                   zathura_core = zprev.zathura_core.overrideAttrs (old: {
                     src = zathura-src;
