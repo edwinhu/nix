@@ -416,6 +416,7 @@
                     prev.qt6.qtbase
                     prev.qt6.qtwayland
                     prev.qt6.qtsvg
+                    prev.kdePackages.qt6ct
                   ];
 
                   installPhase = ''
