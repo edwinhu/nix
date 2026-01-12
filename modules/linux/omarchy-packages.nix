@@ -44,6 +44,9 @@ with pkgs; [
   xan
   zellij
 
+  # File managers
+  doublecmd
+
   # Typesetting
   tectonic
   typst
