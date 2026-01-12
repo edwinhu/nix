@@ -13,7 +13,7 @@ let
     };
     aarch64-linux = {
       platform = "linux-arm64";
-      hash = "sha256-9kqZTI5b+4TXJCzrvsddaRnbLuRtULj8eojVBm2xk/k=";
+      hash = "sha256-rWHJuKF2cmK/TUDLIWqQOPG97KWxijF8Z/a7ainaTyM=";
     };
     x86_64-darwin = {
       platform = "darwin-x64";
