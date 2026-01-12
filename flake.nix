@@ -432,6 +432,26 @@
                       --set QT_QPA_PLATFORMTHEME qt6ct \
                       --set QT_QPA_PLATFORM wayland
 
+                    # Install desktop entry
+                    mkdir -p $out/share/applications
+                    cat > $out/share/applications/doublecmd.desktop <<'EOF'
+[Desktop Entry]
+Name=Double Commander
+GenericName=File Manager
+Comment=Double Commander is a cross platform open source file manager with two panels side by side.
+Terminal=false
+Icon=doublecmd
+Exec=doublecmd %F
+Type=Application
+MimeType=inode/directory;
+Categories=Utility;FileTools;FileManager;
+Keywords=folder;manager;explore;disk;filesystem;orthodox;copy;queue;queuing;operations;
+EOF
+
+                    # Install icon
+                    mkdir -p $out/share/pixmaps
+                    cp $out/lib/doublecmd/pixmaps/mainicon/alt/256px-dcfinal.png $out/share/pixmaps/doublecmd.png
+
                     runHook postInstall
                   '';
 
