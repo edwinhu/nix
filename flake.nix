@@ -434,13 +434,13 @@
 
                     # Install desktop entry
                     mkdir -p $out/share/applications
-                    cat > $out/share/applications/doublecmd.desktop <<'EOF'
+                    cat > $out/share/applications/doublecmd.desktop <<EOF
 [Desktop Entry]
 Name=Double Commander
 GenericName=File Manager
 Comment=Double Commander is a cross platform open source file manager with two panels side by side.
 Terminal=false
-Icon=doublecmd
+Icon=$out/share/pixmaps/doublecmd.png
 Exec=doublecmd %F
 Type=Application
 MimeType=inode/directory;
