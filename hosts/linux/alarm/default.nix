@@ -19,6 +19,10 @@ in
       pkgs.zathura  # Custom fork with annotations
     ];
 
+    # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
+    file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
+    file.".local/share/icons/Papirus-Dark".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark";
+
     # Install desktop entry icons
     file.".local/share/applications/icons/OpenCode.svg".source = "${iconDir}/Docker.svg";  # Placeholder until we have OpenCode icon
     file.".local/share/applications/icons/Docker.svg".source = "${iconDir}/Docker.svg";
