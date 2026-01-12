@@ -441,7 +441,7 @@ GenericName=File Manager
 Comment=Double Commander is a cross platform open source file manager with two panels side by side.
 Terminal=false
 Icon=$out/share/pixmaps/doublecmd.png
-Exec=env QT_SCALE_FACTOR=1.5 doublecmd %F
+Exec=doublecmd %F
 Type=Application
 MimeType=inode/directory;
 Categories=Utility;FileTools;FileManager;
