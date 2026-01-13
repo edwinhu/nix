@@ -80,10 +80,10 @@ in
       mimeType = [ "text/calendar" "x-scheme-handler/morgen" ];
     };
 
-    beeper = {
+    beepertexts = {
       name = "Beeper";
       comment = "Beeper messaging app";
-      exec = "/home/${user}/.local/share/applications/appimages/Beeper.AppImage --no-sandbox %U";
+      exec = "${pkgs.beeper}/bin/beeper %U";
       terminal = false;
       type = "Application";
       icon = "beeper";

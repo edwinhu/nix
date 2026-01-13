@@ -17,6 +17,9 @@ with pkgs; [
   pixi
   uv
 
+  # Communication
+  beeper
+
   # Cloud and sync
   google-cloud-sdk
   localsend

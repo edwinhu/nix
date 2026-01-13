@@ -214,10 +214,80 @@
           echo "Run 'hash -r' or start a new shell to use the updated version."
         '')}/bin/claude-update";
       };
+      mkOpenCodeUpdateApp = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in {
+        type = "app";
+        meta.description = "Update OpenCode to latest version";
+        program = "${(pkgs.writeScriptBin "opencode-update" ''
+          #!/usr/bin/env bash
+          set -e
+
+          GREEN='\033[1;32m'
+          YELLOW='\033[1;33m'
+          RED='\033[1;31m'
+          NC='\033[0m'
+
+          NATIVE_NIX="$HOME/nix/modules/shared/opencode-native.nix"
+          GITHUB_API="https://api.github.com/repos/anomalyco/opencode/releases/latest"
+          GITHUB_DL="https://github.com/anomalyco/opencode/releases/download"
+
+          echo -e "''${YELLOW}Fetching latest OpenCode version...''${NC}"
+          NEW_VERSION=$(${pkgs.curl}/bin/curl -sS "$GITHUB_API" | ${pkgs.jq}/bin/jq -r '.tag_name' | ${pkgs.gnused}/bin/sed 's/^v//')
+          CURRENT_VERSION=$(${pkgs.gnugrep}/bin/grep 'version = ' "$NATIVE_NIX" | head -1 | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
+
+          echo "Current version: $CURRENT_VERSION"
+          echo "Latest version:  $NEW_VERSION"
+
+          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+            echo -e "''${GREEN}Already up to date!''${NC}"
+            exit 0
+          fi
+
+          echo -e "''${YELLOW}Fetching new hashes for all platforms...''${NC}"
+
+          get_sri_hash() {
+            local platform=$1
+            local ext=$2
+            local url="$GITHUB_DL/v$NEW_VERSION/opencode-$platform.$ext"
+            echo -e "  Fetching hash for $platform..." >&2
+            local hex_hash=$(${pkgs.curl}/bin/curl -sS -L "$url" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)
+            ${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$hex_hash"
+          }
+
+          HASH_LINUX_X64=$(get_sri_hash "linux-x64" "tar.gz")
+          HASH_LINUX_ARM64=$(get_sri_hash "linux-arm64" "tar.gz")
+          HASH_DARWIN_X64=$(get_sri_hash "darwin-x64" "zip")
+          HASH_DARWIN_ARM64=$(get_sri_hash "darwin-arm64" "zip")
+
+          echo -e "''${YELLOW}Updating $NATIVE_NIX...''${NC}"
+
+          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-linux = \{)[^}]+\}#\1\n      platform = "linux-x64";\n      ext = "tar.gz";\n      hash = "'"$HASH_LINUX_X64"'";\n    }#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-linux = \{)[^}]+\}#\1\n      platform = "linux-arm64";\n      ext = "tar.gz";\n      hash = "'"$HASH_LINUX_ARM64"'";\n    }#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-x64";\n      ext = "zip";\n      hash = "'"$HASH_DARWIN_X64"'";\n    }#g' "$NATIVE_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-arm64";\n      ext = "zip";\n      hash = "'"$HASH_DARWIN_ARM64"'";\n    }#g' "$NATIVE_NIX"
+
+          echo -e "''${YELLOW}Building updated opencode package...''${NC}"
+          cd "$HOME/nix"
+          OPENCODE_PATH=$(${pkgs.nix}/bin/nix build .#opencode --print-out-paths --no-link)
+
+          echo -e "''${GREEN}OpenCode updated: $OPENCODE_PATH''${NC}"
+
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$OPENCODE_PATH/bin/opencode" "$HOME/.local/bin/opencode"
+
+          echo -e "''${GREEN}Symlink updated: ~/.local/bin/opencode -> $OPENCODE_PATH/bin/opencode''${NC}"
+          echo ""
+          echo "Run 'hash -r' or start a new shell to use the updated version."
+        '')}/bin/opencode-update";
+      };
       mkLinuxApps = system: {
         "apply" = mkApp "apply" system;
         "build-switch" = mkApp "build-switch" system;
         "claude-update" = mkClaudeUpdateApp system;
+        "opencode-update" = mkOpenCodeUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -229,6 +299,7 @@
         "build" = mkApp "build" system;
         "build-switch" = mkApp "build-switch" system;
         "claude-update" = mkClaudeUpdateApp system;
+        "opencode-update" = mkOpenCodeUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -239,9 +310,10 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
-      # Expose claude-code as a package for quick updates without full rebuild
+      # Expose claude-code and opencode as packages for quick updates without full rebuild
       packages = forAllSystems (system: {
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
+        opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -481,6 +553,33 @@ EOF
                 });
                 zathura = final.zathuraPkgs.zathuraWrapper.override {
                   plugins = [ final.zathuraPkgs.zathura_pdf_mupdf ];
+                };
+
+                # Beeper for aarch64-linux - extracted AppImage (no FUSE needed)
+                beeper = let
+                  pname = "beeper";
+                  version = "4.2.455";
+                  src = prev.fetchurl {
+                    url = "https://beeper-desktop.download.beeper.com/builds/Beeper-${version}-arm64.AppImage";
+                    hash = "sha256-AYzbKzzwajt60CNJrL02pGyg5wGPPzXxldI7Yg8UzDI=";
+                    name = "Beeper-${version}-arm64-v2.AppImage";  # Different name to avoid cache
+                  };
+                  extracted = prev.appimageTools.extract { inherit pname version src; };
+                in prev.appimageTools.wrapType2 {
+                  inherit pname version src;
+                  extraPkgs = pkgs: with pkgs; [
+                    nss
+                    nspr
+                    # Emoji fonts for the picker
+                    noto-fonts-color-emoji
+                    twitter-color-emoji
+                  ];
+                  extraInstallCommands = ''
+                    # Add desktop entry and icon from extracted AppImage
+                    mkdir -p $out/share/applications $out/share/icons/hicolor/512x512/apps
+                    cp ${extracted}/beepertexts.desktop $out/share/applications/ || true
+                    cp ${extracted}/beepertexts.png $out/share/icons/hicolor/512x512/apps/beeper.png || true
+                  '';
                 };
               })
             ];
