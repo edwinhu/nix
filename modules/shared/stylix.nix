@@ -17,7 +17,7 @@
     # Qt theming via Stylix (generates Kvantum theme automatically)
     targets.qt = {
       enable = true;
-      platformTheme = "qtct";
+      platform = "qtct";
     };
   };
 
