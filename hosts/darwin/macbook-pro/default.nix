@@ -7,6 +7,8 @@
     ../../../modules/darwin/aerospace.nix
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
+    ../../../modules/darwin/logseq-dev.nix
+    ../../../modules/darwin/syncthing.nix
   ];
 
   # Karabiner-Elements: managed via Homebrew cask (nix-darwin service is broken for v15.7+)
@@ -17,11 +19,14 @@
     PATH = config.environment.systemPath;
   };
 
-  # Reminder for terminal app permissions
+  # Reminder for terminal and accessibility app permissions
   system.activationScripts.checkTerminalPermissions.text = ''
     echo "⚠️  Remember to grant Full Disk Access to terminal apps in System Settings"
     echo "   Privacy & Security → Full Disk Access → Add Ghostty & WezTerm"
     echo "   This is required for zellij and other terminal tools to work properly"
+    echo ""
+    echo "⚠️  If Karabiner-Elements or Hammerspoon stop working, re-grant Accessibility permissions:"
+    echo "   Privacy & Security → Accessibility → Re-enable Karabiner-Elements & Hammerspoon"
   '';
 
   # Create SSH config for port 420

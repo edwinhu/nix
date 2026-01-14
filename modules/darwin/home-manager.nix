@@ -23,7 +23,7 @@
     ];
     onActivation = {
       autoUpdate = true;
-      upgrade = true;
+      upgrade = false;  # Disabled: breaks accessibility permissions for Karabiner/Hammerspoon
       #cleanup = "uninstall";
     };
 

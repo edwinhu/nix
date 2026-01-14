@@ -76,6 +76,7 @@ with pkgs; [
   tinymist
   unrar
   unzip
+  websocat  # WebSocket client for Chrome DevTools Protocol
   wezterm
   xan
   zellij

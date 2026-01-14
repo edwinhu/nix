@@ -5,6 +5,12 @@
     ../shared/stylix.nix
   ];
 
+  # Linux-specific Stylix configuration (Qt theming)
+  stylix.targets.qt = {
+    enable = true;
+    platformTheme = "qtct";
+  };
+
   # Linux-specific configurations
   home = {
     username = user;
@@ -17,6 +23,11 @@
       inotify-tools
       imagemagick
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
+      # Qt configuration tools for Stylix
+      libsForQt5.qt5ct
+      kdePackages.qt6ct
+      libsForQt5.qtstyleplugin-kvantum
+      kdePackages.qtstyleplugin-kvantum
     ] ++ (import ../shared/packages.nix { inherit pkgs; });
     
     sessionVariables = {
@@ -52,6 +63,10 @@
 
   # Linux-specific services
   services = {
-    # Add Linux-specific services here
+    # Syncthing - continuous file synchronization
+    syncthing = {
+      enable = true;
+      tray.enable = false;  # No system tray on headless systems
+    };
   };
 }

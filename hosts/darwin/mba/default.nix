@@ -7,13 +7,18 @@
     ../../../modules/darwin/aerospace.nix
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
+    ../../../modules/darwin/logseq-dev.nix
+    ../../../modules/darwin/syncthing.nix
   ];
 
-  # Reminder for terminal app permissions
+  # Reminder for terminal and accessibility app permissions
   system.activationScripts.checkTerminalPermissions.text = ''
     echo "⚠️  Remember to grant Full Disk Access to terminal apps in System Settings"
     echo "   Privacy & Security → Full Disk Access → Add Ghostty & WezTerm"
     echo "   This is required for zellij and other terminal tools to work properly"
+    echo ""
+    echo "⚠️  If Karabiner-Elements or Hammerspoon stop working, re-grant Accessibility permissions:"
+    echo "   Privacy & Security → Accessibility → Re-enable Karabiner-Elements & Hammerspoon"
   '';
 
   # Configure system-level zsh to source local user overrides

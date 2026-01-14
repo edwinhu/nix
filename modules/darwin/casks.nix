@@ -21,7 +21,7 @@ _:
   "karabiner-elements"
   "claude"
   "homerow"
-  "logseq"
+  # "logseq"  # Using custom nix module for 0.11.x dev version
   "morgen"
   "obsidian"
   "paletro"
