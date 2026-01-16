@@ -22,7 +22,7 @@ _:
   "claude"
   "homerow"
   # "logseq"  # Using custom nix module for 0.11.x dev version
-  "morgen"
+  # "morgen"  # Waiting for cask to update to 4.0.0 (currently 3.6.19)
   "obsidian"
   "paletro"
   "protonvpn"
@@ -33,6 +33,9 @@ _:
 
   # E2E Testing / Desktop Automation
   "hammerspoon"
+
+  # Window Management
+  "dimentium/autoraise/autoraiseapp"  # Focus follows mouse
 
   # Productivity Tools
   "forklift"

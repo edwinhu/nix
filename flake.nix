@@ -38,6 +38,10 @@
       url = "github:presmihaylov/homebrew-taps";
       flake = false;
     };
+    dimentium-autoraise = {
+      url = "github:Dimentium/homebrew-autoraise";
+      flake = false;
+    };
     stylix = {
       url = "github:danth/stylix";
     };
@@ -63,7 +67,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -439,6 +443,7 @@
                   "homebrew/homebrew-bundle" = homebrew-bundle;
                   "railwaycat/homebrew-emacsmacport" = emacsmacport;
                   "presmihaylov/homebrew-taps" = presmihaylov-taps;
+                  "dimentium/homebrew-autoraise" = dimentium-autoraise;
                 };
                 mutableTaps = false;
                 autoMigrate = true;

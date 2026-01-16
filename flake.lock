@@ -151,6 +151,22 @@
         "type": "github"
       }
     },
+    "dimentium-autoraise": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1758100555,
+        "narHash": "sha256-Q0wg4GKvUaFhRIjGimCnRW7L4w3gEse45IddLTudV+o=",
+        "owner": "Dimentium",
+        "repo": "homebrew-autoraise",
+        "rev": "472b4dea9eefc82ff24a786bc4497d15cf19bad2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Dimentium",
+        "repo": "homebrew-autoraise",
+        "type": "github"
+      }
+    },
     "emacs-overlay": {
       "inputs": {
         "nixpkgs": [
@@ -476,6 +492,7 @@
       "inputs": {
         "agenix": "agenix",
         "darwin": "darwin_2",
+        "dimentium-autoraise": "dimentium-autoraise",
         "emacs-overlay": "emacs-overlay",
         "emacsmacport": "emacsmacport",
         "home-manager": "home-manager_2",
