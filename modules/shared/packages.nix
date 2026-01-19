@@ -36,6 +36,9 @@ with pkgs; [
   chafa
   libsixel
 
+  # Document processing
+  libreoffice-bin  # Headless spreadsheet recalculation via soffice
+
   # data science tools
   pixi
   uv

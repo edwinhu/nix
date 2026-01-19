@@ -16,9 +16,6 @@ _:
   "superhuman"
   "zoom"
 
-  # Document Processing
-  "libreoffice"  # Headless spreadsheet recalculation
-
   # Utility Tools
   "bitwarden"
   "karabiner-elements"
