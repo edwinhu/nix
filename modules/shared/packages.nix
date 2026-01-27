@@ -37,7 +37,6 @@ with pkgs; [
   libsixel
 
   # Document processing
-  libreoffice-bin  # Headless spreadsheet recalculation via soffice
 
   # data science tools
   pixi

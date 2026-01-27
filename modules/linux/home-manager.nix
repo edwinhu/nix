@@ -8,7 +8,7 @@
   # Linux-specific Stylix configuration (Qt theming)
   stylix.targets.qt = {
     enable = true;
-    platformTheme = "qtct";
+    platform = "qtct";
   };
 
   # Linux-specific configurations
@@ -22,6 +22,7 @@
       xdg-utils
       inotify-tools
       imagemagick
+      libreoffice  # Headless spreadsheet recalculation via soffice --headless
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
       # Qt configuration tools for Stylix
       libsForQt5.qt5ct
