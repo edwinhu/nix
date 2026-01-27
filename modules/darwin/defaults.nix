@@ -1,4 +1,4 @@
-{ config, pkgs, user, userInfo, ... }:
+{ config, pkgs, user, userInfo, clawdbot-skills, ... }:
 
 {
   imports = [
@@ -24,6 +24,7 @@
 
   # Load darwin packages (includes shared)
   environment.systemPackages = with pkgs; [
+    clawdbot-skills.packages.${pkgs.system}.clawdbot-skills
   ] ++ (import ./packages.nix { inherit pkgs; });
 
   system = {
@@ -132,7 +133,6 @@
       { path = "/Applications/Dia.app"; }
       { path = "/Applications/Morgen.app"; }
       { path = "/Applications/Visual Studio Code.app"; }
-      { path = "/Applications/Logseq.app"; }
       { path = "/Applications/Obsidian.app"; }
       { path = "/Applications/Bitwarden.app"; }
       { path = "/Applications/Beeper Desktop.app"; }

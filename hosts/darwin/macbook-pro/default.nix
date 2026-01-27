@@ -7,7 +7,6 @@
     ../../../modules/darwin/aerospace.nix
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
-    ../../../modules/darwin/logseq-dev.nix
     ../../../modules/darwin/syncthing.nix
   ];
 

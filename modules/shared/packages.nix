@@ -46,6 +46,7 @@ with pkgs; [
   # AI tools
   claude-code
   opencode
+  mgrep
 
   # Text and terminal utilities
   ast-grep

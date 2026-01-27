@@ -65,9 +65,13 @@
       url = "github:edwinhu/zathura-pdf-mupdf";
       flake = false;
     };
+    clawdbot-skills = {
+      url = "path:./clawdbot";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -314,10 +318,11 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
-      # Expose claude-code and opencode as packages for quick updates without full rebuild
+      # Expose claude-code, opencode, and mgrep as packages for quick updates without full rebuild
       packages = forAllSystems (system: {
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
         opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
+        mgrep = (import nixpkgs { inherit system; }).callPackage ./modules/shared/mgrep.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -338,6 +343,7 @@
                   '';
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
+                  mgrep = prev.callPackage ./modules/shared/mgrep.nix {};
                   zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                     zathura_core = zprev.zathura_core.overrideAttrs (old: {
                       src = zathura-src;
@@ -472,6 +478,7 @@
               (final: prev: {
                 claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                 opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
+                mgrep = prev.callPackage ./modules/shared/mgrep.nix {};
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {
