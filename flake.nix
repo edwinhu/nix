@@ -318,11 +318,11 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
-      # Expose claude-code, opencode, and mgrep as packages for quick updates without full rebuild
+      # Expose claude-code, opencode, and superhuman-cli as packages for quick updates without full rebuild
       packages = forAllSystems (system: {
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
         opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
-        mgrep = (import nixpkgs { inherit system; }).callPackage ./modules/shared/mgrep.nix {};
+        superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -343,7 +343,7 @@
                   '';
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
-                  mgrep = prev.callPackage ./modules/shared/mgrep.nix {};
+                  superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                     zathura_core = zprev.zathura_core.overrideAttrs (old: {
                       src = zathura-src;
@@ -478,7 +478,7 @@
               (final: prev: {
                 claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                 opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
-                mgrep = prev.callPackage ./modules/shared/mgrep.nix {};
+                superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {
