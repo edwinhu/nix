@@ -84,6 +84,21 @@
       };
     };
 
+    # Copy nix .apps that need macOS TCC permissions to /Applications
+    # so permissions persist across nix rebuilds (TCC ties to binary path,
+    # and /Applications/Nix Apps/ gets recreated on every rebuild).
+    activationScripts.copyNixApps.text = ''
+      echo "Copying nix apps to /Applications (stable paths for TCC permissions)..."
+      for app in WezTerm Emacs; do
+        if [ -e "/Applications/Nix Apps/$app.app" ]; then
+          rm -rf "/Applications/$app.app"
+          cp -RL "/Applications/Nix Apps/$app.app" "/Applications/$app.app"
+          chmod -R u+w "/Applications/$app.app"
+          echo "  Copied $app.app"
+        fi
+      done
+    '';
+
     # Set default app handlers (idempotent activation script)
     activationScripts.postActivation.text = ''
       # ForkLift as default folder handler
@@ -127,7 +142,7 @@
     enable = true;
     username = user;
     entries = [
-      { path = "/Applications/Nix Apps/WezTerm.app"; }
+      { path = "/Applications/WezTerm.app"; }
       { path = "/Applications/Superhuman.app"; }
       { path = "/Applications/Reader.app"; }
       { path = "/Applications/Dia.app"; }

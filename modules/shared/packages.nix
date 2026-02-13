@@ -24,6 +24,7 @@ with pkgs; [
 
   # Encryption and security tools
   age
+  bitwarden-cli
   gnupg
   libfido2
   sops
@@ -42,10 +43,12 @@ with pkgs; [
   pixi
   uv
 
+  # semantic search
+  semtools  # search "query" files... — no indexing needed
+
   # AI tools
   claude-code
   opencode
-  mgrep
 
   # Text and terminal utilities
   ast-grep

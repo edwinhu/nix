@@ -1,28 +1,28 @@
 { lib, stdenv, fetchurl, unzip, gnutar, gzip }:
 
 let
-  version = "1.1.17";
+  version = "1.1.64";
 
   platforms = {
     x86_64-linux = {
       platform = "linux-x64";
       ext = "tar.gz";
-      hash = "sha256-q7v34mXvE+kWkmXKkdn1cUrq3Yh57uy2ULNR/iooDm8=";
+      hash = "sha256-RINJCXzpPZbl0ieUD95U9x//DUdssrFnJBfv2pKlfB4=";
     };
     aarch64-linux = {
       platform = "linux-arm64";
       ext = "tar.gz";
-      hash = "sha256-LiY58ZpXAOkv9ouDITobFsccbBHHEf7MWlAm4TIdEaI=";
+      hash = "sha256-brUpjRZvd6Fj18jJ6Cu/6ll+JuMNLFZ4kzQ5NYkv2UY=";
     };
     x86_64-darwin = {
       platform = "darwin-x64";
       ext = "zip";
-      hash = "sha256-1Emg57OckBYtRPuVBoj8nkyTMo16knqjVOJMu7gXx/o=";
+      hash = "sha256-ShokyXTUcNWGJJddimqoWJFN95Q9vRDU/gy7A3t1XGM=";
     };
     aarch64-darwin = {
       platform = "darwin-arm64";
       ext = "zip";
-      hash = "sha256-ZHLf0VspJYTWTean5VGqHEhtQZeIDCRTJ07Va0YoISk=";
+      hash = "sha256-egB7GW5ptTPD5v5B0wy2AAuTtM93yp3WxR3mSCscd3Y=";
     };
   };
 

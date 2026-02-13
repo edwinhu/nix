@@ -1,5 +1,5 @@
 {
-  description = "Clawdbot skills dependencies (gog, mcporter, obsidian-cli, summarize, whisper)";
+  description = "Clawdbot skills dependencies (mcporter, summarize, whisper)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -10,52 +10,6 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-
-        # GOG CLI - Google Workspace CLI
-        gogcli = pkgs.buildGoModule rec {
-          pname = "gog";
-          version = "0.9.0";
-
-          src = pkgs.fetchFromGitHub {
-            owner = "steipete";
-            repo = "gogcli";
-            rev = "v${version}";
-            hash = "sha256-DXRw5jf/5fC8rgwLIy5m9qkxy3zQNrUpVG5C0RV7zKM=";
-          };
-
-          vendorHash = "sha256-nig3GI7eM1XRtIoAh1qH+9PxPPGynl01dCZ2ppyhmzU=";
-
-          doCheck = false; # Tests require OAuth
-
-          meta = with pkgs.lib; {
-            description = "Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs";
-            homepage = "https://gogcli.sh";
-            license = licenses.mit;
-          };
-        };
-
-        # Obsidian CLI
-        obsidian-cli = pkgs.buildGoModule rec {
-          pname = "obsidian-cli";
-          version = "0.2.2";
-
-          src = pkgs.fetchFromGitHub {
-            owner = "Yakitrak";
-            repo = "obsidian-cli";
-            rev = "v${version}";
-            hash = "sha256-H7Nm+QwpAD5K1Ltl4irvSI/z3Ct7g3rh2w0Rbka7LwE=";
-          };
-
-          vendorHash = null; # Project includes vendor folder
-
-          doCheck = false; # Skip tests
-
-          meta = with pkgs.lib; {
-            description = "CLI for automating Obsidian vaults";
-            homepage = "https://github.com/Yakitrak/obsidian-cli";
-            license = licenses.mit;
-          };
-        };
 
         # Summarize - fetch pre-built binary
         summarize = pkgs.stdenv.mkDerivation rec {
@@ -122,23 +76,19 @@
           clawdbot-skills = pkgs.buildEnv {
             name = "clawdbot-skills";
             paths = [
-              gogcli
               mcporter
-              obsidian-cli
               summarize
               pkgs.openai-whisper
             ];
           };
 
-          inherit gogcli mcporter obsidian-cli summarize;
+          inherit mcporter summarize;
         };
 
         # Development shell with all tools
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            gogcli
             mcporter
-            obsidian-cli
             summarize
             pkgs.openai-whisper
             pkgs.nodejs

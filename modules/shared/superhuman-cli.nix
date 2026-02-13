@@ -3,13 +3,13 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.1.0";
+  version = "0.2.2";
 
   # Currently only aarch64-darwin (built on M1/M2 Mac)
   # TODO: Add other platforms when cross-compiled
   platforms = {
     aarch64-darwin = {
-      hash = "sha256-HJZQvz5Cv9TDoyHcf6SFOfB9zimkVWLC6bbtQEPy0AQ=";
+      hash = "sha256-VY2pvLYDZ2J5uobBAYJwA3FTPFGOixThVmDBTW6PWIA=";
     };
   };
 
@@ -20,7 +20,7 @@ in stdenv.mkDerivation {
   inherit version;
 
   src = fetchurl {
-    url = "https://github.com/edwinhu/superhuman-cli/releases/download/v${version}/superhuman";
+    url = "https://github.com/edwinhu/superhuman-cli/releases/download/v${version}/superhuman-${version}";
     inherit (platformInfo) hash;
   };
 
