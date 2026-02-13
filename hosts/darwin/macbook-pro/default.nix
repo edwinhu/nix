@@ -8,6 +8,7 @@
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
     ../../../modules/darwin/syncthing.nix
+    ../../../modules/darwin/the-companion.nix
   ];
 
   # Karabiner-Elements: managed via Homebrew cask (nix-darwin service is broken for v15.7+)
