@@ -291,11 +291,88 @@
           echo "Run 'hash -r' or start a new shell to use the updated version."
         '')}/bin/opencode-update";
       };
+      mkCompanionUpdateApp = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in {
+        type = "app";
+        meta.description = "Update the-companion to latest version";
+        program = "${(pkgs.writeScriptBin "companion-update" ''
+          #!/usr/bin/env bash
+          set -e
+
+          GREEN='\033[1;32m'
+          YELLOW='\033[1;33m'
+          NC='\033[0m'
+
+          COMPANION_NIX="$HOME/nix/modules/shared/the-companion.nix"
+          NPM_REGISTRY="https://registry.npmjs.org"
+
+          echo -e "''${YELLOW}Fetching latest the-companion version...''${NC}"
+          LATEST_JSON=$(${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/the-companion/latest")
+          NEW_VERSION=$(echo "$LATEST_JSON" | ${pkgs.jq}/bin/jq -r '.version')
+          CURRENT_VERSION=$(${pkgs.gnugrep}/bin/grep 'version = ' "$COMPANION_NIX" | head -1 | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
+
+          echo "Current version: $CURRENT_VERSION"
+          echo "Latest version:  $NEW_VERSION"
+
+          get_sri_hash() {
+            local url=$1
+            local hex_hash=$(${pkgs.curl}/bin/curl -sS "$url" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)
+            ${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$hex_hash"
+          }
+
+          echo -e "''${YELLOW}Fetching hashes...''${NC}"
+
+          MAIN_HASH=$(get_sri_hash "$NPM_REGISTRY/the-companion/-/the-companion-$NEW_VERSION.tgz")
+          CURRENT_HASH=$(${pkgs.gnugrep}/bin/grep -A1 'the-companion-''${version}' "$COMPANION_NIX" | ${pkgs.gnugrep}/bin/grep 'hash' | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
+
+          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ] && [ "$CURRENT_HASH" = "$MAIN_HASH" ]; then
+            echo -e "''${GREEN}Already up to date!''${NC}"
+            exit 0
+          fi
+
+          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+            echo -e "''${YELLOW}Same version but hash changed, updating...''${NC}"
+          fi
+          echo "  the-companion: $MAIN_HASH"
+
+          # Resolve latest dependency versions and fetch hashes
+          DIFF_VERSION=$(${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/diff/latest" | ${pkgs.jq}/bin/jq -r '.version')
+          HONO_VERSION=$(${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/hono/latest" | ${pkgs.jq}/bin/jq -r '.version')
+
+          DIFF_HASH=$(get_sri_hash "$NPM_REGISTRY/diff/-/diff-$DIFF_VERSION.tgz")
+          HONO_HASH=$(get_sri_hash "$NPM_REGISTRY/hono/-/hono-$HONO_VERSION.tgz")
+          echo "  diff@$DIFF_VERSION: $DIFF_HASH"
+          echo "  hono@$HONO_VERSION: $HONO_HASH"
+
+          echo -e "''${YELLOW}Updating $COMPANION_NIX...''${NC}"
+
+          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(the-companion-\$\{version\}\.tgz";\n\s+hash = ")[^"]+"#\1'"$MAIN_HASH"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(registry\.npmjs\.org/diff/-/diff-)[^"]+(".tgz";\n\s+hash = ")[^"]+"#\1'"$DIFF_VERSION"'\2'"$DIFF_HASH"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(registry\.npmjs\.org/hono/-/hono-)[^"]+(".tgz";\n\s+hash = ")[^"]+"#\1'"$HONO_VERSION"'\2'"$HONO_HASH"'"#' "$COMPANION_NIX"
+
+          echo -e "''${YELLOW}Building updated the-companion package...''${NC}"
+          cd "$HOME/nix"
+          COMPANION_PATH=$(${pkgs.nix}/bin/nix build .#the-companion --print-out-paths --no-link)
+
+          echo -e "''${GREEN}the-companion updated: $COMPANION_PATH''${NC}"
+
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$COMPANION_PATH/bin/the-companion" "$HOME/.local/bin/the-companion"
+
+          echo -e "''${GREEN}Symlink updated: ~/.local/bin/the-companion -> $COMPANION_PATH/bin/the-companion''${NC}"
+          echo ""
+          echo "Run 'hash -r' or start a new shell to use the updated version."
+        '')}/bin/companion-update";
+      };
       mkLinuxApps = system: {
         "apply" = mkApp "apply" system;
         "build-switch" = mkApp "build-switch" system;
         "claude-update" = mkClaudeUpdateApp system;
         "opencode-update" = mkOpenCodeUpdateApp system;
+        "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -308,6 +385,7 @@
         "build-switch" = mkApp "build-switch" system;
         "claude-update" = mkClaudeUpdateApp system;
         "opencode-update" = mkOpenCodeUpdateApp system;
+        "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -318,11 +396,12 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
-      # Expose claude-code, opencode, and superhuman-cli as packages for quick updates without full rebuild
+      # Expose claude-code, opencode, superhuman-cli, and the-companion as packages for quick updates without full rebuild
       packages = forAllSystems (system: {
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
         opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
+        the-companion = (import nixpkgs { inherit system; }).callPackage ./modules/shared/the-companion.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -344,6 +423,7 @@
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
+                  the-companion = prev.callPackage ./modules/shared/the-companion.nix {};
                   zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                     zathura_core = zprev.zathura_core.overrideAttrs (old: {
                       src = zathura-src;
@@ -479,6 +559,7 @@
                 claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                 opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
+                the-companion = prev.callPackage ./modules/shared/the-companion.nix {};
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {

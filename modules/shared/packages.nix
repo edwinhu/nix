@@ -49,6 +49,7 @@ with pkgs; [
   # AI tools
   claude-code
   opencode
+  the-companion
 
   # Text and terminal utilities
   ast-grep
