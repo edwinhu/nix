@@ -3,6 +3,7 @@
 {
   imports = [
     ../shared/stylix.nix
+    ./the-companion.nix
   ];
 
   # Linux-specific Stylix configuration (Qt theming)
