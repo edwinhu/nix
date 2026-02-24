@@ -38,6 +38,7 @@ with pkgs; [
   libsixel
 
   # Document processing
+  lmodern
 
   # data science tools
   pixi
