@@ -306,6 +306,7 @@
           NC='\033[0m'
 
           COMPANION_NIX="$HOME/nix/modules/shared/the-companion.nix"
+          COMPANION_LOCK="$HOME/nix/modules/shared/the-companion-package-lock.json"
           NPM_REGISTRY="https://registry.npmjs.org"
 
           echo -e "''${YELLOW}Fetching latest the-companion version...''${NC}"
@@ -337,24 +338,34 @@
           fi
           echo "  the-companion: $MAIN_HASH"
 
-          # Resolve latest dependency versions and fetch hashes
-          DIFF_VERSION=$(${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/diff/latest" | ${pkgs.jq}/bin/jq -r '.version')
-          HONO_VERSION=$(${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/hono/latest" | ${pkgs.jq}/bin/jq -r '.version')
+          # Generate package-lock.json for npm deps
+          echo -e "''${YELLOW}Generating package-lock.json...''${NC}"
+          TMPDIR=$(${pkgs.coreutils}/bin/mktemp -d)
+          trap "rm -rf $TMPDIR" EXIT
+          ${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/the-companion/-/the-companion-$NEW_VERSION.tgz" -o "$TMPDIR/pkg.tgz"
+          cd "$TMPDIR"
+          ${pkgs.gnutar}/bin/tar xzf pkg.tgz
+          cd package
+          ${pkgs.nodejs}/bin/npm install --package-lock-only --production 2>/dev/null
+          cp package-lock.json "$COMPANION_LOCK"
+          echo "  package-lock.json updated"
 
-          DIFF_HASH=$(get_sri_hash "$NPM_REGISTRY/diff/-/diff-$DIFF_VERSION.tgz")
-          HONO_HASH=$(get_sri_hash "$NPM_REGISTRY/hono/-/hono-$HONO_VERSION.tgz")
-          echo "  diff@$DIFF_VERSION: $DIFF_HASH"
-          echo "  hono@$HONO_VERSION: $HONO_HASH"
+          # Compute npmDepsHash
+          echo -e "''${YELLOW}Computing npmDepsHash...''${NC}"
+          PREFETCH=$(${pkgs.nix}/bin/nix build nixpkgs#prefetch-npm-deps --print-out-paths --no-link 2>/dev/null)
+          NPM_DEPS_HASH=$("$PREFETCH/bin/prefetch-npm-deps" "$COMPANION_LOCK" 2>/dev/null)
+          echo "  npmDepsHash: $NPM_DEPS_HASH"
 
           echo -e "''${YELLOW}Updating $COMPANION_NIX...''${NC}"
 
           ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#' "$COMPANION_NIX"
           ${pkgs.perl}/bin/perl -i -0pe 's#(the-companion-\$\{version\}\.tgz";\n\s+hash = ")[^"]+"#\1'"$MAIN_HASH"'"#' "$COMPANION_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(registry\.npmjs\.org/diff/-/diff-)[^"]+(".tgz";\n\s+hash = ")[^"]+"#\1'"$DIFF_VERSION"'\2'"$DIFF_HASH"'"#' "$COMPANION_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(registry\.npmjs\.org/hono/-/hono-)[^"]+(".tgz";\n\s+hash = ")[^"]+"#\1'"$HONO_VERSION"'\2'"$HONO_HASH"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#npmDepsHash = "[^"]+"#npmDepsHash = "'"$NPM_DEPS_HASH"'"#' "$COMPANION_NIX"
+
+          cd "$HOME/nix"
+          ${pkgs.git}/bin/git add "$COMPANION_LOCK"
 
           echo -e "''${YELLOW}Building updated the-companion package...''${NC}"
-          cd "$HOME/nix"
           COMPANION_PATH=$(${pkgs.nix}/bin/nix build .#the-companion --print-out-paths --no-link)
 
           echo -e "''${GREEN}the-companion updated: $COMPANION_PATH''${NC}"

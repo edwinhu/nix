@@ -1,55 +1,38 @@
 # the-companion - Web UI for Claude Code agents
 # npm package that requires bun as runtime
-# Dependencies (croner, diff, hono) are pre-fetched for pure nix builds
-{ lib, stdenv, fetchurl, bun, makeWrapper }:
+# Dependencies managed via buildNpmPackage (package-lock.json + npmDepsHash)
+{ lib, buildNpmPackage, fetchurl, bun, makeWrapper }:
 
 let
-  version = "0.60.1";
-  hash = "sha256-OnMU7CJYtou6QQ0HysWEt9N7U83BraJ+USAuYGWEUPE=";
-
-  # Runtime dependencies (no transitive deps)
-  croner = fetchurl {
-    url = "https://registry.npmjs.org/croner/-/croner-10.0.1.tgz";
-    hash = "sha256-1tk8KGEl/tVnuYaldv8dqnTnLVa7Y/4oJIyhfPywDO4=";
-  };
-  diff = fetchurl {
-    url = "https://registry.npmjs.org/diff/-/diff-8.0.3.tgz";
-    hash = "sha256-DhPKKrUQBmr2Si+gmYvJE/L6iIwurrTdEGIsxvujAQg=";
-  };
-  hono = fetchurl {
-    url = "https://registry.npmjs.org/hono/-/hono-4.12.2.tgz";
-    hash = "sha256-/Q3bBmH8aWc9lvkTm+f273kY4c0As1I71xodWcpZS0M=";
-  };
-in stdenv.mkDerivation {
+  version = "0.61.0";
+in buildNpmPackage {
   pname = "the-companion";
   inherit version;
 
   src = fetchurl {
     url = "https://registry.npmjs.org/the-companion/-/the-companion-${version}.tgz";
-    inherit hash;
+    hash = "sha256-rhCQ15WgaGM0eP2JabujvkZ9I+i4NfPy0abXBczU7wA=";
   };
 
-  nativeBuildInputs = [ makeWrapper ];
+  npmDepsHash = "sha256-m7g8YvhT5KQRKHxiQONjarW472/fDnV0DFOJOXrQ3eQ=";
 
   unpackPhase = ''
     tar xzf $src --strip-components=1
   '';
 
-  dontBuild = true;
+  postPatch = ''
+    cp ${./the-companion-package-lock.json} package-lock.json
+  '';
 
+  dontNpmBuild = true;
+  npmInstallFlags = [ "--production" "--ignore-scripts" ];
+
+  # Override the default install phase (which uses npm pack + npm install -g)
   installPhase = ''
     runHook preInstall
 
     mkdir -p $out/lib/the-companion
     cp -r . $out/lib/the-companion/
-
-    # Install dependencies (no transitive deps, pure offline install)
-    mkdir -p $out/lib/the-companion/node_modules/croner
-    tar xzf ${croner} -C $out/lib/the-companion/node_modules/croner --strip-components=1
-    mkdir -p $out/lib/the-companion/node_modules/diff
-    tar xzf ${diff} -C $out/lib/the-companion/node_modules/diff --strip-components=1
-    mkdir -p $out/lib/the-companion/node_modules/hono
-    tar xzf ${hono} -C $out/lib/the-companion/node_modules/hono --strip-components=1
 
     # Make writable so substituteInPlace can modify in place
     chmod -R u+w $out/lib/the-companion/dist
@@ -96,7 +79,7 @@ in stdenv.mkDerivation {
         --default-font-family: "Maple Mono NF", ui-sans-serif, system-ui, sans-serif !important;
         --default-mono-font-family: "Maple Mono NF", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
       }
-      *, *::before, *::after {
+      body {
         font-family: "Maple Mono NF", ui-sans-serif, system-ui, sans-serif !important;
       }
       code, pre, kbd, samp, .font-mono, [class*="monospace"] {
@@ -124,6 +107,8 @@ in stdenv.mkDerivation {
 
     runHook postInstall
   '';
+
+  nativeBuildInputs = [ makeWrapper ];
 
   meta = {
     description = "Web UI for launching and interacting with Claude Code agents";
