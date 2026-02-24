@@ -48,9 +48,16 @@
       fi
     '';
 
-    file.".local/bin/claude" = {
-      source = "${pkgs.claude-code}/bin/claude";
-    };
+    # Symlink CLI tools into ~/.local/bin on every build-switch.
+    # Direct symlinks (not home.file) because:
+    #   1. Bun's posix_spawn (the-companion) needs real binaries, not wrappers
+    #   2. The *-update apps also write here — activation keeps them in sync
+    activation.linkLocalBin = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
+      $DRY_RUN_CMD ln -sf "${pkgs.claude-code}/bin/claude" "$HOME/.local/bin/claude"
+      $DRY_RUN_CMD ln -sf "${pkgs.opencode}/bin/opencode" "$HOME/.local/bin/opencode"
+      $DRY_RUN_CMD ln -sf "${pkgs.the-companion}/bin/the-companion" "$HOME/.local/bin/the-companion"
+    '';
   };
 
   # Allow unfree packages

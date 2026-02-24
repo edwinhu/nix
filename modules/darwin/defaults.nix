@@ -84,10 +84,12 @@
       };
     };
 
-    # Copy nix .apps that need macOS TCC permissions to /Applications
-    # so permissions persist across nix rebuilds (TCC ties to binary path,
-    # and /Applications/Nix Apps/ gets recreated on every rebuild).
-    activationScripts.copyNixApps.text = ''
+    # Set default app handlers and copy nix apps (idempotent activation script)
+    # Copy must happen in postActivation so /Applications/Nix Apps/ is already populated.
+    activationScripts.postActivation.text = ''
+      # Copy nix .apps that need macOS TCC permissions to /Applications
+      # so permissions persist across nix rebuilds (TCC ties to binary path,
+      # and /Applications/Nix Apps/ gets recreated on every rebuild).
       echo "Copying nix apps to /Applications (stable paths for TCC permissions)..."
       for app in WezTerm Emacs; do
         if [ -e "/Applications/Nix Apps/$app.app" ]; then
@@ -97,10 +99,6 @@
           echo "  Copied $app.app"
         fi
       done
-    '';
-
-    # Set default app handlers (idempotent activation script)
-    activationScripts.postActivation.text = ''
       # ForkLift as default folder handler
       if ! sudo -u ${user} defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null | grep -q "com.binarynights.ForkLift"; then
         sudo -u ${user} defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add '{LSHandlerContentType="public.folder";LSHandlerRoleAll="com.binarynights.ForkLift";}'
