@@ -35,7 +35,7 @@ in
     Service = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = "/usr/bin/tailscale serve --bg ${toString port}";
+      ExecStart = "/bin/sh -c 'until /usr/bin/tailscale status >/dev/null 2>&1; do sleep 2; done; /usr/bin/tailscale serve --bg ${toString port}'";
       ExecStop = "/usr/bin/tailscale serve off";
     };
     Install = {
