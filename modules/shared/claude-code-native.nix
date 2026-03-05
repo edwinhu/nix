@@ -3,25 +3,25 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "2.1.58";
+  version = "2.1.69";
 
   # Platform-specific binary sources
   platforms = {
     x86_64-linux = {
       platform = "linux-x64";
-      hash = "sha256-EPaORbX/SoCuIebXqV3+ZzqzORMTNYzNlOgn83n2qqA=";
+      hash = "sha256-s729Wjy/jKr+NTAiFw33f++oCwAAMHTU0n59qMWeYpo=";
     };
     aarch64-linux = {
       platform = "linux-arm64";
-      hash = "sha256-Xt1La+a56cAOWAXwIu6SSpj9zxvwwEY1pCnSZm7MvD8=";
+      hash = "sha256-7Me78QUT/xIjJ4ZuuXISlFtzr9f4HjBwA3XN8Q9QsqM=";
     };
     x86_64-darwin = {
       platform = "darwin-x64";
-      hash = "sha256-+yzMaHLUmPxXHzAgWdUa7HyJsN9NIdJHqaJJwaOoNdw=";
+      hash = "sha256-5Zh7TdUCplQr+Gw8C80dUzt3Rhb8fUlWbOCyBA5sE3Q=";
     };
     aarch64-darwin = {
       platform = "darwin-arm64";
-      hash = "sha256-GCwgxggNBC5OCKayos6CWMGlDlPAHTbd8gqCtGkzleo=";
+      hash = "sha256-qG4U9EsWfB6Nv3ZPdnVbkuz1LAl9cyo0Yf5ltftgvgU=";
     };
   };
 

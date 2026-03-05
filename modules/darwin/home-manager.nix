@@ -46,7 +46,7 @@
       # "amazon kindle" = 302584613;  # Temporarily disabled - Mac App Store install failing
       "microsoft word" = 462054704;
       "microsoft excel" = 462058435;
-      "microsoft powerpoint" = 462062816;
+      # "microsoft powerpoint" = 462062816;  # Temporarily disabled - Mac App Store install failing
     };
   };
   

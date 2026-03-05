@@ -407,9 +407,10 @@
       devShells = forAllSystems devShell;
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
-      # Expose claude-code, opencode, superhuman-cli, and the-companion as packages for quick updates without full rebuild
+      # Expose custom packages for quick updates without full rebuild
       packages = forAllSystems (system: {
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
+        gws = (import nixpkgs { inherit system; }).callPackage ./modules/shared/gws.nix {};
         opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         the-companion = (import nixpkgs { inherit system; }).callPackage ./modules/shared/the-companion.nix {};
@@ -432,6 +433,7 @@
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
+                  gws = prev.callPackage ./modules/shared/gws.nix {};
                   opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   the-companion = prev.callPackage ./modules/shared/the-companion.nix {};
@@ -568,6 +570,7 @@
               emacs-overlay.overlays.default
               (final: prev: {
                 claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
+                gws = prev.callPackage ./modules/shared/gws.nix {};
                 opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 the-companion = prev.callPackage ./modules/shared/the-companion.nix {};

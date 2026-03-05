@@ -49,6 +49,7 @@ with pkgs; [
 
   # AI tools
   claude-code
+  gws
   opencode
   the-companion
 

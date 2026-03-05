@@ -4,17 +4,17 @@
 { lib, buildNpmPackage, fetchurl, bun, makeWrapper }:
 
 let
-  version = "0.61.0";
+  version = "0.72.0";
 in buildNpmPackage {
   pname = "the-companion";
   inherit version;
 
   src = fetchurl {
     url = "https://registry.npmjs.org/the-companion/-/the-companion-${version}.tgz";
-    hash = "sha256-rhCQ15WgaGM0eP2JabujvkZ9I+i4NfPy0abXBczU7wA=";
+    hash = "sha256-A7OtrZndGVoDTFfe3A/UfXf5KJRAAhC6dc6IHameIaU=";
   };
 
-  npmDepsHash = "sha256-m7g8YvhT5KQRKHxiQONjarW472/fDnV0DFOJOXrQ3eQ=";
+  npmDepsHash = "sha256-TEt/x1EW5Obxxjjr9SvK2l0FLBCSGkKXxWc8jY/hBBc=";
 
   unpackPhase = ''
     tar xzf $src --strip-components=1
