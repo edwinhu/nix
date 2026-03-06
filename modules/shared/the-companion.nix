@@ -97,6 +97,13 @@ in buildNpmPackage {
         'idleTimeout: idleTimeoutSeconds,' \
         'idleTimeout: 0, sendPings: false,'
 
+    # Log WebSocket close events to detect if cycling recurs
+    substituteInPlace $out/lib/the-companion/server/index.ts \
+      --replace-fail \
+        'close(ws: ServerWebSocket<SocketData>) {' \
+        'close(ws: ServerWebSocket<SocketData>, code?: number, reason?: string) {
+      try { require("node:fs").appendFileSync("/tmp/companion-ws-debug.log", new Date().toISOString() + " WS_CLOSE kind=" + ws.data.kind + " code=" + code + "\n"); } catch {}'
+
     # Replace hardcoded orange accent (#d97757) with Catppuccin Mauve in CSS
     for cssfile in $out/lib/the-companion/dist/assets/index-*.css; do
       sed -i 's/#d97757/#cba6f7/g' "$cssfile"
