@@ -24,7 +24,6 @@ in
         PATH = "/Users/${user}/.local/bin:/Users/${user}/.nix-profile/bin:${pkgs.bun}/bin:${pkgs.nodejs}/bin:/usr/bin:/bin";
         HOME = "/Users/${user}";
         NODE_ENV = "production";
-        COMPANION_IDLE_TIMEOUT_SECONDS = "0";
       };
     };
   };

@@ -88,40 +88,14 @@ in buildNpmPackage {
     </style>
   </head>'
 
-    # Debug logging: instrument ws-bridge.ts to write critical WebSocket events
-    # to /tmp/companion-ws-debug.log for investigating CLI relaunch behavior
-    chmod u+w $out/lib/the-companion/server/ws-bridge.ts
-    substituteInPlace $out/lib/the-companion/server/ws-bridge.ts \
+    # Fix Bun WebSocket ping timeout killing CLI connections (close code 1006)
+    # Bun applies a ping timeout (max 16s, default 4s) even when idleTimeout is set,
+    # causing abnormal closures when CLI doesn't respond to pings fast enough.
+    # See: https://github.com/oven-sh/bun/issues/26554
+    substituteInPlace $out/lib/the-companion/server/index.ts \
       --replace-fail \
-        'import type { ServerWebSocket } from "bun";' \
-        'import type { ServerWebSocket } from "bun";
-    import { appendFileSync } from "node:fs";
-    const _wsDebug = (msg: string) => { try { appendFileSync("/tmp/companion-ws-debug.log", new Date().toISOString() + " " + msg + "\n"); } catch {} };'
-    substituteInPlace $out/lib/the-companion/server/ws-bridge.ts \
-      --replace-fail \
-        'console.log(`[ws-bridge] CLI connected for session ''${sessionId}`);' \
-        '_wsDebug(`CLI_CONNECT session=''${sessionId}`);
-        console.log(`[ws-bridge] CLI connected for session ''${sessionId}`);'
-    substituteInPlace $out/lib/the-companion/server/ws-bridge.ts \
-      --replace-fail \
-        'console.log(`[ws-bridge] CLI disconnected for session ''${sessionId}`);' \
-        '_wsDebug(`CLI_DISCONNECT session=''${sessionId}`);
-        console.log(`[ws-bridge] CLI disconnected for session ''${sessionId}`);'
-    substituteInPlace $out/lib/the-companion/server/ws-bridge.ts \
-      --replace-fail \
-        'console.log(`[ws-bridge] Browser connected for session ''${sessionId} (''${session.browserSockets.size} browsers)`);' \
-        '_wsDebug(`BROWSER_CONNECT session=''${sessionId} browsers=''${session.browserSockets.size} cliSocket=''${!!session.cliSocket} backendType=''${session.backendType}`);
-        console.log(`[ws-bridge] Browser connected for session ''${sessionId} (''${session.browserSockets.size} browsers)`);'
-    substituteInPlace $out/lib/the-companion/server/ws-bridge.ts \
-      --replace-fail \
-        'console.log(`[ws-bridge] Browser connected but backend is dead for session ''${sessionId}, requesting relaunch`);' \
-        '_wsDebug(`RELAUNCH_TRIGGERED session=''${sessionId} backendType=''${session.backendType}`);
-        console.log(`[ws-bridge] Browser connected but backend is dead for session ''${sessionId}, requesting relaunch`);'
-    substituteInPlace $out/lib/the-companion/server/ws-bridge.ts \
-      --replace-fail \
-        'console.log(`[ws-bridge] Browser disconnected for session ''${sessionId} (''${session.browserSockets.size} browsers)`);' \
-        '_wsDebug(`BROWSER_DISCONNECT session=''${sessionId} browsers=''${session.browserSockets.size}`);
-        console.log(`[ws-bridge] Browser disconnected for session ''${sessionId} (''${session.browserSockets.size} browsers)`);'
+        'idleTimeout: idleTimeoutSeconds,' \
+        'idleTimeout: 0, sendPings: false,'
 
     # Replace hardcoded orange accent (#d97757) with Catppuccin Mauve in CSS
     for cssfile in $out/lib/the-companion/dist/assets/index-*.css; do
