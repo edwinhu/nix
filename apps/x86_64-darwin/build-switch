@@ -19,4 +19,10 @@ echo "${YELLOW}Switching to new generation...${NC}"
 echo "${YELLOW}Cleaning up...${NC}"
 unlink ./result
 
+# Restart the-companion if running (CLI paths change after rebuild)
+if launchctl print gui/$(id -u)/org.nixos.the-companion >/dev/null 2>&1; then
+  echo "${YELLOW}Restarting the-companion...${NC}"
+  launchctl kickstart -k gui/$(id -u)/org.nixos.the-companion
+fi
+
 echo "${GREEN}Switch to new generation complete!${NC}"
