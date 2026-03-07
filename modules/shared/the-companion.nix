@@ -92,17 +92,36 @@ in buildNpmPackage {
     # Bun applies a ping timeout (max 16s, default 4s) even when idleTimeout is set,
     # causing abnormal closures when CLI doesn't respond to pings fast enough.
     # See: https://github.com/oven-sh/bun/issues/26554
+    # sendPings must be inside the websocket: {} block (Bun API)
+    # Keep top-level idleTimeout for HTTP; disable WS timeout + pings in websocket block
     substituteInPlace $out/lib/the-companion/server/index.ts \
       --replace-fail \
-        'idleTimeout: idleTimeoutSeconds,' \
-        'idleTimeout: 0, sendPings: false,'
+        'websocket: {' \
+        'websocket: {
+    idleTimeout: 0,
+    sendPings: false,'
 
-    # Log WebSocket close events to detect if cycling recurs
+    # Log WebSocket close events with close code to detect cycling
     substituteInPlace $out/lib/the-companion/server/index.ts \
       --replace-fail \
         'close(ws: ServerWebSocket<SocketData>) {' \
         'close(ws: ServerWebSocket<SocketData>, code?: number, reason?: string) {
-      try { require("node:fs").appendFileSync("/tmp/companion-ws-debug.log", new Date().toISOString() + " WS_CLOSE kind=" + ws.data.kind + " code=" + code + "\n"); } catch {}'
+      console.log("[ws-close]", ws.data.kind, "code=" + code);'
+
+    # Grace period for CLI WebSocket reconnection (code 1000)
+    # Claude CLI periodically closes and re-establishes its WebSocket.
+    # Without a grace period, handleBrowserOpen sees cliSocket=null and
+    # triggers a relaunch, causing duplicate CLI processes and output replay.
+    substituteInPlace $out/lib/the-companion/server/index.ts \
+      --replace-fail \
+        'if (relaunchingSet.has(sessionId)) return;' \
+        'if (relaunchingSet.has(sessionId)) return;
+    // Grace period: CLI does normal code-1000 WS reconnection cycles.
+    // Wait 10s, then check if CLI process is still alive or WS reconnected.
+    await new Promise(r => setTimeout(r, 10000));
+    if (wsBridge.isCliConnected(sessionId)) return;
+    const _chk = launcher.getSession(sessionId);
+    if (_chk && (_chk.state === "connected" || _chk.state === "running")) return;'
 
     # Replace hardcoded orange accent (#d97757) with Catppuccin Mauve in CSS
     for cssfile in $out/lib/the-companion/dist/assets/index-*.css; do
