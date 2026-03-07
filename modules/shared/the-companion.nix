@@ -1,40 +1,67 @@
 # the-companion - Web UI for Claude Code agents
 # npm package that requires bun as runtime
-# Dependencies managed via buildNpmPackage (package-lock.json + npmDepsHash)
-{ lib, buildNpmPackage, fetchurl, bun, makeWrapper }:
+# Split into base (slow npm install, cached) and patched (fast, rebuilds on patch changes)
+{ lib, buildNpmPackage, fetchurl, bun, makeWrapper, stdenv }:
 
 let
   version = "0.72.0";
-in buildNpmPackage {
+
+  # Base package: npm install + copy source. Only rebuilds when version/deps change.
+  base = buildNpmPackage {
+    pname = "the-companion-base";
+    inherit version;
+
+    src = fetchurl {
+      url = "https://registry.npmjs.org/the-companion/-/the-companion-${version}.tgz";
+      hash = "sha256-A7OtrZndGVoDTFfe3A/UfXf5KJRAAhC6dc6IHameIaU=";
+    };
+
+    npmDepsHash = "sha256-TEt/x1EW5Obxxjjr9SvK2l0FLBCSGkKXxWc8jY/hBBc=";
+
+    unpackPhase = ''
+      tar xzf $src --strip-components=1
+    '';
+
+    postPatch = ''
+      cp ${./the-companion-package-lock.json} package-lock.json
+    '';
+
+    dontNpmBuild = true;
+    npmInstallFlags = [ "--production" "--ignore-scripts" ];
+
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/lib/the-companion
+      cp -r . $out/lib/the-companion/
+      runHook postInstall
+    '';
+
+    meta.description = "the-companion base (unpatched)";
+  };
+
+in stdenv.mkDerivation {
   pname = "the-companion";
   inherit version;
 
-  src = fetchurl {
-    url = "https://registry.npmjs.org/the-companion/-/the-companion-${version}.tgz";
-    hash = "sha256-A7OtrZndGVoDTFfe3A/UfXf5KJRAAhC6dc6IHameIaU=";
-  };
+  # No source needed — we copy from the cached base
+  dontUnpack = true;
 
-  npmDepsHash = "sha256-TEt/x1EW5Obxxjjr9SvK2l0FLBCSGkKXxWc8jY/hBBc=";
+  nativeBuildInputs = [ makeWrapper ];
 
-  unpackPhase = ''
-    tar xzf $src --strip-components=1
-  '';
-
-  postPatch = ''
-    cp ${./the-companion-package-lock.json} package-lock.json
-  '';
-
-  dontNpmBuild = true;
-  npmInstallFlags = [ "--production" "--ignore-scripts" ];
-
-  # Override the default install phase (which uses npm pack + npm install -g)
   installPhase = ''
     runHook preInstall
 
     mkdir -p $out/lib/the-companion
-    cp -r . $out/lib/the-companion/
 
-    # Make writable so substituteInPlace can modify in place
+    # Symlink everything from base, then selectively copy files we need to patch
+    for f in ${base}/lib/the-companion/*; do
+      ln -s "$f" $out/lib/the-companion/
+    done
+
+    # Replace symlinks with real copies for directories we patch
+    rm $out/lib/the-companion/dist $out/lib/the-companion/server
+    cp -r ${base}/lib/the-companion/dist $out/lib/the-companion/dist
+    cp -r ${base}/lib/the-companion/server $out/lib/the-companion/server
     chmod -R u+w $out/lib/the-companion/dist $out/lib/the-companion/server
 
     # Replace upstream orange theme-color with Catppuccin Mocha Crust
@@ -142,8 +169,6 @@ in buildNpmPackage {
 
     runHook postInstall
   '';
-
-  nativeBuildInputs = [ makeWrapper ];
 
   meta = {
     description = "Web UI for launching and interacting with Claude Code agents";
