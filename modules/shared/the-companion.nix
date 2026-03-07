@@ -128,6 +128,14 @@ in stdenv.mkDerivation {
     idleTimeout: 0,
     sendPings: false,'
 
+    # Fix WS close race condition: when CLI opens a new WS before the old one
+    # closes, handleCLIClose unconditionally nulls cliSocket, clobbering the
+    # new socket reference. This makes handleBrowserOpen see "backend is dead"
+    # and trigger a spurious relaunch. Fix: only null if closing the CURRENT socket.
+    sed -i '/handleCLIClose/,/session\.cliSocket = null;/{
+      s|session\.cliSocket = null;|if (session.cliSocket !== ws) { console.log("[ws-bridge] Stale CLI WS closed for " + sessionId + ", ignoring"); return; }\n    session.cliSocket = null;|
+    }' $out/lib/the-companion/server/ws-bridge.ts
+
     # Log WebSocket close events with close code to detect cycling
     substituteInPlace $out/lib/the-companion/server/index.ts \
       --replace-fail \
@@ -139,16 +147,24 @@ in stdenv.mkDerivation {
     # Claude CLI periodically closes and re-establishes its WebSocket.
     # Without a grace period, handleBrowserOpen sees cliSocket=null and
     # triggers a relaunch, causing duplicate CLI processes and output replay.
+    # IMPORTANT: Add to relaunchingSet BEFORE the await so concurrent browser
+    # connections (multiple tabs) are blocked during the grace period.
+    # Previous bug: set was added AFTER the 10s await, so parallel calls all
+    # passed the guard and spawned duplicate --resume CLIs.
     substituteInPlace $out/lib/the-companion/server/index.ts \
       --replace-fail \
         'if (relaunchingSet.has(sessionId)) return;' \
         'if (relaunchingSet.has(sessionId)) return;
+    relaunchingSet.add(sessionId);
     // Grace period: CLI does normal code-1000 WS reconnection cycles.
     // Wait 10s, then check if CLI process is still alive or WS reconnected.
     await new Promise(r => setTimeout(r, 10000));
-    if (wsBridge.isCliConnected(sessionId)) return;
+    if (wsBridge.isCliConnected(sessionId)) { relaunchingSet.delete(sessionId); return; }
     const _chk = launcher.getSession(sessionId);
-    if (_chk && (_chk.state === "connected" || _chk.state === "running")) return;'
+    if (_chk && (_chk.state === "connected" || _chk.state === "running")) { relaunchingSet.delete(sessionId); return; }
+    // Also check if the OS process is still alive by PID (signal 0).
+    // Session state/WS can be stale during cycling, but PID check is definitive.
+    if (_chk?.pid) { try { process.kill(_chk.pid, 0); relaunchingSet.delete(sessionId); return; } catch {} }'
 
     # Replace hardcoded orange accent (#d97757) with Catppuccin Mauve in CSS
     for cssfile in $out/lib/the-companion/dist/assets/index-*.css; do
