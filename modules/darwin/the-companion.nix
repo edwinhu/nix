@@ -18,6 +18,7 @@ in
       KeepAlive = true;
       RunAtLoad = true;
       ProcessType = "Background";
+      AbandonProcessGroup = true;
       StandardOutPath = "/tmp/the-companion.log";
       StandardErrorPath = "/tmp/the-companion.log";
       EnvironmentVariables = {
