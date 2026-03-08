@@ -1,7 +1,7 @@
 # the-companion - Web UI for Claude Code agents
 # npm package that requires bun as runtime
 # Split into base (slow npm install, cached) and patched (fast, rebuilds on patch changes)
-{ lib, buildNpmPackage, fetchurl, bun, makeWrapper, stdenv }:
+{ lib, buildNpmPackage, fetchurl, bun, makeWrapper, stdenv, python3 }:
 
 let
   version = "0.72.0";
@@ -46,7 +46,7 @@ in stdenv.mkDerivation {
   # No source needed — we copy from the cached base
   dontUnpack = true;
 
-  nativeBuildInputs = [ makeWrapper ];
+  nativeBuildInputs = [ makeWrapper python3 ];
 
   installPhase = ''
     runHook preInstall
@@ -128,13 +128,84 @@ in stdenv.mkDerivation {
     idleTimeout: 0,
     sendPings: false,'
 
-    # Fix WS close race condition: when CLI opens a new WS before the old one
-    # closes, handleCLIClose unconditionally nulls cliSocket, clobbering the
-    # new socket reference. This makes handleBrowserOpen see "backend is dead"
-    # and trigger a spurious relaunch. Fix: only null if closing the CURRENT socket.
-    sed -i '/handleCLIClose/,/session\.cliSocket = null;/{
-      s|session\.cliSocket = null;|if (session.cliSocket !== ws) { console.log("[ws-bridge] Stale CLI WS closed for " + sessionId + ", ignoring"); return; }\n    session.cliSocket = null;|
-    }' $out/lib/the-companion/server/ws-bridge.ts
+    # Patch ws-bridge.ts: stale socket guard + debounced disconnect notification
+    # Uses Python for reliable multi-line replacement (sed breaks with nix indentation stripping)
+    #
+    # 1. handleCLIClose: guard against stale socket, then debounce the cli_disconnected
+    #    broadcast by 5s. CLI cycles its WS every ~30s (code 1000). Without debounce,
+    #    browsers see cli_disconnected/cli_connected flapping and handleBrowserOpen
+    #    can trigger spurious relaunches during the brief cliSocket=null window.
+    # 2. handleCLIOpen: cancel any pending disconnect debounce timer so browsers
+    #    never see the disconnection if CLI reconnects within 5s.
+    python3 - "$out/lib/the-companion/server/ws-bridge.ts" << 'PYEOF'
+import sys
+path = sys.argv[1]
+code = open(path).read()
+
+# Patch 1: Replace handleCLIClose body — stale guard + debounced disconnect
+old_close = (
+    "    session.cliSocket = null;\n"
+    "    console.log(`[ws-bridge] CLI disconnected for session ''${sessionId}`);\n"
+    "    this.broadcastToBrowsers(session, { type: \"cli_disconnected\" });\n"
+    "\n"
+    "    // Cancel any pending permission requests\n"
+    "    for (const [reqId] of session.pendingPermissions) {\n"
+    "      this.broadcastToBrowsers(session, { type: \"permission_cancelled\", request_id: reqId });\n"
+    "    }\n"
+    "    session.pendingPermissions.clear();"
+)
+
+new_close = "\n".join([
+    "    // Guard: ignore close events from stale sockets (new WS opened before old closed)",
+    "    if (session.cliSocket !== ws) {",
+    '      console.log("[ws-bridge] Stale CLI WS closed for " + sessionId + ", ignoring");',
+    "      return;",
+    "    }",
+    "    session.cliSocket = null;",
+    "",
+    "    // Debounce: delay disconnect notification by 5s.",
+    "    // CLI cycles its WebSocket every ~30s (close code 1000). If we broadcast",
+    "    // cli_disconnected immediately, browsers see flapping and handleBrowserOpen",
+    "    // triggers relaunch attempts during the brief cliSocket=null window.",
+    "    if (!(globalThis as any).__wsDisconnectTimers) (globalThis as any).__wsDisconnectTimers = new Map();",
+    "    const _dt: Map<string, ReturnType<typeof setTimeout>> = (globalThis as any).__wsDisconnectTimers;",
+    "    const _existing = _dt.get(sessionId);",
+    "    if (_existing) clearTimeout(_existing);",
+    "    _dt.set(sessionId, setTimeout(() => {",
+    "      _dt.delete(sessionId);",
+    "      if (session.cliSocket) return; // CLI reconnected during grace period",
+    '      console.log("[ws-bridge] CLI disconnect confirmed for " + sessionId);',
+    '      this.broadcastToBrowsers(session, { type: "cli_disconnected" });',
+    "      for (const [reqId] of session.pendingPermissions) {",
+    '        this.broadcastToBrowsers(session, { type: "permission_cancelled", request_id: reqId });',
+    "      }",
+    "      session.pendingPermissions.clear();",
+    "    }, 5000));",
+])
+
+assert old_close in code, "handleCLIClose pattern not found in ws-bridge.ts"
+code = code.replace(old_close, new_close)
+
+# Patch 2: In handleCLIOpen, cancel pending disconnect timer after setting cliSocket
+old_open = "    session.cliSocket = ws;\n    console.log(`[ws-bridge] CLI connected for session ''${sessionId}`);"
+new_open = "\n".join([
+    "    session.cliSocket = ws;",
+    "    // Cancel any pending disconnect debounce timer — CLI reconnected in time",
+    "    const _dt2: Map<string, ReturnType<typeof setTimeout>> = (globalThis as any).__wsDisconnectTimers || new Map();",
+    "    if (_dt2.has(sessionId)) {",
+    "      clearTimeout(_dt2.get(sessionId)!);",
+    "      _dt2.delete(sessionId);",
+    '      console.log("[ws-bridge] CLI reconnected for " + sessionId + " (disconnect debounce cancelled)");',
+    "    } else {",
+    '      console.log("[ws-bridge] CLI connected for session " + sessionId);',
+    "    }",
+])
+assert old_open in code, "handleCLIOpen pattern not found in ws-bridge.ts"
+code = code.replace(old_open, new_open)
+
+open(path, "w").write(code)
+print("[patch] ws-bridge.ts: stale socket guard + debounced disconnect + timer cancel in open")
+PYEOF
 
     # Log WebSocket close events with close code to detect cycling
     substituteInPlace $out/lib/the-companion/server/index.ts \
