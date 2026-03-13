@@ -11,6 +11,9 @@
     ../../../modules/darwin/the-companion.nix
   ];
 
+  # Fonts (needed for browser/GUI apps — stylix only configures terminal apps)
+  fonts.packages = [ pkgs.maple-mono.NF ];
+
   # Karabiner-Elements: managed via Homebrew cask (nix-darwin service is broken for v15.7+)
 
   # Set environment variables for GUI applications

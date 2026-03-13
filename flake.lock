@@ -436,11 +436,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1767767207,
-        "narHash": "sha256-Mj3d3PfwltLmukFal5i3fFt27L6NiKXdBezC1EBuZs4=",
+        "lastModified": 1772963539,
+        "narHash": "sha256-9jVDGZnvCckTGdYT53d/EfznygLskyLQXYwJLKMPsZs=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "5912c1772a44e31bf1c63c0390b90501e5026886",
+        "rev": "9dcb002ca1690658be4a04645215baea8b95f31d",
         "type": "github"
       },
       "original": {
@@ -706,11 +706,11 @@
     "zathura-pdf-mupdf-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1767584212,
-        "narHash": "sha256-ZMIK6sGkCIB2WLM5IZAcSxqRo/kQUA+enovWCV6J6Dg=",
+        "lastModified": 1773187237,
+        "narHash": "sha256-RRUZBMvoSJEUPPh3yNrodbrqFkz9fqiPgMNamhllj9o=",
         "owner": "edwinhu",
         "repo": "zathura-pdf-mupdf",
-        "rev": "e4575aa7ecdd4e2d20d91612570deef48c047a47",
+        "rev": "9920f0bc0e2d91710629fead4647433985bf8b9b",
         "type": "github"
       },
       "original": {
@@ -722,11 +722,11 @@
     "zathura-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1767898416,
-        "narHash": "sha256-9xDf4/ZBEXjIh9G4H+mGqAZR+EQ39KUyksbxUAYS+xM=",
+        "lastModified": 1773186677,
+        "narHash": "sha256-vB7bYFaVG2N/GqTra6SiDQP5rfwBZZfy2jaL+4Hlz7c=",
         "owner": "edwinhu",
         "repo": "zathura",
-        "rev": "b2548fc8142358c530d56d3e4277e672592b147c",
+        "rev": "f01bba9ba6d5ffd38fcdf91f58a2a3f1c1bfc84a",
         "type": "github"
       },
       "original": {

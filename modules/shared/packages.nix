@@ -24,7 +24,7 @@ with pkgs; [
 
   # Encryption and security tools
   age
-  bitwarden-cli
+  # bitwarden-cli  # TODO: re-enable after nodejs-slim-22 OOM fix
   gnupg
   libfido2
   sops
@@ -86,6 +86,7 @@ with pkgs; [
   unrar
   unzip
   websocat  # WebSocket client for Chrome DevTools Protocol
+  chrome-for-testing  # Headless Chrome for automation (nanoclaw, readwise)
   wezterm
   xan
   zellij

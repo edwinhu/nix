@@ -419,6 +419,7 @@
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
         gws = (import nixpkgs { inherit system; }).callPackage ./modules/shared/gws.nix {};
         opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
+        chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         the-companion = (import nixpkgs { inherit system; }).callPackage ./modules/shared/the-companion.nix {};
       });
@@ -442,12 +443,18 @@
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   gws = prev.callPackage ./modules/shared/gws.nix {};
                   opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
+                  chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   the-companion = prev.callPackage ./modules/shared/the-companion.nix {};
+                  # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
+                  # on macOS after nixpkgs update to 2026-03-08
+                  ast-grep = prev.ast-grep.overrideAttrs (old: {
+                    doCheck = false;
+                  });
                   zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                     zathura_core = zprev.zathura_core.overrideAttrs (old: {
                       src = zathura-src;
-                      version = "0.5.8-annotations";
+                      version = "2026.02.09-annotations";
                       buildInputs = (old.buildInputs or []) ++ [ prev.curl ];
                     });
                     zathura_pdf_mupdf = zprev.zathura_pdf_mupdf.overrideAttrs (old: {
@@ -457,6 +464,8 @@
                         # Remove hardcoded dev include paths that don't exist in nix builds
                         sed -i "/zathura_dev_include = include_directories/d" meson.build
                         sed -i "/include_directories: zathura_dev_include/d" meson.build
+                        # Fix girara pkg-config name for new girara
+                        sed -i 's/girara-gtk3/girara/g' meson.build
                       '';
                     });
                   });
@@ -465,7 +474,7 @@
                   };
                   zathuraApp = prev.stdenv.mkDerivation {
                     pname = "Zathura";
-                    version = "0.5.8";
+                    version = prev.zathuraPkgs.zathura_core.version;
                     dontUnpack = true;
                     nativeBuildInputs = [ prev.makeWrapper prev.librsvg prev.libicns ];
                     installPhase = ''
@@ -652,7 +661,7 @@ EOF
                 zathuraPkgs = prev.zathuraPkgs.overrideScope (zfinal: zprev: {
                   zathura_core = zprev.zathura_core.overrideAttrs (old: {
                     src = zathura-src;
-                    version = "0.5.8-annotations";
+                    version = "2026.02.09-annotations";
                     buildInputs = (old.buildInputs or []) ++ [ prev.curl ];
                   });
                   zathura_pdf_mupdf = zprev.zathura_pdf_mupdf.overrideAttrs (old: {
@@ -662,6 +671,8 @@ EOF
                       # Remove hardcoded dev include paths that don't exist in nix builds
                       sed -i "/zathura_dev_include = include_directories/d" meson.build
                       sed -i "/include_directories: zathura_dev_include/d" meson.build
+                      # Fix girara pkg-config name for new girara
+                      sed -i 's/girara-gtk3/girara/g' meson.build
                     '';
                   });
                 });
