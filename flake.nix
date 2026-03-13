@@ -296,7 +296,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Update the-companion to latest version";
+        meta.description = "Update the-companion fork from upstream";
         program = "${(pkgs.writeScriptBin "companion-update" ''
           #!/usr/bin/env bash
           set -e
@@ -305,47 +305,58 @@
           YELLOW='\033[1;33m'
           NC='\033[0m'
 
+          FORK_DIR="$HOME/projects/companion"
           COMPANION_NIX="$HOME/nix/modules/shared/the-companion.nix"
           COMPANION_LOCK="$HOME/nix/modules/shared/the-companion-package-lock.json"
           NPM_REGISTRY="https://registry.npmjs.org"
 
-          echo -e "''${YELLOW}Fetching latest the-companion version...''${NC}"
-          LATEST_JSON=$(${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/the-companion/latest")
-          NEW_VERSION=$(echo "$LATEST_JSON" | ${pkgs.jq}/bin/jq -r '.version')
-          CURRENT_VERSION=$(${pkgs.gnugrep}/bin/grep 'version = ' "$COMPANION_NIX" | head -1 | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
-
-          echo "Current version: $CURRENT_VERSION"
-          echo "Latest version:  $NEW_VERSION"
-
-          get_sri_hash() {
-            local url=$1
-            local hex_hash=$(${pkgs.curl}/bin/curl -sS "$url" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)
-            ${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$hex_hash"
-          }
-
-          echo -e "''${YELLOW}Fetching hashes...''${NC}"
-
-          MAIN_HASH=$(get_sri_hash "$NPM_REGISTRY/the-companion/-/the-companion-$NEW_VERSION.tgz")
-          CURRENT_HASH=$(${pkgs.gnugrep}/bin/grep -A1 'the-companion-''${version}' "$COMPANION_NIX" | ${pkgs.gnugrep}/bin/grep 'hash' | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
-
-          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ] && [ "$CURRENT_HASH" = "$MAIN_HASH" ]; then
-            echo -e "''${GREEN}Already up to date!''${NC}"
-            exit 0
+          if [ ! -d "$FORK_DIR" ]; then
+            echo "Error: Fork not found at $FORK_DIR"
+            echo "Run: cd ~/projects && git clone git@github.com:edwinhu/companion.git"
+            exit 1
           fi
 
-          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
-            echo -e "''${YELLOW}Same version but hash changed, updating...''${NC}"
-          fi
-          echo "  the-companion: $MAIN_HASH"
+          cd "$FORK_DIR"
 
-          # Generate package-lock.json for npm deps
+          echo -e "''${YELLOW}Fetching upstream changes...''${NC}"
+          ${pkgs.git}/bin/git fetch upstream
+
+          CURRENT_BRANCH=$(${pkgs.git}/bin/git branch --show-current)
+          if [ "$CURRENT_BRANCH" != "nix-patches" ]; then
+            ${pkgs.git}/bin/git checkout nix-patches
+          fi
+
+          UPSTREAM_VERSION=$(${pkgs.git}/bin/git show upstream/main:web/package.json | ${pkgs.jq}/bin/jq -r '.version')
+          LOCAL_VERSION=$(${pkgs.jq}/bin/jq -r '.version' web/package.json)
+
+          echo "Fork version:     $LOCAL_VERSION"
+          echo "Upstream version: $UPSTREAM_VERSION"
+
+          if [ "$LOCAL_VERSION" != "$UPSTREAM_VERSION" ]; then
+            echo -e "''${YELLOW}Merging upstream/main into nix-patches...''${NC}"
+            ${pkgs.git}/bin/git merge upstream/main --no-edit
+            echo -e "''${YELLOW}Pushing updated branch...''${NC}"
+            ${pkgs.git}/bin/git push origin nix-patches
+          else
+            echo -e "''${GREEN}Fork is up to date with upstream''${NC}"
+          fi
+
+          # Get the current fork commit
+          NEW_REV=$(${pkgs.git}/bin/git rev-parse HEAD)
+          echo "Fork commit: $NEW_REV"
+
+          # Compute source hash
+          echo -e "''${YELLOW}Computing source hash...''${NC}"
+          SRC_HASH=$(${pkgs.nix}/bin/nix-prefetch-url --unpack "https://github.com/edwinhu/companion/archive/$NEW_REV.tar.gz" 2>&1 | tail -1)
+          SRC_SRI=$(${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$SRC_HASH")
+          echo "  Source: $SRC_SRI"
+
+          # Generate package-lock.json if upstream deps changed
           echo -e "''${YELLOW}Generating package-lock.json...''${NC}"
           TMPDIR=$(${pkgs.coreutils}/bin/mktemp -d)
           trap "rm -rf $TMPDIR" EXIT
-          ${pkgs.curl}/bin/curl -sS "$NPM_REGISTRY/the-companion/-/the-companion-$NEW_VERSION.tgz" -o "$TMPDIR/pkg.tgz"
+          cp web/package.json "$TMPDIR/"
           cd "$TMPDIR"
-          ${pkgs.gnutar}/bin/tar xzf pkg.tgz
-          cd package
           ${pkgs.nodejs}/bin/npm install --package-lock-only --production 2>/dev/null
           cp package-lock.json "$COMPANION_LOCK"
           echo "  package-lock.json updated"
@@ -356,26 +367,22 @@
           NPM_DEPS_HASH=$("$PREFETCH/bin/prefetch-npm-deps" "$COMPANION_LOCK" 2>/dev/null)
           echo "  npmDepsHash: $NPM_DEPS_HASH"
 
+          # Update the nix file
           echo -e "''${YELLOW}Updating $COMPANION_NIX...''${NC}"
-
-          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#' "$COMPANION_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(the-companion-\$\{version\}\.tgz";\n\s+hash = ")[^"]+"#\1'"$MAIN_HASH"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$UPSTREAM_VERSION"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#rev = "[^"]+"#rev = "'"$NEW_REV"'"#' "$COMPANION_NIX"
+          ${pkgs.perl}/bin/perl -i -0pe 's#(fetchFromGitHub \{[^}]*hash = ")[^"]+"#\1'"$SRC_SRI"'"#s' "$COMPANION_NIX"
           ${pkgs.perl}/bin/perl -i -0pe 's#npmDepsHash = "[^"]+"#npmDepsHash = "'"$NPM_DEPS_HASH"'"#' "$COMPANION_NIX"
 
           cd "$HOME/nix"
           ${pkgs.git}/bin/git add "$COMPANION_LOCK"
 
-          echo -e "''${YELLOW}Building updated the-companion package...''${NC}"
+          echo -e "''${YELLOW}Building updated the-companion...''${NC}"
           COMPANION_PATH=$(${pkgs.nix}/bin/nix build .#the-companion --print-out-paths --no-link)
 
           echo -e "''${GREEN}the-companion updated: $COMPANION_PATH''${NC}"
-
-          mkdir -p "$HOME/.local/bin"
-          ln -sf "$COMPANION_PATH/bin/the-companion" "$HOME/.local/bin/the-companion"
-
-          echo -e "''${GREEN}Symlink updated: ~/.local/bin/the-companion -> $COMPANION_PATH/bin/the-companion''${NC}"
           echo ""
-          echo "Run 'hash -r' or start a new shell to use the updated version."
+          echo "Run 'nix run .#build-switch' to deploy."
         '')}/bin/companion-update";
       };
       mkLinuxApps = system: {
