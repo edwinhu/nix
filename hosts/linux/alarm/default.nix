@@ -161,6 +161,26 @@ in
       startupNotify = true;
     };
 
+    companion-mac = {
+      name = "Companion (Mac)";
+      comment = "The Companion on Mac Pro via Tailscale";
+      exec = "omarchy-launch-webapp https://mac-vwh7mb-pro.tailc143b.ts.net/";
+      terminal = false;
+      type = "Application";
+      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Tailscale.svg";
+      startupNotify = true;
+    };
+
+    companion-rjds = {
+      name = "Companion (RJDS)";
+      comment = "The Companion on RJDS via Tailscale";
+      exec = "omarchy-launch-webapp https://rjds.tailc143b.ts.net/";
+      terminal = false;
+      type = "Application";
+      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Tailscale.svg";
+      startupNotify = true;
+    };
+
     zathura = {
       name = "Zathura";
       comment = "Document viewer";

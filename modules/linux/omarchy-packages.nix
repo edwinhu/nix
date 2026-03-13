@@ -30,6 +30,11 @@ with pkgs; [
   libfido2
   sops
 
+  # Input simulation (for GUI automation/testing)
+  dotool
+  xdotool
+  ydotool
+
   # Terminal utilities
   atuin
   bat-extras.batdiff
