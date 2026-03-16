@@ -22,6 +22,11 @@
     PATH = config.environment.systemPath;
   };
 
+  # Disable keychain auto-lock so it stays unlocked when SSH'd in
+  system.activationScripts.keychainSettings.text = ''
+    security set-keychain-settings /Users/${user}/Library/Keychains/login.keychain-db
+  '';
+
   # Reminder for terminal and accessibility app permissions
   system.activationScripts.checkTerminalPermissions.text = ''
     echo "⚠️  Remember to grant Full Disk Access to terminal apps in System Settings"

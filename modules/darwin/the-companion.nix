@@ -1,6 +1,6 @@
 # the-companion - Web UI for Claude Code agents
 # Runs as launchd service, exposed on tailnet via tailscale serve
-{ pkgs, user, ... }:
+{ pkgs, lib, user, ... }:
 
 let
   tailscale = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
@@ -22,7 +22,7 @@ let
       fi
     done
 
-    exec "${pkgs.the-companion}/bin/the-companion" serve --port ${toString port}
+    exec "/Users/${user}/.local/bin/the-companion" serve --port ${toString port}
   '';
 in
 {

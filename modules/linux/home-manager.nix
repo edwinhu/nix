@@ -50,14 +50,23 @@
     '';
 
     # Symlink CLI tools into ~/.local/bin on every build-switch.
-    # Direct symlinks (not home.file) because:
-    #   1. Bun's posix_spawn (the-companion) needs real binaries, not wrappers
-    #   2. The *-update apps also write here — activation keeps them in sync
+    # Write shell wrappers into ~/.local/bin on every build-switch.
+    # Wrappers (not symlinks) because Bun's posix_spawn cannot exec nix
+    # store binaries directly — their ELF interpreter lives in /nix/store.
     activation.linkLocalBin = lib.hm.dag.entryAfter ["writeBoundary"] ''
       $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
-      $DRY_RUN_CMD ln -sf "${pkgs.claude-code}/bin/claude" "$HOME/.local/bin/claude"
-      $DRY_RUN_CMD ln -sf "${pkgs.opencode}/bin/opencode" "$HOME/.local/bin/opencode"
-      $DRY_RUN_CMD ln -sf "${pkgs.the-companion}/bin/the-companion" "$HOME/.local/bin/the-companion"
+      for pair in \
+        "claude:${pkgs.claude-code}/bin/claude" \
+        "opencode:${pkgs.opencode}/bin/opencode"; do
+        name="''${pair%%:*}"
+        target="''${pair#*:}"
+        $DRY_RUN_CMD rm -f "$HOME/.local/bin/$name"
+        cat > "$HOME/.local/bin/$name" <<WRAPPER
+      #!/bin/bash
+      exec "$target" "\$@"
+      WRAPPER
+        $DRY_RUN_CMD chmod +x "$HOME/.local/bin/$name"
+      done
     '';
   };
 

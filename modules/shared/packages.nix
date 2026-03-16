@@ -51,7 +51,7 @@ with pkgs; [
   claude-code
   gws
   opencode
-  the-companion
+  # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 
   # Text and terminal utilities
   ast-grep
@@ -86,7 +86,7 @@ with pkgs; [
   unrar
   unzip
   websocat  # WebSocket client for Chrome DevTools Protocol
-  chrome-for-testing  # Headless Chrome for automation (nanoclaw, readwise)
+  # chrome-for-testing  # Removed: 338 MB app bundle slowed rsync; use homebrew google-chrome instead
   wezterm
   xan
   zellij

@@ -153,73 +153,80 @@
       mkClaudeUpdateApp = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          platformMap = {
-            "x86_64-linux" = "linux-x64";
-            "aarch64-linux" = "linux-arm64";
-            "x86_64-darwin" = "darwin-x64";
-            "aarch64-darwin" = "darwin-arm64";
-          };
         in {
         type = "app";
         meta.description = "Update Claude Code to latest version";
         program = "${(pkgs.writeScriptBin "claude-update" ''
           #!/usr/bin/env bash
-          set -e
+          set -euo pipefail
 
           GREEN='\033[1;32m'
           YELLOW='\033[1;33m'
           RED='\033[1;31m'
           NC='\033[0m'
 
-          NATIVE_NIX="$HOME/nix/modules/shared/claude-code-native.nix"
-          GCS_BUCKET="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
+          NIX_FILE="''$HOME/nix/modules/shared/claude-code-native.nix"
+          GCS="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
-          echo -e "''${YELLOW}Fetching latest Claude Code version...''${NC}"
-          NEW_VERSION=$(${pkgs.curl}/bin/curl -sS "$GCS_BUCKET/latest")
-          CURRENT_VERSION=$(${pkgs.gnugrep}/bin/grep 'version = ' "$NATIVE_NIX" | head -1 | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
+          CURRENT=$(${pkgs.gnugrep}/bin/grep -oP 'version = "\K[^"]+' "''$NIX_FILE" | head -1)
+          LATEST=$(${pkgs.curl}/bin/curl -sfS "''$GCS/latest")
+          echo "Current: ''$CURRENT  Latest: ''$LATEST"
 
-          echo "Current version: $CURRENT_VERSION"
-          echo "Latest version:  $NEW_VERSION"
-
-          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
-            echo -e "''${GREEN}Already up to date!''${NC}"
-            exit 0
+          # Quick check: same version → verify local platform hash (catches republished binaries)
+          if [ "''$CURRENT" = "''$LATEST" ]; then
+            case "$(uname -m)-$(uname -s)" in
+              x86_64-Linux)  PLAT=linux-x64;    NIX_KEY=x86_64-linux ;;
+              aarch64-Linux) PLAT=linux-arm64;   NIX_KEY=aarch64-linux ;;
+              x86_64-Darwin) PLAT=darwin-x64;    NIX_KEY=x86_64-darwin ;;
+              *)             PLAT=darwin-arm64;   NIX_KEY=aarch64-darwin ;;
+            esac
+            REMOTE_SRI=$(${pkgs.nix}/bin/nix store prefetch-file --json "''$GCS/''$LATEST/''$PLAT/claude" 2>/dev/null \
+              | ${pkgs.jq}/bin/jq -r '.hash')
+            CURRENT_HASH=$(${pkgs.gnugrep}/bin/grep -A2 "''$NIX_KEY" "''$NIX_FILE" | ${pkgs.gnugrep}/bin/grep -oP 'hash = "\K[^"]+')
+            if [ "''$CURRENT_HASH" = "''$REMOTE_SRI" ]; then
+              echo -e "''${GREEN}Already up to date.''${NC}"
+              exit 0
+            fi
+            echo -e "''${YELLOW}Same version but hash changed, updating...''${NC}"
           fi
 
-          echo -e "''${YELLOW}Fetching new hashes for all platforms...''${NC}"
+          # Prefetch all 4 platforms in parallel
+          echo -e "''${YELLOW}Fetching hashes for ''$LATEST...''${NC}"
+          HASHDIR=$(mktemp -d)
+          trap 'rm -rf "''$HASHDIR"' EXIT
 
-          get_sri_hash() {
-            local platform=$1
-            local hex_hash=$(${pkgs.curl}/bin/curl -sS "$GCS_BUCKET/$NEW_VERSION/$platform/claude" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)
-            ${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$hex_hash"
+          prefetch() {
+            local plat=''$1
+            ${pkgs.nix}/bin/nix store prefetch-file --json "''$GCS/''$LATEST/''$plat/claude" 2>/dev/null \
+              | ${pkgs.jq}/bin/jq -r '.hash' > "''$HASHDIR/''$plat" \
+              || { echo -e "''${RED}Failed: ''$plat''${NC}" >&2; return 1; }
           }
 
-          HASH_LINUX_X64=$(get_sri_hash "linux-x64")
-          HASH_LINUX_ARM64=$(get_sri_hash "linux-arm64")
-          HASH_DARWIN_X64=$(get_sri_hash "darwin-x64")
-          HASH_DARWIN_ARM64=$(get_sri_hash "darwin-arm64")
+          PIDS=()
+          for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+            prefetch "''$p" & PIDS+=(''$!)
+          done
+          for pid in "''${PIDS[@]}"; do wait "''$pid" || exit 1; done
 
-          echo -e "''${YELLOW}Updating $NATIVE_NIX...''${NC}"
+          # Update nix file
+          ${pkgs.gnused}/bin/sed -i "s#version = \"[^\"]*\"#version = \"''$LATEST\"#" "''$NIX_FILE"
 
-          # Use perl for multi-line replacement with # delimiter to avoid conflicts with / in hashes
-          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-linux = \{)[^}]+\}#\1\n      platform = "linux-x64";\n      hash = "'"$HASH_LINUX_X64"'";\n    }#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-linux = \{)[^}]+\}#\1\n      platform = "linux-arm64";\n      hash = "'"$HASH_LINUX_ARM64"'";\n    }#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-x64";\n      hash = "'"$HASH_DARWIN_X64"'";\n    }#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-arm64";\n      hash = "'"$HASH_DARWIN_ARM64"'";\n    }#g' "$NATIVE_NIX"
+          for pair in x86_64-linux:linux-x64 aarch64-linux:linux-arm64 x86_64-darwin:darwin-x64 aarch64-darwin:darwin-arm64; do
+            nk="''${pair%%:*}" plat="''${pair#*:}" hash=$(cat "''$HASHDIR/''$plat")
+            ${pkgs.perl}/bin/perl -i -0pe \
+              "s#(''$nk = \\{)[^}]+\\}#\1\n      platform = \"''$plat\";\n      hash = \"''$hash\";\n    }#" \
+              "''$NIX_FILE"
+          done
 
-          echo -e "''${YELLOW}Building updated claude-code package...''${NC}"
-          cd "$HOME/nix"
+          echo -e "''${YELLOW}Building...''${NC}"
+          cd "''$HOME/nix"
           CLAUDE_PATH=$(${pkgs.nix}/bin/nix build .#claude-code --print-out-paths --no-link)
 
-          echo -e "''${GREEN}Claude Code updated: $CLAUDE_PATH''${NC}"
+          mkdir -p "''$HOME/.local/bin"
+          ln -sf "''$CLAUDE_PATH/bin/claude" "''$HOME/.local/bin/claude"
 
-          mkdir -p "$HOME/.local/bin"
-          ln -sf "$CLAUDE_PATH/bin/claude" "$HOME/.local/bin/claude"
-
-          echo -e "''${GREEN}Symlink updated: ~/.local/bin/claude -> $CLAUDE_PATH/bin/claude''${NC}"
-          echo ""
-          echo "Run 'hash -r' or start a new shell to use the updated version."
+          echo -e "''${GREEN}Updated to ''$LATEST: ~/.local/bin/claude -> ''$CLAUDE_PATH/bin/claude''${NC}"
+          echo "Run 'hash -r' or start a new shell to pick it up."
         '')}/bin/claude-update";
       };
       mkOpenCodeUpdateApp = system:
@@ -294,95 +301,77 @@
       mkCompanionUpdateApp = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          themeCss = ./modules/shared/companion-catppuccin.css;
         in {
         type = "app";
-        meta.description = "Update the-companion fork from upstream";
+        meta.description = "Update the-companion via bun global install";
         program = "${(pkgs.writeScriptBin "companion-update" ''
           #!/usr/bin/env bash
-          set -e
+          set -euo pipefail
 
           GREEN='\033[1;32m'
           YELLOW='\033[1;33m'
           NC='\033[0m'
 
-          FORK_DIR="$HOME/projects/companion"
-          COMPANION_NIX="$HOME/nix/modules/shared/the-companion.nix"
-          COMPANION_LOCK="$HOME/nix/modules/shared/the-companion-package-lock.json"
-          NPM_REGISTRY="https://registry.npmjs.org"
+          BUN="''${HOME}/.bun/bin/bun"
+          [ -x "''$BUN" ] || { echo "bun not found at ''$BUN"; exit 1; }
 
-          if [ ! -d "$FORK_DIR" ]; then
-            echo "Error: Fork not found at $FORK_DIR"
-            echo "Run: cd ~/projects && git clone git@github.com:edwinhu/companion.git"
-            exit 1
-          fi
+          CURRENT=$(''$BUN pm ls -g 2>/dev/null | grep the-companion | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "none")
+          LATEST=$(${pkgs.curl}/bin/curl -s "https://registry.npmjs.org/the-companion/latest" | ${pkgs.jq}/bin/jq -r '.version')
+          echo "Current: ''$CURRENT  Latest: ''$LATEST"
 
-          cd "$FORK_DIR"
-
-          echo -e "''${YELLOW}Fetching upstream changes...''${NC}"
-          ${pkgs.git}/bin/git fetch upstream
-
-          CURRENT_BRANCH=$(${pkgs.git}/bin/git branch --show-current)
-          if [ "$CURRENT_BRANCH" != "nix-patches" ]; then
-            ${pkgs.git}/bin/git checkout nix-patches
-          fi
-
-          UPSTREAM_VERSION=$(${pkgs.git}/bin/git show upstream/main:web/package.json | ${pkgs.jq}/bin/jq -r '.version')
-          LOCAL_VERSION=$(${pkgs.jq}/bin/jq -r '.version' web/package.json)
-
-          echo "Fork version:     $LOCAL_VERSION"
-          echo "Upstream version: $UPSTREAM_VERSION"
-
-          if [ "$LOCAL_VERSION" != "$UPSTREAM_VERSION" ]; then
-            echo -e "''${YELLOW}Merging upstream/main into nix-patches...''${NC}"
-            ${pkgs.git}/bin/git merge upstream/main --no-edit
-            echo -e "''${YELLOW}Pushing updated branch...''${NC}"
-            ${pkgs.git}/bin/git push origin nix-patches
+          if [ "''$CURRENT" = "''$LATEST" ]; then
+            echo -e "''${GREEN}Already up to date.''${NC}"
           else
-            echo -e "''${GREEN}Fork is up to date with upstream''${NC}"
+            echo -e "''${YELLOW}Installing the-companion@''$LATEST...''${NC}"
+            ''$BUN install -g the-companion@latest
           fi
 
-          # Get the current fork commit
-          NEW_REV=$(${pkgs.git}/bin/git rev-parse HEAD)
-          echo "Fork commit: $NEW_REV"
+          # ── Apply Catppuccin Mocha theme ──
+          DIST="''${HOME}/.bun/install/global/node_modules/the-companion/dist"
+          [ -d "''$DIST" ] || { echo "dist not found at ''$DIST"; exit 1; }
 
-          # Compute source hash
-          echo -e "''${YELLOW}Computing source hash...''${NC}"
-          SRC_HASH=$(${pkgs.nix}/bin/nix-prefetch-url --unpack "https://github.com/edwinhu/companion/archive/$NEW_REV.tar.gz" 2>&1 | tail -1)
-          SRC_SRI=$(${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$SRC_HASH")
-          echo "  Source: $SRC_SRI"
+          echo -e "''${YELLOW}Applying Catppuccin theme...''${NC}"
 
-          # Generate package-lock.json if upstream deps changed
-          echo -e "''${YELLOW}Generating package-lock.json...''${NC}"
-          TMPDIR=$(${pkgs.coreutils}/bin/mktemp -d)
-          trap "rm -rf $TMPDIR" EXIT
-          cp web/package.json "$TMPDIR/"
-          cd "$TMPDIR"
-          ${pkgs.nodejs}/bin/npm install --package-lock-only --production 2>/dev/null
-          cp package-lock.json "$COMPANION_LOCK"
-          echo "  package-lock.json updated"
+          # Meta theme color
+          ${pkgs.perl}/bin/perl -i -pe 's|<meta name="theme-color" content="#d97757" />|<meta name="theme-color" content="#11111b" media="(prefers-color-scheme: dark)" />\n    <meta name="theme-color" content="#eff1f5" media="(prefers-color-scheme: light)" />|' "''$DIST/index.html"
 
-          # Compute npmDepsHash
-          echo -e "''${YELLOW}Computing npmDepsHash...''${NC}"
-          PREFETCH=$(${pkgs.nix}/bin/nix build nixpkgs#prefetch-npm-deps --print-out-paths --no-link 2>/dev/null)
-          NPM_DEPS_HASH=$("$PREFETCH/bin/prefetch-npm-deps" "$COMPANION_LOCK" 2>/dev/null)
-          echo "  npmDepsHash: $NPM_DEPS_HASH"
+          # Inject theme CSS before </head>
+          ${pkgs.perl}/bin/perl -i -pe 'BEGIN { local $/; open my $f, "<", "'"${themeCss}"'" or die; $css = <$f>; close $f; chomp $css } s|</head>|$css|' "''$DIST/index.html"
 
-          # Update the nix file
-          echo -e "''${YELLOW}Updating $COMPANION_NIX...''${NC}"
-          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$UPSTREAM_VERSION"'"#' "$COMPANION_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#rev = "[^"]+"#rev = "'"$NEW_REV"'"#' "$COMPANION_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(fetchFromGitHub \{[^}]*hash = ")[^"]+"#\1'"$SRC_SRI"'"#s' "$COMPANION_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#npmDepsHash = "[^"]+"#npmDepsHash = "'"$NPM_DEPS_HASH"'"#' "$COMPANION_NIX"
+          # CSS accent color
+          for f in "''$DIST"/assets/index-*.css; do
+            ${pkgs.gnused}/bin/sed -i 's/#d97757/#cba6f7/g' "''$f"
+          done
 
-          cd "$HOME/nix"
-          ${pkgs.git}/bin/git add "$COMPANION_LOCK"
+          # JS background + font
+          for f in "''$DIST"/assets/index-*.js; do
+            ${pkgs.gnused}/bin/sed -i 's/#141413/#1e1e2e/g' "''$f"
+            ${pkgs.gnused}/bin/sed -i "s/fontFamily:\"monospace\",fontSize:15/fontFamily:\"'Maple Mono NF', monospace\",fontSize:16/g" "''$f"
+          done
 
-          echo -e "''${YELLOW}Building updated the-companion...''${NC}"
-          COMPANION_PATH=$(${pkgs.nix}/bin/nix build .#the-companion --print-out-paths --no-link)
+          # ── Bundle Maple Mono NF fonts ──
+          FONT_SRC="''${HOME}/.nix-profile/share/fonts/truetype"
+          if [ -d "''$FONT_SRC" ]; then
+            mkdir -p "''$DIST/fonts"
+            for weight in Regular Bold Italic BoldItalic; do
+              cp "''$FONT_SRC/MapleMono-NF-''$weight.ttf" "''$DIST/fonts/" 2>/dev/null || true
+            done
+            echo "  Fonts bundled"
+          else
+            echo "  Warning: fonts not found at ''$FONT_SRC (skipping)"
+          fi
 
-          echo -e "''${GREEN}the-companion updated: $COMPANION_PATH''${NC}"
-          echo ""
-          echo "Run 'nix run .#build-switch' to deploy."
+          # ── Create wrapper in ~/.local/bin ──
+          mkdir -p "''${HOME}/.local/bin"
+          cat > "''${HOME}/.local/bin/the-companion" <<'WRAPPER'
+          #!/bin/bash
+          exec "''${HOME}/.bun/bin/the-companion" "$@"
+          WRAPPER
+          chmod +x "''${HOME}/.local/bin/the-companion"
+
+          VERSION=$(''$BUN pm ls -g 2>/dev/null | grep the-companion | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+          echo -e "''${GREEN}the-companion@''$VERSION ready (themed + fonts)''${NC}"
         '')}/bin/companion-update";
       };
       mkLinuxApps = system: {
@@ -419,9 +408,10 @@
         claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
         gws = (import nixpkgs { inherit system; }).callPackage ./modules/shared/gws.nix {};
         opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
-        chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
+        # chrome-for-testing: removed from build to reduce rsync time (338 MB app bundle)
+        # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
-        the-companion = (import nixpkgs { inherit system; }).callPackage ./modules/shared/the-companion.nix {};
+        # the-companion: managed by `bun install -g` via `nix run .#companion-update`
       });
 
       # Darwin configurations for macOS hosts
@@ -443,9 +433,10 @@
                   claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   gws = prev.callPackage ./modules/shared/gws.nix {};
                   opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
-                  chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
+                  # chrome-for-testing: removed from overlay to reduce rsync time
+                  # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
-                  the-companion = prev.callPackage ./modules/shared/the-companion.nix {};
+                  # the-companion: managed by `bun install -g` via `nix run .#companion-update`
                   # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
                   ast-grep = prev.ast-grep.overrideAttrs (old: {
@@ -589,7 +580,7 @@
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
-                the-companion = prev.callPackage ./modules/shared/the-companion.nix {};
+                # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {

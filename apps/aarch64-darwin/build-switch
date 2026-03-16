@@ -12,19 +12,31 @@ FLAKE_SYSTEM="darwinConfigurations.${USERNAME}.system"
 
 export NIXPKGS_ALLOW_UNFREE=1
 
-echo -e "${YELLOW}Building configuration for user: ${USERNAME}${NC}"
-echo -e "${YELLOW}Starting build...${NC}"
-nix --extra-experimental-features 'nix-command flakes' build .#$FLAKE_SYSTEM $@
+echo -e "${YELLOW}Building and switching configuration for user: ${USERNAME}${NC}"
 
-echo -e "${YELLOW}Switching to new generation...${NC}"
-if [ "$(id -u)" -ne 0 ]; then
-  sudo ./result/sw/bin/darwin-rebuild switch --flake .#${USERNAME} $@
-else
-  ./result/sw/bin/darwin-rebuild switch --flake .#${USERNAME} $@
+# Use the current system's darwin-rebuild to build+switch in one evaluation
+# (avoids evaluating the flake twice — once for nix build, again for darwin-rebuild)
+DARWIN_REBUILD="/run/current-system/sw/bin/darwin-rebuild"
+if [ ! -x "$DARWIN_REBUILD" ]; then
+  echo -e "${RED}darwin-rebuild not found at $DARWIN_REBUILD, falling back to two-step build${NC}"
+  nix --extra-experimental-features 'nix-command flakes' build .#$FLAKE_SYSTEM "$@"
+  DARWIN_REBUILD="./result/sw/bin/darwin-rebuild"
 fi
 
-echo -e "${YELLOW}Cleaning up...${NC}"
-unlink ./result
+if [ "$(id -u)" -ne 0 ]; then
+  sudo "$DARWIN_REBUILD" switch --flake .#${USERNAME} "$@"
+else
+  "$DARWIN_REBUILD" switch --flake .#${USERNAME} "$@"
+fi
+
+# Clean up result symlink if it exists (from fallback path)
+[ -L ./result ] && unlink ./result
+
+# Kill companion-spawned Claude Code sessions (they hold stale nix store paths)
+if pgrep -f 'claude.*--sdk-url.*localhost:3456' &>/dev/null; then
+  echo -e "${YELLOW}Killing companion Claude Code sessions (stale binary paths)...${NC}"
+  pkill -f 'claude.*--sdk-url.*localhost:3456' 2>/dev/null || true
+fi
 
 # Restart the-companion if running (CLI paths change after rebuild)
 if launchctl print gui/$(id -u)/org.nixos.the-companion &>/dev/null; then

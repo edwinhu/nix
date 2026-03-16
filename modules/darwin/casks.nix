@@ -2,7 +2,7 @@ _:
 
 [
   # Development Tools
-  "docker"
+  "orbstack"
   "github"
   "neovide-app"
   "visual-studio-code"
@@ -45,4 +45,7 @@ _:
   # Browsers
   # "chromium"  # Deprecated, doesn't install properly on macOS - using google-chrome for tunnel browser instead
   "google-chrome"
+
+  # Large apps moved from nix systemPackages to reduce rsync time
+  "libreoffice"
 ]

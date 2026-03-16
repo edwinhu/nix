@@ -5,7 +5,7 @@ let
   shared-packages = import ../shared/packages.nix { inherit pkgs; };
 in
 shared-packages ++ [
-  libreoffice-bin  # Headless spreadsheet recalculation via soffice
+  # libreoffice-bin  # Moved to homebrew cask to reduce rsync time (783 MB app bundle)
   aerospace
   dockutil
   # Option 1: railwaycat emacs-macport (current)
