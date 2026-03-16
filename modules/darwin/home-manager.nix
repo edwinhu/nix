@@ -67,17 +67,27 @@
         sessionVariables = {
           # Secret paths will be set by the system
         };
-        # Symlink CLI tools into ~/.local/bin on every build-switch.
-        # Direct symlinks (not home.file) because:
-        #   1. Bun's posix_spawn (the-companion) needs real binaries, not wrappers
-        #   2. The *-update apps also write here — activation keeps them in sync
+        # Write shell wrappers into ~/.local/bin on every build-switch.
+        # Wrappers (not symlinks) because Bun's posix_spawn cannot exec nix
+        # store binaries directly — their ELF interpreter lives in /nix/store
+        # and posix_spawn doesn't resolve it. A shell wrapper works because
+        # /bin/bash is a real system binary that posix_spawn can always find.
+        # The *-update apps also write here — activation keeps them in sync.
         activation.linkLocalBin = lib.hm.dag.entryAfter ["writeBoundary"] ''
           $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
-          $DRY_RUN_CMD ln -sf "${pkgs.claude-code}/bin/claude" "$HOME/.local/bin/claude"
-          $DRY_RUN_CMD ln -sf "${pkgs.opencode}/bin/opencode" "$HOME/.local/bin/opencode"
-          $DRY_RUN_CMD ln -sf "${pkgs.the-companion}/bin/the-companion" "$HOME/.local/bin/the-companion"
-          $DRY_RUN_CMD ln -sf "${pkgs.superhuman-cli}/bin/superhuman" "$HOME/.local/bin/superhuman"
-          $DRY_RUN_CMD rm -f "$HOME/.local/bin/claude-wrapper"
+          for pair in \
+            "claude:${pkgs.claude-code}/bin/claude" \
+            "opencode:${pkgs.opencode}/bin/opencode" \
+            "superhuman:${pkgs.superhuman-cli}/bin/superhuman"; do
+            name="''${pair%%:*}"
+            target="''${pair#*:}"
+            $DRY_RUN_CMD rm -f "$HOME/.local/bin/$name"
+            cat > "$HOME/.local/bin/$name" <<WRAPPER
+          #!/bin/bash
+          exec "$target" "\$@"
+          WRAPPER
+            $DRY_RUN_CMD chmod +x "$HOME/.local/bin/$name"
+          done
         '';
       };
 
@@ -97,6 +107,7 @@
               launchctl setenv GEMINI_API_KEY_FILE "$AGENIX_DIR/gemini-api-key"
               launchctl setenv CLAUDE_API_KEY_FILE "$AGENIX_DIR/claude-api-key"
               launchctl setenv READWISE_TOKEN_FILE "$AGENIX_DIR/readwise-token"
+              launchctl setenv QUALTRICS_API_TOKEN_FILE "$AGENIX_DIR/qualtrics-api-token"
             ''
           ];
           RunAtLoad = true;

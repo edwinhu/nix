@@ -1,0 +1,65 @@
+    <style>
+      .dark {
+        --color-cc-bg: #1e1e2e;
+        --color-cc-fg: #cdd6f4;
+        --color-cc-card: #181825;
+        --color-cc-primary: #cba6f7;
+        --color-cc-primary-hover: #b4befe;
+        --color-cc-user-bubble: #313244;
+        --color-cc-border: #45475a40;
+        --color-cc-muted: #a6adc8;
+        --color-cc-sidebar: #11111b;
+        --color-cc-input-bg: #181825;
+        --color-cc-code-bg: #11111b;
+        --color-cc-code-fg: #cdd6f4;
+        --color-cc-hover: #cdd6f40a;
+        --color-cc-active: #cdd6f412;
+        --color-cc-success: #a6e3a1;
+        --color-cc-error: #f38ba8;
+        --color-cc-warning: #f9e2af;
+      }
+      .dark .diff-file-header { background: #313244; }
+      .dark .diff-line-add { background: #a6e3a114; }
+      .dark .diff-line-del { background: #f38ba814; }
+      .dark .diff-word-add { background: #a6e3a133; }
+      .dark .diff-word-del { background: #f38ba833; }
+      @font-face {
+        font-family: "Maple Mono NF";
+        src: url("/fonts/MapleMono-NF-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Maple Mono NF";
+        src: url("/fonts/MapleMono-NF-Bold.ttf") format("truetype");
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Maple Mono NF";
+        src: url("/fonts/MapleMono-NF-Italic.ttf") format("truetype");
+        font-weight: 400;
+        font-style: italic;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Maple Mono NF";
+        src: url("/fonts/MapleMono-NF-BoldItalic.ttf") format("truetype");
+        font-weight: 700;
+        font-style: italic;
+        font-display: swap;
+      }
+      :root {
+        --font-sans: "Maple Mono NF", ui-sans-serif, system-ui, sans-serif !important;
+        --font-mono: "Maple Mono NF", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+        --default-font-family: "Maple Mono NF", ui-sans-serif, system-ui, sans-serif !important;
+        --default-mono-font-family: "Maple Mono NF", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+      }
+      body { font-family: "Maple Mono NF", ui-sans-serif, system-ui, sans-serif !important; }
+      code, pre, kbd, samp, .font-mono, [class*="monospace"] {
+        font-family: "Maple Mono NF", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+      }
+    </style>
+  </head>
