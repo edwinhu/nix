@@ -26,6 +26,10 @@
       file = "${nix-secrets}/qualtrics-api-token.age";
       mode = "400";
     };
+    canvas-api-token = {
+      file = "${nix-secrets}/canvas-api-token.age";
+      mode = "400";
+    };
   };
   
   age.identityPaths = [
@@ -44,6 +48,7 @@
     CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
+    CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
   };
 
   # Create shell aliases for reading secrets when needed
@@ -54,5 +59,6 @@
     get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
+    get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
   };
 }
