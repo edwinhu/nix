@@ -4,7 +4,7 @@
 { lib, buildNpmPackage, fetchurl, bun, makeWrapper, stdenv, maple-mono }:
 
 let
-  version = "0.75.0";
+  version = "0.93.0";
 
   base = buildNpmPackage {
     pname = "the-companion-base";

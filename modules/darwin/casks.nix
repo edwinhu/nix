@@ -19,7 +19,7 @@ _:
   # Utility Tools
   "bitwarden"
   "karabiner-elements"
-  "claude"
+  # "claude"  # Managed by nix run .#claude-desktop-update (Homebrew cask lags behind)
   "homerow"
   # "morgen"  # Waiting for cask to update to 4.0.0 (currently 3.6.19)
   "obsidian"

@@ -229,6 +229,62 @@
           echo "Run 'hash -r' or start a new shell to pick it up."
         '')}/bin/claude-update";
       };
+      mkClaudeDesktopUpdateApp = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in {
+        type = "app";
+        meta.description = "Update Claude Desktop to latest version";
+        program = "${(pkgs.writeScriptBin "claude-desktop-update" ''
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          GREEN='\033[1;32m'
+          YELLOW='\033[1;33m'
+          RED='\033[1;31m'
+          NC='\033[0m'
+
+          RELEASES_URL="https://downloads.claude.ai/releases/darwin/universal/RELEASES.json"
+
+          echo -e "''${YELLOW}Checking for updates...''${NC}"
+          RELEASES_JSON=$(${pkgs.curl}/bin/curl -sfS "''$RELEASES_URL")
+          LATEST=$(echo "''$RELEASES_JSON" | ${pkgs.jq}/bin/jq -r '.currentRelease')
+          ZIP_URL=$(echo "''$RELEASES_JSON" | ${pkgs.jq}/bin/jq -r '.releases[0].updateTo.url')
+
+          CURRENT=$(/usr/bin/defaults read /Applications/Claude.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo "not installed")
+          echo "Current: ''$CURRENT  Latest: ''$LATEST"
+
+          if [ "''$CURRENT" = "''$LATEST" ]; then
+            echo -e "''${GREEN}Already up to date.''${NC}"
+            exit 0
+          fi
+
+          TMPDIR=$(mktemp -d)
+          trap 'rm -rf "''$TMPDIR"' EXIT
+
+          echo -e "''${YELLOW}Downloading Claude Desktop ''$LATEST...''${NC}"
+          ${pkgs.curl}/bin/curl -fSL -o "''$TMPDIR/Claude.zip" "''$ZIP_URL"
+
+          echo -e "''${YELLOW}Installing...''${NC}"
+          ${pkgs.unzip}/bin/unzip -qo "''$TMPDIR/Claude.zip" -d "''$TMPDIR"
+
+          # Close Claude Desktop if running
+          if pgrep -x "Claude" > /dev/null 2>&1; then
+            echo -e "''${YELLOW}Closing Claude Desktop...''${NC}"
+            osascript -e 'quit app "Claude"' 2>/dev/null || true
+            sleep 2
+          fi
+
+          # Homebrew-installed casks have root ownership; need sudo to replace
+          sudo rm -rf /Applications/Claude.app
+          sudo mv "''$TMPDIR/Claude.app" /Applications/
+          sudo chown -R "$(whoami)" /Applications/Claude.app
+
+          echo -e "''${GREEN}Updated Claude Desktop to ''$LATEST''${NC}"
+          echo "Opening Claude Desktop..."
+          open -a Claude
+        '')}/bin/claude-desktop-update";
+      };
       mkOpenCodeUpdateApp = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
@@ -391,6 +447,7 @@
         "build" = mkApp "build" system;
         "build-switch" = mkApp "build-switch" system;
         "claude-update" = mkClaudeUpdateApp system;
+        "claude-desktop-update" = mkClaudeDesktopUpdateApp system;
         "opencode-update" = mkOpenCodeUpdateApp system;
         "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;

@@ -19,10 +19,31 @@ echo "${YELLOW}Switching to new generation...${NC}"
 echo "${YELLOW}Cleaning up...${NC}"
 unlink ./result
 
-# Restart the-companion if running (CLI paths change after rebuild)
+# Companion restart: darwin-rebuild already reloaded the plist (new wrapper path),
+# which triggers RunAtLoad. Stop the auto-started instance, kill stale CLI sessions
+# that hold old nix store paths, then start fresh — once, in order.
 if launchctl print gui/$(id -u)/org.nixos.the-companion >/dev/null 2>&1; then
-  echo "${YELLOW}Restarting the-companion...${NC}"
-  launchctl kickstart -k gui/$(id -u)/org.nixos.the-companion
+  echo "${YELLOW}Restarting the-companion (clean)...${NC}"
+  launchctl kill SIGTERM gui/$(id -u)/org.nixos.the-companion 2>/dev/null || true
+  sleep 2
+  pkill -f 'claude.*--sdk-url.*localhost:3456' 2>/dev/null || true
+  sleep 1
+  launchctl kickstart gui/$(id -u)/org.nixos.the-companion
+  sleep 3
+  for i in 1 2 3 4 5; do
+    if curl -s --connect-timeout 2 --max-time 5 http://localhost:3456/health | grep -q '"ok":true'; then
+      RELOADED=0
+      for TAB_ID in $(curl -s http://localhost:9222/json/list 2>/dev/null | \
+        python3 -c "import json,sys;[print(t['id']) for t in json.load(sys.stdin) if '3456' in t.get('url','')]" 2>/dev/null); do
+        echo '{"id":1,"method":"Page.reload","params":{"ignoreCache":true}}' | \
+          websocat "ws://localhost:9222/devtools/page/$TAB_ID" --one-message 2>/dev/null && \
+          RELOADED=$((RELOADED + 1))
+      done
+      [ "$RELOADED" -gt 0 ] && echo "${YELLOW}Reloaded $RELOADED companion browser tab(s)${NC}"
+      break
+    fi
+    sleep 2
+  done
 fi
 
 echo "${GREEN}Switch to new generation complete!${NC}"
