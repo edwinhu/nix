@@ -468,6 +468,7 @@
         # chrome-for-testing: removed from build to reduce rsync time (338 MB app bundle)
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
+        companion-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/companion-app.nix {};
         # the-companion: managed by `bun install -g` via `nix run .#companion-update`
       });
 
@@ -493,6 +494,7 @@
                   # chrome-for-testing: removed from overlay to reduce rsync time
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
+                  companion-app = prev.callPackage ./modules/shared/companion-app.nix {};
                   # the-companion: managed by `bun install -g` via `nix run .#companion-update`
                   # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08

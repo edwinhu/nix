@@ -5,42 +5,8 @@
 let
   tailscale = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
   port = 3456;
-  companionUrl = "http://localhost:${toString port}";
-  bundleId = "com.clawd.companion";
 
   containers-json = "/Users/${user}/.companion/containers.json";
-
-  # Clawd.app Info.plist for Chrome app_mode_loader
-  clawd-plist = pkgs.writeText "clawd-Info.plist" ''
-    <?xml version="1.0" encoding="UTF-8"?>
-    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-    <plist version="1.0">
-    <dict>
-      <key>CFBundleDevelopmentRegion</key><string>en</string>
-      <key>CFBundleExecutable</key><string>app_mode_loader</string>
-      <key>CFBundleIconFile</key><string>app.icns</string>
-      <key>CFBundleIdentifier</key><string>${bundleId}</string>
-      <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-      <key>CFBundleName</key><string>Clawd</string>
-      <key>CFBundlePackageType</key><string>APPL</string>
-      <key>CFBundleShortVersionString</key><string>1.0</string>
-      <key>CFBundleSignature</key><string>????</string>
-      <key>CrAppModeIsAdhocSigned</key><true/>
-      <key>CrAppModeShortcutID</key><string>clawd-companion</string>
-      <key>CrAppModeShortcutName</key><string>Clawd</string>
-      <key>CrAppModeShortcutURL</key><string>${companionUrl}</string>
-      <key>CrAppModeUserDataDir</key><string>/Users/${user}/Library/Application Support/Google/Chrome/Default</string>
-      <key>CrBundleIdentifier</key><string>com.google.Chrome</string>
-      <key>LSEnvironment</key>
-      <dict>
-        <key>MallocNanoZone</key><string>0</string>
-      </dict>
-      <key>NSAppleScriptEnabled</key><true/>
-      <key>NSHighResolutionCapable</key><true/>
-      <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
-    </dict>
-    </plist>
-  '';
 
   # Script to prune dead Docker containers from containers.json on startup
   prune-containers = pkgs.writers.writePython3 "prune-containers" {
@@ -281,32 +247,19 @@ in
     };
   };
 
-  # ── Clawd.app: standalone Chrome app wrapper ──
-  # Uses Chrome's app_mode_loader with a custom bundle ID so AeroSpace
-  # can target it separately and it gets its own Dock/Cmd+Tab presence.
-  system.activationScripts.buildClawdApp.text = ''
-    echo "Building Clawd.app..."
-    CHROME_LOADER="/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/Current/Helpers/app_mode_loader"
-    ICON_SRC="/Users/${user}/projects/companion/web/dist/icon-512.png"
-    APP_DIR="/Applications/Clawd.app"
+  # ── Companion.app: Electron wrapper for the companion web UI ──
+  # Copy from nix store to /Applications for stable TCC/Dock path.
+  system.activationScripts.copyCompanionApp.text = ''
+    echo "Copying Companion.app to /Applications..."
+    if [ -e "${pkgs.companion-app}/Applications/Companion.app" ]; then
+      rm -rf /Applications/Companion.app
+      cp -RL "${pkgs.companion-app}/Applications/Companion.app" /Applications/Companion.app
+      chmod -R u+w /Applications/Companion.app
 
-    if [ ! -f "$CHROME_LOADER" ]; then
-      echo "  SKIP: Chrome not installed, cannot build Clawd.app"
-    else
-      rm -rf "$APP_DIR"
-      mkdir -p "$APP_DIR/Contents/MacOS"
-      mkdir -p "$APP_DIR/Contents/Resources"
-
-      # Copy app_mode_loader binary
-      cp "$CHROME_LOADER" "$APP_DIR/Contents/MacOS/app_mode_loader"
-      chmod +x "$APP_DIR/Contents/MacOS/app_mode_loader"
-
-      # Copy Info.plist
-      cp ${clawd-plist} "$APP_DIR/Contents/Info.plist"
-
-      # Convert PNG icon to icns
+      # Replace Electron icon with companion icon
+      ICON_SRC="/Users/${user}/projects/companion/web/dist/icon-512.png"
       if [ -f "$ICON_SRC" ]; then
-        ICONSET=$(mktemp -d)/Clawd.iconset
+        ICONSET=$(mktemp -d)/Companion.iconset
         mkdir -p "$ICONSET"
         for sz in 16 32 128 256 512; do
           sips -z $sz $sz "$ICON_SRC" --out "$ICONSET/icon_''${sz}x''${sz}.png" >/dev/null 2>&1
@@ -315,15 +268,12 @@ in
             sips -z $double $double "$ICON_SRC" --out "$ICONSET/icon_''${sz}x''${sz}@2x.png" >/dev/null 2>&1
           fi
         done
-        iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/app.icns" 2>/dev/null
+        iconutil -c icns "$ICONSET" -o /Applications/Companion.app/Contents/Resources/electron.icns 2>/dev/null
         rm -rf "$(dirname "$ICONSET")"
       fi
 
-      # Ad-hoc sign and clear quarantine
-      codesign --force --deep --sign - "$APP_DIR" 2>/dev/null || true
-      xattr -cr "$APP_DIR" 2>/dev/null || true
-
-      echo "  Installed Clawd.app (bundle: ${bundleId})"
+      xattr -cr /Applications/Companion.app 2>/dev/null || true
+      echo "  Copied Companion.app"
     fi
   '';
 
