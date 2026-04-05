@@ -3,13 +3,13 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.13.3";
+  version = "0.20.0";
 
   # Currently only aarch64-darwin (built on M1/M2 Mac)
   # TODO: Add other platforms when cross-compiled
   platforms = {
     aarch64-darwin = {
-      hash = "sha256-oxoezdjaq+vdlwsgKApy6qbhpKc+nYait4crPtSb8w4=";
+      hash = "sha256-0swoAKWAlCKVJ/41qrsXB5L61ACl7ZBIyoj3cXMhx7I=";
     };
   };
 
