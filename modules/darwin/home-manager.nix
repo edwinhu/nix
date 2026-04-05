@@ -46,7 +46,7 @@
       # "amazon kindle" = 302584613;  # Temporarily disabled - Mac App Store install failing
       "microsoft word" = 462054704;
       "microsoft excel" = 462058435;
-      # "microsoft powerpoint" = 462062816;  # Temporarily disabled - Mac App Store install failing
+      "microsoft powerpoint" = 462062816;
     };
   };
   
@@ -108,6 +108,7 @@
               launchctl setenv CLAUDE_API_KEY_FILE "$AGENIX_DIR/claude-api-key"
               launchctl setenv READWISE_TOKEN_FILE "$AGENIX_DIR/readwise-token"
               launchctl setenv QUALTRICS_API_TOKEN_FILE "$AGENIX_DIR/qualtrics-api-token"
+              launchctl setenv COMPANION_FORCE_BYPASS_IN_CONTAINER 1
             ''
           ];
           RunAtLoad = true;
