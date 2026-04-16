@@ -18,6 +18,7 @@ _:
 
   # Utility Tools
   "bitwarden"
+  "blip"
   "karabiner-elements"
   # "claude"  # Managed by nix run .#claude-desktop-update (Homebrew cask lags behind)
   "homerow"
