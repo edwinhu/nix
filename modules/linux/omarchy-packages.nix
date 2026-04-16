@@ -3,9 +3,8 @@
 { pkgs }:
 
 with pkgs; [
-  # AI tools (custom nix builds)
-  claude-code
-  opencode
+  # AI tools: installed via ~/nix/scripts/setup-ai-tools.sh
+  # (claude, codex, opencode, the-companion manage their own auto-updates)
 
   # Development tools
   bun

@@ -48,10 +48,9 @@ with pkgs; [
   semtools  # search "query" files... — no indexing needed
 
   # AI tools
-  claude-code
+  # claude, codex, opencode, the-companion: installed via ~/nix/scripts/setup-ai-tools.sh
+  # (each tool manages its own auto-updates; nix just bundles the bootstrap script)
   gws
-  opencode
-  # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 
   # Text and terminal utilities
   ast-grep

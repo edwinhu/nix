@@ -1,4 +1,4 @@
-{ config, pkgs, lib, home-manager, homebrew-emacport, stylix, agenix, user, userInfo, nix-secrets, ... }:
+{ self, config, pkgs, lib, home-manager, homebrew-emacport, stylix, agenix, user, userInfo, nix-secrets, ... }:
 
 {
   imports = [
@@ -42,11 +42,12 @@
     # https://github.com/nix-darwin/nix-darwin/issues/1323
     # run brew install mas to make sure you have > 2.0.0
     masApps = {
+      "bear" = 1091189122;
       "microsoft to-do" = 1274495053;
       # "amazon kindle" = 302584613;  # Temporarily disabled - Mac App Store install failing
       "microsoft word" = 462054704;
       "microsoft excel" = 462058435;
-      "microsoft powerpoint" = 462062816;
+      # "microsoft powerpoint" = 462062816;  # Temporarily disabled - brew bundle `mas get` fails on mas 2.3.0
     };
   };
   
@@ -76,8 +77,6 @@
         activation.linkLocalBin = lib.hm.dag.entryAfter ["writeBoundary"] ''
           $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
           for pair in \
-            "claude:${pkgs.claude-code}/bin/claude" \
-            "opencode:${pkgs.opencode}/bin/opencode" \
             "superhuman:${pkgs.superhuman-cli}/bin/superhuman"; do
             name="''${pair%%:*}"
             target="''${pair#*:}"
@@ -88,6 +87,17 @@
           WRAPPER
             $DRY_RUN_CMD chmod +x "$HOME/.local/bin/$name"
           done
+        '';
+
+        # Idempotent bootstrap for AI CLIs (claude, codex, opencode, the-companion).
+        # Each tool self-updates after install, so this only runs missing installs.
+        # Use `nix run ~/nix#update-ai-tools` to force-bump to latest.
+        # PATH must include curl (installer downloads) plus user dirs so `want()`
+        # sees already-installed tools and skips reinstall.
+        activation.installAITools = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          $DRY_RUN_CMD env \
+            PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
+            ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
         '';
       };
 

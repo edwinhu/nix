@@ -1,4 +1,4 @@
-{ config, pkgs, lib, user, userInfo, agenix, ... }:
+{ self, config, pkgs, lib, user, userInfo, agenix, ... }:
 
 {
   imports = [
@@ -49,24 +49,15 @@
       fi
     '';
 
-    # Symlink CLI tools into ~/.local/bin on every build-switch.
-    # Write shell wrappers into ~/.local/bin on every build-switch.
-    # Wrappers (not symlinks) because Bun's posix_spawn cannot exec nix
-    # store binaries directly — their ELF interpreter lives in /nix/store.
-    activation.linkLocalBin = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
-      for pair in \
-        "claude:${pkgs.claude-code}/bin/claude" \
-        "opencode:${pkgs.opencode}/bin/opencode"; do
-        name="''${pair%%:*}"
-        target="''${pair#*:}"
-        $DRY_RUN_CMD rm -f "$HOME/.local/bin/$name"
-        cat > "$HOME/.local/bin/$name" <<WRAPPER
-      #!/bin/bash
-      exec "$target" "\$@"
-      WRAPPER
-        $DRY_RUN_CMD chmod +x "$HOME/.local/bin/$name"
-      done
+    # Idempotent bootstrap for AI CLIs (claude, codex, opencode, the-companion).
+    # Each tool self-updates after install, so this only runs missing installs.
+    # Use `nix run ~/nix#update-ai-tools` to force-bump to latest.
+    # PATH must include curl (installer downloads) plus user dirs so `want()`
+    # sees already-installed tools and skips reinstall.
+    activation.installAITools = lib.hm.dag.entryAfter ["writeBoundary"] ''
+      $DRY_RUN_CMD env \
+        PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
+        ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
     '';
   };
 

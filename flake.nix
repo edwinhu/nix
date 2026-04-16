@@ -150,84 +150,27 @@
         '')}/bin/${scriptName}";
         meta.description = "Run ${scriptName} for ${system}";
       };
-      mkClaudeUpdateApp = system:
+      mkSetupAiToolsApp = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Update Claude Code to latest version";
-        program = "${(pkgs.writeScriptBin "claude-update" ''
+        meta.description = "Bootstrap-install claude, codex, opencode, the-companion (idempotent)";
+        program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
-          set -euo pipefail
-
-          GREEN='\033[1;32m'
-          YELLOW='\033[1;33m'
-          RED='\033[1;31m'
-          NC='\033[0m'
-
-          NIX_FILE="''$HOME/nix/modules/shared/claude-code-native.nix"
-          GCS="https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
-
-          CURRENT=$(${pkgs.gnugrep}/bin/grep -oP 'version = "\K[^"]+' "''$NIX_FILE" | head -1)
-          LATEST=$(${pkgs.curl}/bin/curl -sfS "''$GCS/latest")
-          echo "Current: ''$CURRENT  Latest: ''$LATEST"
-
-          # Quick check: same version → verify local platform hash (catches republished binaries)
-          if [ "''$CURRENT" = "''$LATEST" ]; then
-            case "$(uname -m)-$(uname -s)" in
-              x86_64-Linux)  PLAT=linux-x64;    NIX_KEY=x86_64-linux ;;
-              aarch64-Linux) PLAT=linux-arm64;   NIX_KEY=aarch64-linux ;;
-              x86_64-Darwin) PLAT=darwin-x64;    NIX_KEY=x86_64-darwin ;;
-              *)             PLAT=darwin-arm64;   NIX_KEY=aarch64-darwin ;;
-            esac
-            REMOTE_SRI=$(${pkgs.nix}/bin/nix store prefetch-file --json "''$GCS/''$LATEST/''$PLAT/claude" 2>/dev/null \
-              | ${pkgs.jq}/bin/jq -r '.hash')
-            CURRENT_HASH=$(${pkgs.gnugrep}/bin/grep -A2 "''$NIX_KEY" "''$NIX_FILE" | ${pkgs.gnugrep}/bin/grep -oP 'hash = "\K[^"]+')
-            if [ "''$CURRENT_HASH" = "''$REMOTE_SRI" ]; then
-              echo -e "''${GREEN}Already up to date.''${NC}"
-              exit 0
-            fi
-            echo -e "''${YELLOW}Same version but hash changed, updating...''${NC}"
-          fi
-
-          # Prefetch all 4 platforms in parallel
-          echo -e "''${YELLOW}Fetching hashes for ''$LATEST...''${NC}"
-          HASHDIR=$(mktemp -d)
-          trap 'rm -rf "''$HASHDIR"' EXIT
-
-          prefetch() {
-            local plat=''$1
-            ${pkgs.nix}/bin/nix store prefetch-file --json "''$GCS/''$LATEST/''$plat/claude" 2>/dev/null \
-              | ${pkgs.jq}/bin/jq -r '.hash' > "''$HASHDIR/''$plat" \
-              || { echo -e "''${RED}Failed: ''$plat''${NC}" >&2; return 1; }
-          }
-
-          PIDS=()
-          for p in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            prefetch "''$p" & PIDS+=(''$!)
-          done
-          for pid in "''${PIDS[@]}"; do wait "''$pid" || exit 1; done
-
-          # Update nix file
-          ${pkgs.gnused}/bin/sed -i "s#version = \"[^\"]*\"#version = \"''$LATEST\"#" "''$NIX_FILE"
-
-          for pair in x86_64-linux:linux-x64 aarch64-linux:linux-arm64 x86_64-darwin:darwin-x64 aarch64-darwin:darwin-arm64; do
-            nk="''${pair%%:*}" plat="''${pair#*:}" hash=$(cat "''$HASHDIR/''$plat")
-            ${pkgs.perl}/bin/perl -i -0pe \
-              "s#(''$nk = \\{)[^}]+\\}#\1\n      platform = \"''$plat\";\n      hash = \"''$hash\";\n    }#" \
-              "''$NIX_FILE"
-          done
-
-          echo -e "''${YELLOW}Building...''${NC}"
-          cd "''$HOME/nix"
-          CLAUDE_PATH=$(${pkgs.nix}/bin/nix build .#claude-code --print-out-paths --no-link)
-
-          mkdir -p "''$HOME/.local/bin"
-          ln -sf "''$CLAUDE_PATH/bin/claude" "''$HOME/.local/bin/claude"
-
-          echo -e "''${GREEN}Updated to ''$LATEST: ~/.local/bin/claude -> ''$CLAUDE_PATH/bin/claude''${NC}"
-          echo "Run 'hash -r' or start a new shell to pick it up."
-        '')}/bin/claude-update";
+          exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
+        '')}/bin/setup-ai-tools";
+      };
+      mkUpdateAiToolsApp = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in {
+        type = "app";
+        meta.description = "Force-reinstall claude, codex, opencode, the-companion to latest";
+        program = "${(pkgs.writeScriptBin "update-ai-tools" ''
+          #!/usr/bin/env bash
+          exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh --force "$@"
+        '')}/bin/update-ai-tools";
       };
       mkClaudeDesktopUpdateApp = system:
         let
@@ -284,75 +227,6 @@
           echo "Opening Claude Desktop..."
           open -a Claude
         '')}/bin/claude-desktop-update";
-      };
-      mkOpenCodeUpdateApp = system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-        in {
-        type = "app";
-        meta.description = "Update OpenCode to latest version";
-        program = "${(pkgs.writeScriptBin "opencode-update" ''
-          #!/usr/bin/env bash
-          set -e
-
-          GREEN='\033[1;32m'
-          YELLOW='\033[1;33m'
-          RED='\033[1;31m'
-          NC='\033[0m'
-
-          NATIVE_NIX="$HOME/nix/modules/shared/opencode-native.nix"
-          GITHUB_API="https://api.github.com/repos/anomalyco/opencode/releases/latest"
-          GITHUB_DL="https://github.com/anomalyco/opencode/releases/download"
-
-          echo -e "''${YELLOW}Fetching latest OpenCode version...''${NC}"
-          NEW_VERSION=$(${pkgs.curl}/bin/curl -sS "$GITHUB_API" | ${pkgs.jq}/bin/jq -r '.tag_name' | ${pkgs.gnused}/bin/sed 's/^v//')
-          CURRENT_VERSION=$(${pkgs.gnugrep}/bin/grep 'version = ' "$NATIVE_NIX" | head -1 | ${pkgs.gnused}/bin/sed 's/.*"\(.*\)".*/\1/')
-
-          echo "Current version: $CURRENT_VERSION"
-          echo "Latest version:  $NEW_VERSION"
-
-          if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
-            echo -e "''${GREEN}Already up to date!''${NC}"
-            exit 0
-          fi
-
-          echo -e "''${YELLOW}Fetching new hashes for all platforms...''${NC}"
-
-          get_sri_hash() {
-            local platform=$1
-            local ext=$2
-            local url="$GITHUB_DL/v$NEW_VERSION/opencode-$platform.$ext"
-            echo -e "  Fetching hash for $platform..." >&2
-            local hex_hash=$(${pkgs.curl}/bin/curl -sS -L "$url" | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)
-            ${pkgs.nix}/bin/nix hash convert --hash-algo sha256 --to sri "$hex_hash"
-          }
-
-          HASH_LINUX_X64=$(get_sri_hash "linux-x64" "tar.gz")
-          HASH_LINUX_ARM64=$(get_sri_hash "linux-arm64" "tar.gz")
-          HASH_DARWIN_X64=$(get_sri_hash "darwin-x64" "zip")
-          HASH_DARWIN_ARM64=$(get_sri_hash "darwin-arm64" "zip")
-
-          echo -e "''${YELLOW}Updating $NATIVE_NIX...''${NC}"
-
-          ${pkgs.perl}/bin/perl -i -0pe 's#version = "[^"]+"#version = "'"$NEW_VERSION"'"#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-linux = \{)[^}]+\}#\1\n      platform = "linux-x64";\n      ext = "tar.gz";\n      hash = "'"$HASH_LINUX_X64"'";\n    }#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-linux = \{)[^}]+\}#\1\n      platform = "linux-arm64";\n      ext = "tar.gz";\n      hash = "'"$HASH_LINUX_ARM64"'";\n    }#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(x86_64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-x64";\n      ext = "zip";\n      hash = "'"$HASH_DARWIN_X64"'";\n    }#g' "$NATIVE_NIX"
-          ${pkgs.perl}/bin/perl -i -0pe 's#(aarch64-darwin = \{)[^}]+\}#\1\n      platform = "darwin-arm64";\n      ext = "zip";\n      hash = "'"$HASH_DARWIN_ARM64"'";\n    }#g' "$NATIVE_NIX"
-
-          echo -e "''${YELLOW}Building updated opencode package...''${NC}"
-          cd "$HOME/nix"
-          OPENCODE_PATH=$(${pkgs.nix}/bin/nix build .#opencode --print-out-paths --no-link)
-
-          echo -e "''${GREEN}OpenCode updated: $OPENCODE_PATH''${NC}"
-
-          mkdir -p "$HOME/.local/bin"
-          ln -sf "$OPENCODE_PATH/bin/opencode" "$HOME/.local/bin/opencode"
-
-          echo -e "''${GREEN}Symlink updated: ~/.local/bin/opencode -> $OPENCODE_PATH/bin/opencode''${NC}"
-          echo ""
-          echo "Run 'hash -r' or start a new shell to use the updated version."
-        '')}/bin/opencode-update";
       };
       mkCompanionUpdateApp = system:
         let
@@ -433,8 +307,8 @@
       mkLinuxApps = system: {
         "apply" = mkApp "apply" system;
         "build-switch" = mkApp "build-switch" system;
-        "claude-update" = mkClaudeUpdateApp system;
-        "opencode-update" = mkOpenCodeUpdateApp system;
+        "setup-ai-tools" = mkSetupAiToolsApp system;
+        "update-ai-tools" = mkUpdateAiToolsApp system;
         "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
@@ -446,9 +320,9 @@
         "apply" = mkApp "apply" system;
         "build" = mkApp "build" system;
         "build-switch" = mkApp "build-switch" system;
-        "claude-update" = mkClaudeUpdateApp system;
+        "setup-ai-tools" = mkSetupAiToolsApp system;
+        "update-ai-tools" = mkUpdateAiToolsApp system;
         "claude-desktop-update" = mkClaudeDesktopUpdateApp system;
-        "opencode-update" = mkOpenCodeUpdateApp system;
         "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
@@ -462,9 +336,7 @@
 
       # Expose custom packages for quick updates without full rebuild
       packages = forAllSystems (system: {
-        claude-code = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/claude-code-native.nix {};
         gws = (import nixpkgs { inherit system; }).callPackage ./modules/shared/gws.nix {};
-        opencode = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/opencode-native.nix {};
         # chrome-for-testing: removed from build to reduce rsync time (338 MB app bundle)
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
@@ -488,9 +360,7 @@
                     mkdir -p $out/share/zellij/plugins
                     cp ${zellij-switch-wasm} $out/share/zellij/plugins/zellij-switch.wasm
                   '';
-                  claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                   gws = prev.callPackage ./modules/shared/gws.nix {};
-                  opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                   # chrome-for-testing: removed from overlay to reduce rsync time
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
@@ -635,9 +505,7 @@
             overlays = [
               emacs-overlay.overlays.default
               (final: prev: {
-                claude-code = prev.callPackage ./modules/shared/claude-code-native.nix {};
                 gws = prev.callPackage ./modules/shared/gws.nix {};
-                opencode = prev.callPackage ./modules/shared/opencode-native.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 
