@@ -4,6 +4,8 @@ _:
   # Development Tools
   "orbstack"
   "github"
+  "cmux"
+  "codex-app"
   "neovide-app"
   "visual-studio-code"
   # "wezterm"  # Removed: using nix package for version consistency across systems
