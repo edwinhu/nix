@@ -140,7 +140,7 @@
     enable = true;
     username = user;
     entries = [
-      { path = "/Applications/WezTerm.app"; }
+      { path = "/Applications/cmux.app"; }
       { path = "/Applications/Superhuman.app"; }
       { path = "/Applications/Reader.app"; }
       { path = "/Applications/Dia.app"; }
