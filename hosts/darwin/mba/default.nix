@@ -8,6 +8,7 @@
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
     ../../../modules/darwin/syncthing.nix
+    ../../../modules/darwin/wifi-autoswitch.nix
   ];
 
   # Reminder for terminal and accessibility app permissions

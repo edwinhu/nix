@@ -8,6 +8,7 @@
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
     ../../../modules/darwin/syncthing.nix
+    ../../../modules/darwin/wifi-autoswitch.nix
   ];
 
   # Fonts (needed for browser/GUI apps — stylix only configures terminal apps)
