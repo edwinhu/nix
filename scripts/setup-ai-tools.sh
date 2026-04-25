@@ -46,8 +46,11 @@ fi
 purge_nix_wrapper() {
   local name=$1
   local f="$HOME/.local/bin/$name"
-  [ -f "$f" ] || return 0
-  if grep -q '/nix/store/' "$f" 2>/dev/null; then
+  [ -e "$f" ] || [ -L "$f" ] || return 0
+  if [ -L "$f" ] && [[ "$(readlink "$f")" == /nix/store/* ]]; then
+    echo "${YELLOW}→ Removing stale nix symlink at $f${NC}"
+    rm -f "$f"
+  elif [ -f "$f" ] && grep -q '/nix/store/' "$f" 2>/dev/null; then
     echo "${YELLOW}→ Removing stale nix wrapper at $f${NC}"
     rm -f "$f"
   fi
@@ -72,14 +75,18 @@ install_claude() {
   echo "${GREEN}✓ Claude Code installed — it will auto-update in the background.${NC}"
 }
 
+find_bun() {
+  for p in "$HOME/.bun/bin/bun" "$HOME/.nix-profile/bin/bun"; do
+    if [ -x "$p" ]; then echo "$p"; return 0; fi
+  done
+  return 1
+}
+
 install_codex() {
   purge_nix_wrapper codex
   if ! want "codex" codex; then return 0; fi
-  local bun="$HOME/.bun/bin/bun"
-  if [ ! -x "$bun" ]; then
-    echo "${RED}bun not found at $bun — nix provides it; run build-switch first.${NC}" >&2
-    return 1
-  fi
+  local bun
+  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
   echo "${YELLOW}→ Installing OpenAI Codex (bun global)...${NC}"
   "$bun" install -g @openai/codex@latest
   echo "${GREEN}✓ Codex installed — update with: nix run ~/nix#update-ai-tools${NC}"
@@ -94,12 +101,8 @@ install_opencode() {
 }
 
 install_companion() {
-  # the-companion lives in bun's global dir; `command -v` resolves via PATH.
-  local bun="$HOME/.bun/bin/bun"
-  if [ ! -x "$bun" ]; then
-    echo "${RED}bun not found at $bun — nix provides it; run build-switch first.${NC}" >&2
-    return 1
-  fi
+  local bun
+  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
   if [ "$FORCE" = "0" ] && "$bun" pm ls -g 2>/dev/null | grep -q 'the-companion@'; then
     local ver
     ver=$("$bun" pm ls -g 2>/dev/null | grep -oE 'the-companion@[0-9.]+' | head -1)

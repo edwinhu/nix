@@ -38,6 +38,10 @@
       url = "github:presmihaylov/homebrew-taps";
       flake = false;
     };
+    barutsrb-tap = {
+      url = "github:BarutSRB/homebrew-tap";
+      flake = false;
+    };
     dimentium-autoraise = {
       url = "github:Dimentium/homebrew-autoraise";
       flake = false;
@@ -71,7 +75,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, barutsrb-tap, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -244,7 +248,8 @@
           NC='\033[0m'
 
           BUN="''${HOME}/.bun/bin/bun"
-          [ -x "''$BUN" ] || { echo "bun not found at ''$BUN"; exit 1; }
+          [ -x "''$BUN" ] || BUN="''${HOME}/.nix-profile/bin/bun"
+          [ -x "''$BUN" ] || { echo "bun not found"; exit 1; }
 
           CURRENT=$(''$BUN pm ls -g 2>/dev/null | grep the-companion | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "none")
           LATEST=$(${pkgs.curl}/bin/curl -s "https://registry.npmjs.org/the-companion/latest" | ${pkgs.jq}/bin/jq -r '.version')
@@ -478,6 +483,7 @@
                   "homebrew/homebrew-bundle" = homebrew-bundle;
                   "railwaycat/homebrew-emacsmacport" = emacsmacport;
                   "presmihaylov/homebrew-taps" = presmihaylov-taps;
+                  "barutsrb/homebrew-tap" = barutsrb-tap;
                   "dimentium/homebrew-autoraise" = dimentium-autoraise;
                 };
                 mutableTaps = false;
