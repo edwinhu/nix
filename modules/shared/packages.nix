@@ -72,6 +72,7 @@ with pkgs; [
   hunspell
   jq
   pandoc
+  haskellPackages.pandoc-crossref
   ripgrep
   ripgrep-all
   starship
