@@ -23,6 +23,22 @@
         "type": "github"
       }
     },
+    "barutsrb-tap": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1775904841,
+        "narHash": "sha256-IyCVAUL/0Cdb1/3S4wwpmgT620XZkA7YlkMXZKu7ZsQ=",
+        "owner": "BarutSRB",
+        "repo": "homebrew-tap",
+        "rev": "1e2283d4d5d7603c4695d040c06c4fb8b69b4a6a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "BarutSRB",
+        "repo": "homebrew-tap",
+        "type": "github"
+      }
+    },
     "base16": {
       "inputs": {
         "fromYaml": "fromYaml"
@@ -371,11 +387,11 @@
     "homebrew-cask": {
       "flake": false,
       "locked": {
-        "lastModified": 1767893427,
-        "narHash": "sha256-BNgHhPSrKGARxJhKRmkcpMOS/qBBo7lecdq8Tx22FyQ=",
+        "lastModified": 1776479251,
+        "narHash": "sha256-GYgSnMc9mYInUR2UC4qeooEvj8N7a8l8P5B6Hnr6NKE=",
         "owner": "homebrew",
         "repo": "homebrew-cask",
-        "rev": "a5b5f152850229e8b9645f8af6bba381c8dc2eba",
+        "rev": "280137bfa09d706c7f188f7a295f5a536770f150",
         "type": "github"
       },
       "original": {
@@ -387,11 +403,11 @@
     "homebrew-core": {
       "flake": false,
       "locked": {
-        "lastModified": 1767894749,
-        "narHash": "sha256-6yorBKieqV607yIMK3/D6vrpTg7fkWrWjYVZvu5gfTY=",
+        "lastModified": 1776481516,
+        "narHash": "sha256-ytG8opzAEuM1yn5Xwq+9HJWWSIdMCK/SgxdSH1Dsqqg=",
         "owner": "homebrew",
         "repo": "homebrew-core",
-        "rev": "f5bd37172ccd8aa7d7a2a0aca0db2160e7c35f77",
+        "rev": "7ec20522318b59f443b830f8636a651233a89287",
         "type": "github"
       },
       "original": {
@@ -526,6 +542,7 @@
     "root": {
       "inputs": {
         "agenix": "agenix",
+        "barutsrb-tap": "barutsrb-tap",
         "clawdbot-skills": "clawdbot-skills",
         "darwin": "darwin_2",
         "dimentium-autoraise": "dimentium-autoraise",
