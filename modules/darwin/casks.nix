@@ -26,7 +26,7 @@ _:
   "homerow"
   # "morgen"  # Waiting for cask to update to 4.0.0 (currently 3.6.19)
   "obsidian"
-  "paletro"
+  # "paletro"  # Replaced by omniwm
   "protonvpn"
   "shottr"
   "superwhisper"
@@ -37,7 +37,8 @@ _:
   "hammerspoon"
 
   # Window Management
-  "dimentium/autoraise/autoraiseapp"  # Focus follows mouse
+  # "dimentium/autoraise/autoraiseapp"  # Replaced by omniwm
+  "barutsrb/tap/omniwm"
 
   # Productivity Tools
   "forklift"

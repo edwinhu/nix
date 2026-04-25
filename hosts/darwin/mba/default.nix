@@ -4,7 +4,7 @@
   imports = [
     ../../../modules/shared
     ../../../modules/darwin/home-manager.nix
-    ../../../modules/darwin/aerospace.nix
+    # ../../../modules/darwin/aerospace.nix  # Disabled: trying omniwm
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
     ../../../modules/darwin/syncthing.nix
