@@ -12,7 +12,7 @@ in
       After = [ "network.target" ];
     };
     Service = {
-      ExecStart = "/home/${user}/.local/bin/the-companion serve --port ${toString port}";
+      ExecStart = "${pkgs.bun}/bin/bun /home/${user}/projects/companion/web/bin/cli.ts serve --port ${toString port}";
       Restart = "always";
       RestartSec = 5;
       Environment = [
