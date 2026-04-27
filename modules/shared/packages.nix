@@ -50,6 +50,7 @@ with pkgs; [
   # AI tools
   # claude, codex, opencode, the-companion: installed via ~/nix/scripts/setup-ai-tools.sh
   # (each tool manages its own auto-updates; nix just bundles the bootstrap script)
+  # happy-app: copied to /Applications via modules/darwin/defaults.nix postActivation
   gws
 
   # Text and terminal utilities

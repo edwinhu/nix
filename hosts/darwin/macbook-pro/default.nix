@@ -9,6 +9,7 @@
     ../../../modules/darwin/defaults.nix
     ../../../modules/darwin/syncthing.nix
     ../../../modules/darwin/wifi-autoswitch.nix
+    ../../../modules/darwin/happy-daemon.nix
   ];
 
   # Fonts (needed for browser/GUI apps — stylix only configures terminal apps)

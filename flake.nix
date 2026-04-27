@@ -159,7 +159,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Bootstrap-install claude, codex, opencode, the-companion (idempotent)";
+        meta.description = "Bootstrap-install claude, codex, opencode, the-companion, happy, happy-agent, gemini (idempotent)";
         program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
@@ -170,7 +170,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Force-reinstall claude, codex, opencode, the-companion to latest";
+        meta.description = "Force-reinstall claude, codex, opencode, the-companion, happy, happy-agent, gemini to latest";
         program = "${(pkgs.writeScriptBin "update-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh --force "$@"
@@ -346,6 +346,7 @@
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         companion-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/companion-app.nix {};
+        happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
         # the-companion: managed by `bun install -g` via `nix run .#companion-update`
       });
 
@@ -370,6 +371,7 @@
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   companion-app = prev.callPackage ./modules/shared/companion-app.nix {};
+                  happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
                   # the-companion: managed by `bun install -g` via `nix run .#companion-update`
                   # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
