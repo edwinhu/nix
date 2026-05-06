@@ -18,8 +18,9 @@
         "start-sync"
       ];
       EnvironmentVariables = {
-        PATH = "/Users/${user}/.nix-profile/bin:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+        PATH = "/Users/${user}/.local/bin:/Users/${user}/.bun/bin:/Users/${user}/.pixi/bin:/Users/${user}/.nix-profile/bin:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
         HOME = "/Users/${user}";
+        CLAUDE_CONFIG_DIR = "/Users/${user}/.claude-personal";
       };
       RunAtLoad = true;
       KeepAlive = true;
