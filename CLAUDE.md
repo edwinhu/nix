@@ -64,7 +64,9 @@ nix flake update nix-secrets  # Update only secrets
 
 ## Important Notes
 
-- SSH keys required: `id_ed25519` (general) and `id_ed25519_agenix` (secrets)
+- SSH auth: YubiKey FIDO2 resident keys (`id_nfc_sk`, `id_nano_sk`) + 1Password SSH agent for software keys (github, wrds_nyu, wrds_uva, rjds, agenix). FIDO2 keys recoverable on a fresh machine via `ssh-keygen -K` from the YubiKey itself.
+- Agenix activation reads from `~/.ssh/id_ed25519_agenix` (the only required disk-resident SSH key); also stored in 1Password as recovery.
+- Git commit signing: SSH-format using `~/.ssh/id_github.pub` (zero-touch). YubiKey FIDO2 keys also trusted in `allowed_signers` for past/explicit signatures.
 - Build scripts automatically detect current user and platform
 - All secrets encrypted with agenix in separate private repository
 - The flake uses nixpkgs-unstable channel for latest packages
