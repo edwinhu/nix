@@ -52,22 +52,22 @@ in
       "github.com" = {
         identitiesOnly = true;
         identityFile = [
-          "${homeDir}/.ssh/id_nfc_sk"     # primary YubiKey (keychain)
-          "${homeDir}/.ssh/id_nano_sk"    # backup YubiKey
-          "${homeDir}/.ssh/id_github"     # legacy fallback — remove in Phase 8
+          "${homeDir}/.ssh/id_nano_sk"    # daily driver — perma-plugged
+          "${homeDir}/.ssh/id_nfc_sk"     # mobile/travel key
+          "${homeDir}/.ssh/id_github"     # legacy fallback — also in 1P vault
         ];
       };
       "*" = {
         serverAliveInterval = 180;
         addKeysToAgent = "yes";
         # 1Password SSH agent — provides all software keys stored in vault
-        # (legacy id_github, id_ed25519, server-specific keys eddy_rsa/rjds_rsa/satori/wrds_*).
+        # (github, agenix, wrds_nyu, wrds_uva, rjds, etc.).
         # FIDO2 SK keys come from IdentityFile (YubiKey hardware, not vault-storable).
         identityAgent = ''"${homeDir}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"'';
         identityFile = [
-          "${homeDir}/.ssh/id_nfc_sk"
           "${homeDir}/.ssh/id_nano_sk"
-          "${homeDir}/.ssh/id_ed25519_agenix"   # kept for agenix activation; also stored in 1P vault as recovery
+          "${homeDir}/.ssh/id_nfc_sk"
+          "${homeDir}/.ssh/id_ed25519_agenix"   # kept for agenix activation; also in 1P vault as recovery
         ];
       };
     };
