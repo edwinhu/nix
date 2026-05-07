@@ -26,7 +26,7 @@ in
       user = {
         name = userInfo.fullName;
         email = userInfo.email;
-        signingkey = "${homeDir}/.ssh/id_nfc_sk.pub";   # NFC = primary; if travelling with Nano, override per-repo
+        signingkey = "${homeDir}/.ssh/id_github.pub";   # software RSA key on disk — zero-touch signing
       };
       init.defaultBranch = "main";
       core = {
