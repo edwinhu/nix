@@ -60,10 +60,14 @@ in
       "*" = {
         serverAliveInterval = 180;
         addKeysToAgent = "yes";
+        # 1Password SSH agent — provides all software keys stored in vault
+        # (legacy id_github, id_ed25519, server-specific keys eddy_rsa/rjds_rsa/satori/wrds_*).
+        # FIDO2 SK keys come from IdentityFile (YubiKey hardware, not vault-storable).
+        identityAgent = ''"${homeDir}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"'';
         identityFile = [
           "${homeDir}/.ssh/id_nfc_sk"
           "${homeDir}/.ssh/id_nano_sk"
-          "${homeDir}/.ssh/id_ed25519_agenix"   # legacy fallback — remove in Phase 8
+          "${homeDir}/.ssh/id_ed25519_agenix"   # kept for agenix activation; also stored in 1P vault as recovery
         ];
       };
     };

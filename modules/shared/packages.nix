@@ -23,9 +23,9 @@ with pkgs; [
   zip
 
   # Encryption and security tools
+  _1password-cli       # `op` — 1Password CLI (GUI installed via cask on macOS, AUR on Omarchy)
   age
   age-plugin-yubikey   # YubiKey-backed age identities for agenix
-  # bitwarden-cli  # TODO: re-enable after nodejs-slim-22 OOM fix
   gnupg
   libfido2
   pam_u2f              # optional: FIDO2-backed PAM (sudo over SSH); local sudo uses Touch ID
