@@ -32,8 +32,15 @@
     };
   };
   
-  age.identityPaths = [
-    (if pkgs.stdenv.isDarwin then "/Users/${user}/.ssh/id_ed25519_agenix" else "/home/${user}/.ssh/id_ed25519_agenix")
+  # NOTE: nix-darwin home-manager activation runs without /dev/tty, so
+  # age-plugin-yubikey cannot prompt for touch confirmation during build-switch.
+  # SSH key remains the activation-time identity. YubiKey identities are kept
+  # as recipients in nix-secrets/secrets.nix so manual decryption from a fresh
+  # machine works (agenix CLI run interactively can use the plugin).
+  age.identityPaths = let
+    homeDir = if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}";
+  in [
+    "${homeDir}/.ssh/id_ed25519_agenix"
   ];
 
   # Set environment variables pointing to agenix secret file paths

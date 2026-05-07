@@ -26,7 +26,7 @@ in
       user = {
         name = userInfo.fullName;
         email = userInfo.email;
-        signingkey = "${homeDir}/.ssh/id_github.pub";
+        signingkey = "${homeDir}/.ssh/id_nfc_sk.pub";   # NFC = primary; if travelling with Nano, override per-repo
       };
       init.defaultBranch = "main";
       core = {
@@ -34,7 +34,9 @@ in
         autocrlf = "input";
       };
       gpg.format = "ssh";
+      gpg.ssh.allowedSignersFile = "${homeDir}/.config/git/allowed_signers";
       commit.gpgsign = true;
+      tag.gpgsign = true;
       pull.rebase = true;
       rebase.autoStash = true;
     };
@@ -50,14 +52,18 @@ in
       "github.com" = {
         identitiesOnly = true;
         identityFile = [
-          "${homeDir}/.ssh/id_github"
+          "${homeDir}/.ssh/id_nfc_sk"     # primary YubiKey (keychain)
+          "${homeDir}/.ssh/id_nano_sk"    # backup YubiKey
+          "${homeDir}/.ssh/id_github"     # legacy fallback — remove in Phase 8
         ];
       };
       "*" = {
         serverAliveInterval = 180;
         addKeysToAgent = "yes";
         identityFile = [
-          "${homeDir}/.ssh/id_ed25519_agenix"
+          "${homeDir}/.ssh/id_nfc_sk"
+          "${homeDir}/.ssh/id_nano_sk"
+          "${homeDir}/.ssh/id_ed25519_agenix"   # legacy fallback — remove in Phase 8
         ];
       };
     };

@@ -24,10 +24,13 @@ with pkgs; [
 
   # Encryption and security tools
   age
+  age-plugin-yubikey   # YubiKey-backed age identities for agenix
   # bitwarden-cli  # TODO: re-enable after nodejs-slim-22 OOM fix
   gnupg
   libfido2
+  pam_u2f              # optional: FIDO2-backed PAM (sudo over SSH); local sudo uses Touch ID
   sops
+  yubikey-manager      # `ykman` for YubiKey configuration
 
   # Cloud-related tools and SDKs
   google-cloud-sdk

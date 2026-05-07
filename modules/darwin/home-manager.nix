@@ -102,6 +102,13 @@
             PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
             ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
         '';
+
+        # Allowed-signers file for SSH-format git commit verification.
+        # Both emails (work + personal) trust both YubiKey signing pubkeys.
+        file.".config/git/allowed_signers".text = ''
+          ehu@law.virginia.edu,eddyhu@gmail.com sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIJNwhHJtvb4jpqCkKWwiOGva43GS4UMqP5ZVSrpdiOvsAAAAB3NzaDpuZmM=
+          ehu@law.virginia.edu,eddyhu@gmail.com sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIFypmbJQSsaLhmyhiBS6o1G3VGFr/JPmiiFR77sudJLPAAAACHNzaDpuYW5v
+        '';
       };
 
       # Set agenix secret paths for GUI apps via launchd
