@@ -52,18 +52,14 @@ in
       "github.com" = {
         identitiesOnly = true;
         identityFile = [
-          "${homeDir}/.ssh/id_nano_sk"    # daily driver — perma-plugged
-          "${homeDir}/.ssh/id_nfc_sk"     # mobile/travel key
-          "${homeDir}/.ssh/id_github"     # legacy fallback — also in 1P vault
+          "${homeDir}/.ssh/id_nano_sk"
+          "${homeDir}/.ssh/id_nfc_sk"
+          "${homeDir}/.ssh/id_github"
         ];
       };
       "*" = {
         serverAliveInterval = 180;
         addKeysToAgent = "yes";
-        # No identityAgent — 1Password SSH agent unreliable under
-        # per-application authorization model in non-interactive shells.
-        # Per-host keys live in config_external. Only the agenix key
-        # is catch-all (needed for activation on any host).
         identityFile = [
           "${homeDir}/.ssh/id_ed25519_agenix"
         ];

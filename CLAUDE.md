@@ -64,8 +64,8 @@ nix flake update nix-secrets  # Update only secrets
 
 ## Important Notes
 
-- SSH auth: YubiKey FIDO2 resident keys (`id_nfc_sk`, `id_nano_sk`) + 1Password SSH agent for software keys (github, wrds_nyu, wrds_uva, rjds, agenix). FIDO2 keys recoverable on a fresh machine via `ssh-keygen -K` from the YubiKey itself.
-- Agenix activation reads from `~/.ssh/id_ed25519_agenix` (the only required disk-resident SSH key); also stored in 1Password as recovery.
+- SSH auth: per-host on-disk keys in `~/dotfiles/.ssh/config_external` (wrds_nyu, wrds_uva, rjds, satori). YubiKey FIDO2 resident keys (`id_nfc_sk`, `id_nano_sk`) + `id_github` only for github.com. 1Password vault holds recovery copies of all software keys. FIDO2 keys recoverable on a fresh machine via `ssh-keygen -K` from the YubiKey itself.
+- Agenix activation reads from `~/.ssh/id_ed25519_agenix`; also stored in 1Password as recovery.
 - Git commit signing: SSH-format using `~/.ssh/id_github.pub` (zero-touch). YubiKey FIDO2 keys also trusted in `allowed_signers` for past/explicit signatures.
 - Build scripts automatically detect current user and platform
 - All secrets encrypted with agenix in separate private repository
