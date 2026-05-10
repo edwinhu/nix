@@ -25,6 +25,9 @@ with pkgs; [
   rclone
 
   # Security and secrets
+  # 1password GUI: install via AUR (`yay -S 1password`) — nixpkgs _1password-gui
+  # is built for NixOS (needs programs._1password-gui module for polkit/group setup).
+  # 1password CLI (`op`) is installed via _1password-cli in modules/shared/packages.nix.
   age
   libfido2
   sops

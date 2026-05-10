@@ -135,6 +135,20 @@
           sudo -u ${user} defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add "{LSHandlerContentTag=\"$ext\";LSHandlerContentTagClass=\"public.filename-extension\";LSHandlerRoleAll=\"com.neovide.neovide\";}"
         done
       fi
+
+      # YubiKey FIDO2 authentication for sudo and screen unlock
+      PAM_U2F="${pkgs.pam_u2f}/lib/security/pam_u2f.so"
+      if [ -f "$PAM_U2F" ]; then
+        # sudo: YubiKey alongside Touch ID
+        if ! grep -q pam_u2f /etc/pam.d/sudo_local 2>/dev/null; then
+          echo "auth       sufficient     $PAM_U2F cue" >> /etc/pam.d/sudo_local
+        fi
+        # Note: screen unlock uses PIV/smart card (screensaver_ctk), not FIDO2.
+      fi
+
+      # PIV smart card login: allow but never enforce (password/Touch ID fallback)
+      defaults write /Library/Preferences/com.apple.security.smartcard allowSmartCard -bool true
+      defaults write /Library/Preferences/com.apple.security.smartcard enforceSmartCard -bool false
     '';
   };
 
@@ -167,7 +181,7 @@
       { path = "/Applications/Morgen.app"; }
       { path = "/Applications/Visual Studio Code.app"; }
       { path = "/Applications/Obsidian.app"; }
-      { path = "/Applications/Bitwarden.app"; }
+      { path = "/Applications/1Password.app"; }
       { path = "/Applications/Beeper Desktop.app"; }
       {
         path = "${config.users.users.${user}.home}/Downloads";

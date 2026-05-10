@@ -28,6 +28,7 @@ with pkgs; [
   age-plugin-yubikey   # YubiKey-backed age identities for agenix
   gnupg
   libfido2
+  openconnect
   pam_u2f              # optional: FIDO2-backed PAM (sudo over SSH); local sudo uses Touch ID
   sops
   yubikey-manager      # `ykman` for YubiKey configuration

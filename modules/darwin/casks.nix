@@ -19,7 +19,7 @@ _:
   "zoom"
 
   # Utility Tools
-  "bitwarden"
+  "1password"
   "blip"
   "karabiner-elements"
   # "claude"  # Managed by nix run .#claude-desktop-update (Homebrew cask lags behind)
