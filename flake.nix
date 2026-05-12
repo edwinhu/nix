@@ -73,9 +73,13 @@
       url = "path:./clawdbot";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    seance = {
+      url = "git+https://github.com/no1msd/seance?submodules=1";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, barutsrb-tap, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, barutsrb-tap, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills, seance } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -518,6 +522,7 @@
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 hunkdiff = prev.callPackage ./modules/shared/hunkdiff.nix {};
+                seance = seance.packages.${prev.system}.seance;
                 # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 
                 # Double Commander Qt6 from official releases

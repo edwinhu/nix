@@ -19,9 +19,11 @@ with pkgs; [
   # Communication
   beeper
 
+  # AI agent terminal multiplexer (gh:no1msd/seance, packaged via flake input)
+  seance
+
   # Cloud and sync
   google-cloud-sdk
-  localsend
   rclone
 
   # Security and secrets
