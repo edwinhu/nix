@@ -351,7 +351,8 @@
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         companion-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/companion-app.nix {};
         happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
-        hunkdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/hunkdiff.nix {};
+        elio = (import nixpkgs { inherit system; }).callPackage ./modules/shared/elio.nix {};
+        revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
         # the-companion: managed by `bun install -g` via `nix run .#companion-update`
       });
 
@@ -377,7 +378,8 @@
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   companion-app = prev.callPackage ./modules/shared/companion-app.nix {};
                   happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
-                  hunkdiff = prev.callPackage ./modules/shared/hunkdiff.nix {};
+                  elio = prev.callPackage ./modules/shared/elio.nix {};
+                  revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                   # the-companion: managed by `bun install -g` via `nix run .#companion-update`
                   # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
@@ -521,7 +523,8 @@
               (final: prev: {
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
-                hunkdiff = prev.callPackage ./modules/shared/hunkdiff.nix {};
+                elio = prev.callPackage ./modules/shared/elio.nix {};
+                revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 seance = seance.packages.${prev.system}.seance;
                 # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 

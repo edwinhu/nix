@@ -75,7 +75,8 @@ with pkgs; [
   fswatch
   fzf
   hunspell
-  hunkdiff
+  elio
+  revdiff
   jq
   pandoc
   haskellPackages.pandoc-crossref
