@@ -48,6 +48,7 @@
       "microsoft word" = 462054704;
       "microsoft excel" = 462058435;
       # "microsoft powerpoint" = 462062816;  # Temporarily disabled - brew bundle `mas get` fails on mas 2.3.0
+      "joystick mapper" = 528183797;
     };
   };
   
@@ -76,17 +77,24 @@
         # The *-update apps also write here — activation keeps them in sync.
         activation.linkLocalBin = lib.hm.dag.entryAfter ["writeBoundary"] ''
           $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
-          # Superhuman wrapper with CDP tab auto-open fallback
+          # Superhuman CLI wrapper: targets the native Superhuman.app on CDP 9252.
+          # Auto-kickstarts the com.user.superhuman-cdp LaunchAgent if the port is down,
+          # falling back to opening the ~/Applications/Superhuman (CDP).app wrapper bundle.
+          # Web Superhuman in chrome-cdp is no longer used (Cloudflare Turnstile +
+          # JWT rotation made it fragile; the native app handles its own auth).
           $DRY_RUN_CMD rm -f "$HOME/.local/bin/superhuman"
           printf '%s\n' \
             '#!/bin/bash' \
-            'CDP_URL="http://localhost:9250"' \
-            'if curl -s --max-time 2 "$CDP_URL/json/version" >/dev/null 2>&1; then' \
-            '  if ! curl -s --max-time 2 "$CDP_URL/json/list" 2>/dev/null | python3 -c "import json,sys; targets=json.load(sys.stdin); exit(0 if any(t['"'"'type'"'"']=='"'"'page'"'"' and '"'"'mail.superhuman.com'"'"' in t['"'"'url'"'"'] and '"'"'background'"'"' not in t['"'"'url'"'"'] for t in targets) else 1)" 2>/dev/null; then' \
-            '    curl -s --max-time 5 -X PUT "$CDP_URL/json/new?https://mail.superhuman.com" >/dev/null 2>&1' \
-            '    sleep 4' \
-            '  fi' \
+            'PORT=9252' \
+            'if ! curl -s --max-time 2 "http://localhost:$PORT/json/version" >/dev/null 2>&1; then' \
+            '  launchctl kickstart -k "gui/$(id -u)/com.user.superhuman-cdp" 2>/dev/null \' \
+            '    || open -gja "$HOME/Applications/Superhuman (CDP).app"' \
+            '  for i in 1 2 3 4 5 6 7 8 9 10; do' \
+            '    sleep 1' \
+            '    curl -s --max-time 1 "http://localhost:$PORT/json/version" >/dev/null 2>&1 && break' \
+            '  done' \
             'fi' \
+            'export CDP_PORT=$PORT' \
             'exec "$HOME/projects/superhuman-cli/dist/superhuman-darwin" "$@"' \
             > "$HOME/.local/bin/superhuman"
           $DRY_RUN_CMD chmod +x "$HOME/.local/bin/superhuman"
