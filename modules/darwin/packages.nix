@@ -12,7 +12,7 @@ shared-packages ++ [
   ((emacsPackagesFor emacs-macport).emacsWithPackages (epkgs: [ epkgs.vterm ]))
   # Option 2: emacs with native compilation
   # ((emacsPackagesFor emacs-unstable).emacsWithPackages (epkgs: [ epkgs.vterm ]))
-  # jankyborders  # Replaced by omniwm
+  jankyborders
   sketchybar
   zathuraApp
 ]

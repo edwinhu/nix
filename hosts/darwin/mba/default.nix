@@ -9,6 +9,7 @@
     ../../../modules/darwin/defaults.nix
     ../../../modules/darwin/syncthing.nix
     ../../../modules/darwin/wifi-autoswitch.nix
+    ../../../modules/darwin/jankyborders.nix
   ];
 
   # Reminder for terminal and accessibility app permissions

@@ -4,7 +4,7 @@
 
 with pkgs; [
   # AI tools: installed via ~/nix/scripts/setup-ai-tools.sh
-  # (claude, codex, opencode, the-companion manage their own auto-updates)
+  # (claude, codex, opencode manage their own auto-updates)
 
   # Development tools
   bun

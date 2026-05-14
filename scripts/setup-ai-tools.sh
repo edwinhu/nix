@@ -26,7 +26,7 @@ for arg in "$@"; do
       sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|companion|happy|happy-agent|gemini) TOOLS+=("$arg") ;;
+    claude|codex|opencode|happy|happy-agent|gemini) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -34,7 +34,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode companion happy happy-agent gemini)
+  TOOLS=(claude codex opencode happy happy-agent gemini)
 fi
 
 # Remove stale nix-era wrappers at ~/.local/bin/<tool> that exec into /nix/store.
@@ -98,20 +98,6 @@ install_opencode() {
   echo "${YELLOW}→ Installing OpenCode (opencode.ai installer)...${NC}"
   curl -fsSL https://opencode.ai/install | bash
   echo "${GREEN}✓ OpenCode installed — update with: opencode upgrade${NC}"
-}
-
-install_companion() {
-  local bun
-  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
-  if [ "$FORCE" = "0" ] && "$bun" pm ls -g 2>/dev/null | grep -q 'the-companion@'; then
-    local ver
-    ver=$("$bun" pm ls -g 2>/dev/null | grep -oE 'the-companion@[0-9.]+' | head -1)
-    echo "${GREEN}✓${NC} $ver already installed"
-    return 0
-  fi
-  echo "${YELLOW}→ Installing the-companion (bun global)...${NC}"
-  "$bun" install -g the-companion@latest
-  echo "${GREEN}✓ the-companion installed — theme + wrapper: nix run ~/nix#companion-update${NC}"
 }
 
 # happy CLI is built from the slopus/happy pnpm monorepo (mirrors
@@ -257,7 +243,6 @@ for t in "${TOOLS[@]}"; do
     claude)       install_claude ;;
     codex)        install_codex ;;
     opencode)     install_opencode ;;
-    companion)    install_companion ;;
     happy)        install_happy ;;
     happy-agent)  install_happy_agent ;;
     gemini)       install_gemini ;;

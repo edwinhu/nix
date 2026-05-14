@@ -41,14 +41,17 @@
     # Nix is reinstalling these apps every time you run `darwin-rebuild switch`
     # https://github.com/nix-darwin/nix-darwin/issues/1323
     # run brew install mas to make sure you have > 2.0.0
+    # All entries currently disabled — nix-darwin issue #1323: brew bundle invokes
+    # `mas get <id>` on every switch, which mas 2.x no longer supports (renamed to
+    # `mas info`), so installs fail even when the app is already present. Re-enable
+    # individual lines once nix-darwin emits a compatible command.
     masApps = {
-      "bear" = 1091189122;
-      "microsoft to-do" = 1274495053;
-      # "amazon kindle" = 302584613;  # Temporarily disabled - Mac App Store install failing
-      "microsoft word" = 462054704;
-      "microsoft excel" = 462058435;
-      # "microsoft powerpoint" = 462062816;  # Temporarily disabled - brew bundle `mas get` fails on mas 2.3.0
-      "joystick mapper" = 528183797;
+      # "bear" = 1091189122;
+      # "microsoft to-do" = 1274495053;
+      # "amazon kindle" = 302584613;
+      # "microsoft word" = 462054704;
+      # "microsoft excel" = 462058435;
+      # "microsoft powerpoint" = 462062816;
     };
   };
   
@@ -100,7 +103,7 @@
           $DRY_RUN_CMD chmod +x "$HOME/.local/bin/superhuman"
         '';
 
-        # Idempotent bootstrap for AI CLIs (claude, codex, opencode, the-companion).
+        # Idempotent bootstrap for AI CLIs (claude, codex, opencode).
         # Each tool self-updates after install, so this only runs missing installs.
         # Use `nix run ~/nix#update-ai-tools` to force-bump to latest.
         # PATH must include curl (installer downloads) plus user dirs so `want()`

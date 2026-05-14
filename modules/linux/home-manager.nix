@@ -3,7 +3,6 @@
 {
   imports = [
     ../shared/stylix.nix
-    ./the-companion.nix
   ];
 
   # Linux-specific Stylix configuration (Qt theming)
@@ -49,7 +48,7 @@
       fi
     '';
 
-    # Idempotent bootstrap for AI CLIs (claude, codex, opencode, the-companion).
+    # Idempotent bootstrap for AI CLIs (claude, codex, opencode).
     # Each tool self-updates after install, so this only runs missing installs.
     # Use `nix run ~/nix#update-ai-tools` to force-bump to latest.
     # PATH must include curl (installer downloads) plus user dirs so `want()`

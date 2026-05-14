@@ -163,7 +163,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Bootstrap-install claude, codex, opencode, the-companion, happy, happy-agent, gemini (idempotent)";
+        meta.description = "Bootstrap-install claude, codex, opencode, happy, happy-agent, gemini (idempotent)";
         program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
@@ -174,7 +174,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Force-reinstall claude, codex, opencode, the-companion, happy, happy-agent, gemini to latest";
+        meta.description = "Force-reinstall claude, codex, opencode, happy, happy-agent, gemini to latest";
         program = "${(pkgs.writeScriptBin "update-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh --force "$@"
@@ -236,89 +236,11 @@
           open -a Claude
         '')}/bin/claude-desktop-update";
       };
-      mkCompanionUpdateApp = system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-          themeCss = ./modules/shared/companion-catppuccin.css;
-        in {
-        type = "app";
-        meta.description = "Update the-companion via bun global install";
-        program = "${(pkgs.writeScriptBin "companion-update" ''
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          GREEN='\033[1;32m'
-          YELLOW='\033[1;33m'
-          NC='\033[0m'
-
-          BUN="''${HOME}/.bun/bin/bun"
-          [ -x "''$BUN" ] || BUN="''${HOME}/.nix-profile/bin/bun"
-          [ -x "''$BUN" ] || { echo "bun not found"; exit 1; }
-
-          CURRENT=$(''$BUN pm ls -g 2>/dev/null | grep the-companion | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "none")
-          LATEST=$(${pkgs.curl}/bin/curl -s "https://registry.npmjs.org/the-companion/latest" | ${pkgs.jq}/bin/jq -r '.version')
-          echo "Current: ''$CURRENT  Latest: ''$LATEST"
-
-          if [ "''$CURRENT" = "''$LATEST" ]; then
-            echo -e "''${GREEN}Already up to date.''${NC}"
-          else
-            echo -e "''${YELLOW}Installing the-companion@''$LATEST...''${NC}"
-            ''$BUN install -g the-companion@latest
-          fi
-
-          # ── Apply Catppuccin Mocha theme ──
-          DIST="''${HOME}/.bun/install/global/node_modules/the-companion/dist"
-          [ -d "''$DIST" ] || { echo "dist not found at ''$DIST"; exit 1; }
-
-          echo -e "''${YELLOW}Applying Catppuccin theme...''${NC}"
-
-          # Meta theme color
-          ${pkgs.perl}/bin/perl -i -pe 's|<meta name="theme-color" content="#d97757" />|<meta name="theme-color" content="#11111b" media="(prefers-color-scheme: dark)" />\n    <meta name="theme-color" content="#eff1f5" media="(prefers-color-scheme: light)" />|' "''$DIST/index.html"
-
-          # Inject theme CSS before </head>
-          ${pkgs.perl}/bin/perl -i -pe 'BEGIN { local $/; open my $f, "<", "'"${themeCss}"'" or die; $css = <$f>; close $f; chomp $css } s|</head>|$css|' "''$DIST/index.html"
-
-          # CSS accent color
-          for f in "''$DIST"/assets/index-*.css; do
-            ${pkgs.gnused}/bin/sed -i 's/#d97757/#cba6f7/g' "''$f"
-          done
-
-          # JS background + font
-          for f in "''$DIST"/assets/index-*.js; do
-            ${pkgs.gnused}/bin/sed -i 's/#141413/#1e1e2e/g' "''$f"
-            ${pkgs.gnused}/bin/sed -i "s/fontFamily:\"monospace\",fontSize:15/fontFamily:\"'Maple Mono NF', monospace\",fontSize:16/g" "''$f"
-          done
-
-          # ── Bundle Maple Mono NF fonts ──
-          FONT_SRC="''${HOME}/.nix-profile/share/fonts/truetype"
-          if [ -d "''$FONT_SRC" ]; then
-            mkdir -p "''$DIST/fonts"
-            for weight in Regular Bold Italic BoldItalic; do
-              cp "''$FONT_SRC/MapleMono-NF-''$weight.ttf" "''$DIST/fonts/" 2>/dev/null || true
-            done
-            echo "  Fonts bundled"
-          else
-            echo "  Warning: fonts not found at ''$FONT_SRC (skipping)"
-          fi
-
-          # ── Create wrapper in ~/.local/bin ──
-          mkdir -p "''${HOME}/.local/bin"
-          cat > "''${HOME}/.local/bin/the-companion" <<'WRAPPER'
-          #!/bin/bash
-          exec "''${HOME}/.bun/bin/the-companion" "$@"
-          WRAPPER
-          chmod +x "''${HOME}/.local/bin/the-companion"
-
-          VERSION=$(''$BUN pm ls -g 2>/dev/null | grep the-companion | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
-          echo -e "''${GREEN}the-companion@''$VERSION ready (themed + fonts)''${NC}"
-        '')}/bin/companion-update";
-      };
       mkLinuxApps = system: {
         "apply" = mkApp "apply" system;
         "build-switch" = mkApp "build-switch" system;
         "setup-ai-tools" = mkSetupAiToolsApp system;
         "update-ai-tools" = mkUpdateAiToolsApp system;
-        "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -332,7 +254,6 @@
         "setup-ai-tools" = mkSetupAiToolsApp system;
         "update-ai-tools" = mkUpdateAiToolsApp system;
         "claude-desktop-update" = mkClaudeDesktopUpdateApp system;
-        "companion-update" = mkCompanionUpdateApp system;
         "copy-keys" = mkApp "copy-keys" system;
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
@@ -349,11 +270,9 @@
         # chrome-for-testing: removed from build to reduce rsync time (338 MB app bundle)
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
-        companion-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/companion-app.nix {};
         happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
         elio = (import nixpkgs { inherit system; }).callPackage ./modules/shared/elio.nix {};
         revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
-        # the-companion: managed by `bun install -g` via `nix run .#companion-update`
       });
 
       # Darwin configurations for macOS hosts
@@ -376,12 +295,10 @@
                   # chrome-for-testing: removed from overlay to reduce rsync time
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
-                  companion-app = prev.callPackage ./modules/shared/companion-app.nix {};
                   happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
                   elio = prev.callPackage ./modules/shared/elio.nix {};
                   revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
-                  # the-companion: managed by `bun install -g` via `nix run .#companion-update`
-                  # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
+                    # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
                   ast-grep = prev.ast-grep.overrideAttrs (old: {
                     doCheck = false;
@@ -526,7 +443,6 @@
                 elio = prev.callPackage ./modules/shared/elio.nix {};
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 seance = seance.packages.${prev.system}.seance;
-                # the-companion: managed by `bun install -g` via `nix run .#companion-update`
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {
