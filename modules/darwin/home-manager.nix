@@ -114,6 +114,41 @@
             ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
         '';
 
+        # chrome-cdp: headless Chrome on CDP 9250 for browser automation
+        # (Reader, Readwise, scraping). Source of truth lives at
+        # ~/projects/chrome-cdp/. We mirror what install.sh does so a fresh
+        # machine ends up with the same setup after `build-switch` — provided
+        # the repo has been cloned. If not, we skip silently and the user can
+        # re-run after cloning.
+        # Pattern: wrapper + plists managed here, daemon script stays in repo.
+        activation.installChromeCdp = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          CHROME_CDP_REPO="$HOME/projects/chrome-cdp"
+          if [ ! -d "$CHROME_CDP_REPO" ]; then
+            echo "chrome-cdp: $CHROME_CDP_REPO not present, skipping (clone repo then re-run build-switch)"
+          else
+            $DRY_RUN_CMD mkdir -p "$HOME/.local/bin" "$HOME/.local/log" "$HOME/Library/LaunchAgents"
+            # Symlink the daemon + watchdog scripts so they're on PATH. The
+            # plists reference the repo path directly, so these symlinks are
+            # for interactive use only.
+            $DRY_RUN_CMD ln -sfn "$CHROME_CDP_REPO/bin/chrome-cdp" "$HOME/.local/bin/chrome-cdp"
+            $DRY_RUN_CMD ln -sfn "$CHROME_CDP_REPO/bin/chrome-cdp-watchdog" "$HOME/.local/bin/chrome-cdp-watchdog"
+            # Copy plists (launchctl is finicky about symlinked plists across
+            # macOS versions). install -m 644 makes this a no-op when the
+            # contents already match.
+            for label in com.chrome-cdp com.chrome-cdp-watchdog; do
+              SRC="$CHROME_CDP_REPO/LaunchAgents/$label.plist"
+              DST="$HOME/Library/LaunchAgents/$label.plist"
+              if [ ! -f "$DST" ] || ! cmp -s "$SRC" "$DST"; then
+                $DRY_RUN_CMD install -m 644 "$SRC" "$DST"
+                # Plist changed (or didn't exist): reload the job. bootout may
+                # legitimately fail if not loaded yet — hence || true.
+                $DRY_RUN_CMD launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+                $DRY_RUN_CMD launchctl bootstrap "gui/$(id -u)" "$DST" 2>/dev/null || true
+              fi
+            done
+          fi
+        '';
+
         # Allowed-signers file for SSH-format git commit verification.
         # Both emails (work + personal) trust the active signing key (id_github)
         # plus both YubiKey FIDO2 keys (used historically and still valid).
