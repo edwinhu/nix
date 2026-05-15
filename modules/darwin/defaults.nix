@@ -19,6 +19,34 @@
     '';
   };
 
+  # Weekly nix store GC + optimise (Determinate Nix manages the daemon, so
+  # nix-darwin's nix.gc/nix.optimise are disabled — use launchd directly).
+  launchd.daemons.nix-gc = {
+    serviceConfig = {
+      Label = "org.nixos.nix-gc";
+      ProgramArguments = [
+        "/bin/sh" "-c"
+        "/nix/var/nix/profiles/default/bin/nix-collect-garbage --delete-older-than 30d"
+      ];
+      StartCalendarInterval = [ { Weekday = 0; Hour = 4; Minute = 0; } ];
+      StandardOutPath = "/var/log/nix-gc.log";
+      StandardErrorPath = "/var/log/nix-gc.log";
+    };
+  };
+
+  launchd.daemons.nix-optimise = {
+    serviceConfig = {
+      Label = "org.nixos.nix-optimise";
+      ProgramArguments = [
+        "/bin/sh" "-c"
+        "/nix/var/nix/profiles/default/bin/nix-store --optimise"
+      ];
+      StartCalendarInterval = [ { Weekday = 0; Hour = 5; Minute = 0; } ];
+      StandardOutPath = "/var/log/nix-optimise.log";
+      StandardErrorPath = "/var/log/nix-optimise.log";
+    };
+  };
+
   # Turn off NIX_PATH warnings now that we're using flakes
   system.checks.verifyNixPath = false;
 
