@@ -1,4 +1,5 @@
 .claude/
+.antigravitycli/
 secrets.yaml
 .sops.yaml
 *.age
