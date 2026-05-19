@@ -6,6 +6,7 @@ _:
   "github"
   "cmux"
   "codex-app"
+  "antigravity"  # Antigravity IDE 2.0 (Google, ex-Firebase Studio); CLI installed via setup-ai-tools
   "neovide-app"
   "visual-studio-code"
   # "wezterm"  # Removed: using nix package for version consistency across systems

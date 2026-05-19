@@ -163,7 +163,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Bootstrap-install claude, codex, opencode, happy, happy-agent, gemini (idempotent)";
+        meta.description = "Bootstrap-install claude, codex, opencode, happy, happy-agent, agy (idempotent)";
         program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
@@ -174,7 +174,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Force-reinstall claude, codex, opencode, happy, happy-agent, gemini to latest";
+        meta.description = "Force-reinstall claude, codex, opencode, happy, happy-agent, agy to latest";
         program = "${(pkgs.writeScriptBin "update-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh --force "$@"

@@ -26,7 +26,7 @@ for arg in "$@"; do
       sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|happy|happy-agent|gemini) TOOLS+=("$arg") ;;
+    claude|codex|opencode|happy|happy-agent|gemini|agy) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -34,7 +34,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode happy happy-agent gemini)
+  TOOLS=(claude codex opencode happy happy-agent agy)
 fi
 
 # Remove stale nix-era wrappers at ~/.local/bin/<tool> that exec into /nix/store.
@@ -230,13 +230,21 @@ install_happy_agent() {
   echo "${YELLOW}  Updates: cd $repo && git pull && pnpm install && pnpm --filter happy-agent build${NC}"
 }
 
-install_gemini() {
+# Gemini CLI was renamed to Antigravity CLI at I/O 2026; consumer access to the
+# old `gemini` binary stops 2026-06-18. Binary is `agy`; config still lives
+# under ~/.gemini/antigravity-cli/, and `agy plugin import gemini` migrates
+# existing extensions on first launch.
+install_agy() {
+  purge_nix_wrapper agy
   purge_nix_wrapper gemini
-  if ! want "gemini" gemini; then return 0; fi
-  echo "${YELLOW}→ Installing Gemini CLI (npm global)...${NC}"
-  npm i -g @google/gemini-cli
-  echo "${GREEN}✓ Gemini CLI installed${NC}"
+  if ! want "agy" agy; then return 0; fi
+  echo "${YELLOW}→ Installing Antigravity CLI (official installer)...${NC}"
+  curl -fsSL https://antigravity.google/cli/install.sh | bash
+  echo "${GREEN}✓ Antigravity CLI installed — run \`agy\` to sign in (or authenticate via Antigravity IDE first).${NC}"
 }
+
+# `gemini` subcommand kept for muscle memory; installs Antigravity CLI now.
+install_gemini() { install_agy; }
 
 for t in "${TOOLS[@]}"; do
   case "$t" in
@@ -246,6 +254,7 @@ for t in "${TOOLS[@]}"; do
     happy)        install_happy ;;
     happy-agent)  install_happy_agent ;;
     gemini)       install_gemini ;;
+    agy)          install_agy ;;
   esac
 done
 
