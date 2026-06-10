@@ -77,6 +77,7 @@ with pkgs; [
   hunspell
   elio
   revdiff
+  onlyoffice-x2t  # docx/pptx/xlsx -> PDF/PNG conversion (OOXML-native; see modules/shared/onlyoffice-x2t.nix)
   jq
   pandoc
   haskellPackages.pandoc-crossref

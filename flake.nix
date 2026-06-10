@@ -273,6 +273,7 @@
         happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
         elio = (import nixpkgs { inherit system; }).callPackage ./modules/shared/elio.nix {};
         revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
+        onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -298,6 +299,7 @@
                   happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
                   elio = prev.callPackage ./modules/shared/elio.nix {};
                   revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
+                  onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                     # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
                   ast-grep = prev.ast-grep.overrideAttrs (old: {
@@ -442,6 +444,7 @@
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 elio = prev.callPackage ./modules/shared/elio.nix {};
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
+                onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 seance = seance.packages.${prev.system}.seance;
 
                 # Double Commander Qt6 from official releases
