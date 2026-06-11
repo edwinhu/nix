@@ -10,6 +10,7 @@
     ../../../modules/darwin/syncthing.nix
     ../../../modules/darwin/wifi-autoswitch.nix
     ../../../modules/darwin/jankyborders.nix
+    ../../../modules/darwin/joycon-reconnect.nix
   ];
 
   # Reminder for terminal and accessibility app permissions
