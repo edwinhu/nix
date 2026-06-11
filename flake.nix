@@ -3,6 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    # Newer nixpkgs pin for onlyoffice-docbuilder only: the main lock predates
+    # pkgs/by-name/on/onlyoffice-documentserver/x2t.nix (hermetic source build
+    # that our docbuilder derivation extends). Safe to fold into nixpkgs on
+    # the next full lock update.
+    nixpkgs-onlyoffice.url = "github:nixos/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -79,7 +84,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, barutsrb-tap, dimentium-autoraise, home-manager, nixpkgs, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills, seance } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, barutsrb-tap, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, zathura-src, zathura-pdf-mupdf-src, clawdbot-skills, seance } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -277,7 +282,7 @@
         onlyoffice-docbuilder = let p = import nixpkgs { inherit system; }; in
           if p.stdenv.isDarwin
           then p.callPackage ./modules/shared/onlyoffice/selfbuilt-mac.nix {}
-          else p.callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+          else (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -307,7 +312,7 @@
                   onlyoffice-docbuilder =
                     if prev.stdenv.isDarwin
                     then prev.callPackage ./modules/shared/onlyoffice/selfbuilt-mac.nix {}
-                    else prev.callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+                    else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                     # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
                   ast-grep = prev.ast-grep.overrideAttrs (old: {
@@ -456,7 +461,7 @@
                 onlyoffice-docbuilder =
                   if prev.stdenv.isDarwin
                   then prev.callPackage ./modules/shared/onlyoffice/selfbuilt-mac.nix {}
-                  else prev.callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+                  else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                 seance = seance.packages.${prev.system}.seance;
 
                 # Double Commander Qt6 from official releases
