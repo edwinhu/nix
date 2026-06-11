@@ -455,7 +455,12 @@
               (final: prev: {
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
-                elio = prev.callPackage ./modules/shared/elio.nix {};
+                # elio via newer nixpkgs on linux: the main lock's cargo vendor
+                # fetcher sends no User-Agent and crates.io now 403s it
+                elio =
+                  if prev.stdenv.isDarwin
+                  then prev.callPackage ./modules/shared/elio.nix {}
+                  else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder =
