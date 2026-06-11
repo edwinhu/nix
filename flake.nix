@@ -279,10 +279,7 @@
         elio = (import nixpkgs { inherit system; }).callPackage ./modules/shared/elio.nix {};
         revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
         onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
-        onlyoffice-docbuilder = let p = import nixpkgs { inherit system; }; in
-          if p.stdenv.isDarwin
-          then p.callPackage ./modules/shared/onlyoffice/selfbuilt-mac.nix {}
-          else (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+        onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
       });
 
       # Darwin configurations for macOS hosts
@@ -309,10 +306,7 @@
                   elio = prev.callPackage ./modules/shared/elio.nix {};
                   revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                   onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
-                  onlyoffice-docbuilder =
-                    if prev.stdenv.isDarwin
-                    then prev.callPackage ./modules/shared/onlyoffice/selfbuilt-mac.nix {}
-                    else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+                  onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                     # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
                   # on macOS after nixpkgs update to 2026-03-08
                   ast-grep = prev.ast-grep.overrideAttrs (old: {
@@ -463,10 +457,7 @@
                   else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
-                onlyoffice-docbuilder =
-                  if prev.stdenv.isDarwin
-                  then prev.callPackage ./modules/shared/onlyoffice/selfbuilt-mac.nix {}
-                  else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+                onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                 seance = seance.packages.${prev.system}.seance;
 
                 # Double Commander Qt6 from official releases

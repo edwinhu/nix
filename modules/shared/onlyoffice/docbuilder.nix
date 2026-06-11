@@ -15,12 +15,17 @@
 # store-path sdkjs + build-time-generated AllFonts.js, so unlike the official
 # tarball no runtime font-index initialization is needed.
 #
-# Linux-only for now (upstream derivation is platforms.linux). macOS uses the
-# separately packaged self-built tarball (onlyoffice-selfbuilt.nix).
+# linux uses nixpkgs' x2t.nix verbatim (Hydra cache hits); darwin uses our
+# hermetic port of it (./hermetic/x2t.nix — same file + darwin conditionals:
+# apple_silicon CONFIG, c++20 over the core_mac c++14 override, brotli for the
+# bundled freetype, fixDarwinDylibNames, JavaScriptCore instead of v8).
 { pkgs, lib }:
 
 let
-  x2t = pkgs.callPackage "${pkgs.path}/pkgs/by-name/on/onlyoffice-documentserver/x2t.nix" { };
+  x2t =
+    if pkgs.stdenv.isDarwin
+    then pkgs.callPackage ./hermetic/x2t.nix { }
+    else pkgs.callPackage "${pkgs.path}/pkgs/by-name/on/onlyoffice-documentserver/x2t.nix" { };
 in
 (x2t.overrideAttrs (prev: {
   pname = "onlyoffice-docbuilder";
