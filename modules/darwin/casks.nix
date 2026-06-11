@@ -4,6 +4,17 @@ _:
   # Development Tools
   "orbstack"
   "github"
+  # cmux: auto_updates cask — brew/nix do NOT manage its version; the app self-updates via Sparkle.
+  # PINNED to 0.64.10 manually (2026-06-01): 0.64.11's new "detachable SSH PTY daemon" breaks remote
+  # reattach across daemon-version boundaries -> "ssh-pty-attach: remote PTY attach failed".
+  # FIX: upstream PR manaflow-ai/cmux#5088 (version-scoped snapshot restore w/ fresh-SSH fallback).
+  # UN-PIN once #5088 ships in a release AFTER 0.64.11, then re-enable Sparkle:
+  #   defaults write com.cmuxterm.app SUEnableAutomaticChecks -bool true
+  # Pin enforced by disabling Sparkle:
+  #   defaults write com.cmuxterm.app SUEnableAutomaticChecks -bool false
+  #   defaults write com.cmuxterm.app SUAutomaticallyUpdate   -bool false
+  # Remote sessions are better persisted with zellij on the host anyway
+  # (`ssh rjds && zellij attach <session>`).
   "cmux"
   "codex-app"
   "antigravity"  # Antigravity IDE 2.0 (Google, ex-Firebase Studio); CLI installed via setup-ai-tools
@@ -51,6 +62,6 @@ _:
   # "chromium"  # Deprecated, doesn't install properly on macOS - using google-chrome for tunnel browser instead
   "google-chrome"
 
-  # Large apps moved from nix systemPackages to reduce rsync time
-  "libreoffice"
+  # libreoffice removed 2026-06-10: replaced by onlyoffice-docbuilder
+  # (source-built, watermark-free xlsx recalc + x2t render paths)
 ]
