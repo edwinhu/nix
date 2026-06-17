@@ -15,4 +15,6 @@ shared-packages ++ [
   jankyborders
   sketchybar
   zathuraApp
+  # tmc/nlm — NotebookLM CLI + MCP server, built from upstream source.
+  (import ./nlm.nix { inherit pkgs; })
 ]
