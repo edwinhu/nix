@@ -958,14 +958,31 @@ let
     mkdir -p $out/converter
     mkdir -p $out/images
     mkdir -p $out/fonts
-    # allfontsgen indexes exactly one --input tree (recursively). Merge the
-    # upstream core-fonts with the vendored real macOS Garamond TTFs (./fonts)
-    # so the index includes family "Garamond" and x2t embeds it instead of
-    # substituting to Georgia. "Garamond" matches the law-review template
-    # default, so documents need no font change.
+    # allfontsgen indexes exactly one --input tree (recursively). We merge:
+    #  (1) upstream core-fonts (metric clones of the MS core set);
+    #  (2) the vendored real macOS Garamond TTFs (./fonts), as a guaranteed
+    #      fallback even if the live read below is unavailable;
+    #  (3) every document font Microsoft Word can use, read LIVE from the
+    #      system at build time (this host's nix has sandbox=false, and
+    #      /System/Library/PrivateFrameworks is in sandbox-paths, so the
+    #      builder can read these). This gives x2t the same font set Word
+    #      embeds instead of substituting to Georgia/Arial.
+    # Symbol/dingbat fonts are skipped — they poison the matcher (small-caps
+    # runs render as icon glyphs; verified in x2t_convert.py's _ICON_FONT_RE).
     cp -r ${core-fonts} input
     chmod -R u+w input
     cp ${./fonts}/*.ttf input/
+    for d in \
+      /System/Library/Fonts/Supplemental \
+      "/Applications/Microsoft Word.app/Contents/Resources/DFonts" \
+      "/Applications/Microsoft Word.app/Contents/Resources/OtherFonts" \
+      /System/Library/PrivateFrameworks/FontServices.framework/Versions/A/Resources/Fonts/ApplicationSupport ; do
+      [ -d "$d" ] || continue
+      find "$d" -maxdepth 1 -type f \( -iname '*.ttf' -o -iname '*.ttc' -o -iname '*.otf' \) \
+        | grep -ivE 'wingding|webding|dingbat|emoji|symbol|bombing|notoemoji|applesymbols' \
+        | while IFS= read -r f; do cp -n "$f" input/ 2>/dev/null || true; done
+    done
+    echo "allfontsgen input font count: $(find input -type f \( -iname '*.ttf' -o -iname '*.ttc' -o -iname '*.otf' \) | wc -l)"
     ${allfontsgen}/bin/allfontsgen \
       --input=input \
       --allfonts-web=$out/web/AllFonts.js \
