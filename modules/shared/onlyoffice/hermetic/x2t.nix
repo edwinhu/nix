@@ -958,8 +958,16 @@ let
     mkdir -p $out/converter
     mkdir -p $out/images
     mkdir -p $out/fonts
+    # allfontsgen indexes exactly one --input tree (recursively). Merge the
+    # upstream core-fonts with the vendored real macOS Garamond TTFs (./fonts)
+    # so the index includes family "Garamond" and x2t embeds it instead of
+    # substituting to Georgia. "Garamond" matches the law-review template
+    # default, so documents need no font change.
+    cp -r ${core-fonts} input
+    chmod -R u+w input
+    cp ${./fonts}/*.ttf input/
     ${allfontsgen}/bin/allfontsgen \
-      --input=${core-fonts} \
+      --input=input \
       --allfonts-web=$out/web/AllFonts.js \
       --allfonts=$out/converter/AllFonts.js \
       --images=$out/images \
