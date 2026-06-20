@@ -7,7 +7,7 @@
     # ../../../modules/darwin/aerospace.nix  # Disabled: trying omniwm
     ../../../modules/darwin/sketchybar
     ../../../modules/darwin/defaults.nix
-    ../../../modules/darwin/syncthing.nix
+    # ../../../modules/darwin/syncthing.nix  # Disabled: vault sync replaced by Obsidian CDP remote setup (2026-06-12)
     ../../../modules/darwin/wifi-autoswitch.nix
     ../../../modules/darwin/jankyborders.nix
     ../../../modules/darwin/joycon-reconnect.nix
