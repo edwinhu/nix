@@ -76,6 +76,7 @@ with pkgs; [
   fzf
   hunspell
   elio
+  (import ./leaf { inherit pkgs; })  # terminal Markdown previewer (LaTeX/Mermaid/watch); not in nixpkgs
   revdiff
   onlyoffice-docbuilder  # docx/pptx/xlsx conversion + watermark-free xlsx recalc; replaces LibreOffice (see modules/shared/onlyoffice/)
   jq
