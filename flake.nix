@@ -242,6 +242,7 @@
         # chrome-for-testing: removed from build to reduce rsync time (338 MB app bundle)
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
+        morgen-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/morgen-cli.nix {};
         happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
         elio = (import nixpkgs { inherit system; }).callPackage ./modules/shared/elio.nix {};
         revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
@@ -269,6 +270,7 @@
                   # chrome-for-testing: removed from overlay to reduce rsync time
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
+                  morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
                   elio = prev.callPackage ./modules/shared/elio.nix {};
                   revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
@@ -330,6 +332,7 @@
               (final: prev: {
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
+                morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                 # elio via newer nixpkgs on linux: the main lock's cargo vendor
                 # fetcher sends no User-Agent and crates.io now 403s it
                 elio =
