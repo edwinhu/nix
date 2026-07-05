@@ -26,7 +26,7 @@ for arg in "$@"; do
       sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|happy|happy-agent|gemini|agy) TOOLS+=("$arg") ;;
+    claude|codex|opencode|happy|happy-agent|gemini|agy|qmd) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -34,7 +34,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode happy happy-agent agy)
+  TOOLS=(claude codex opencode happy happy-agent agy qmd)
 fi
 
 # Remove stale nix-era wrappers at ~/.local/bin/<tool> that exec into /nix/store.
@@ -98,6 +98,34 @@ install_opencode() {
   echo "${YELLOW}→ Installing OpenCode (opencode.ai installer)...${NC}"
   curl -fsSL https://opencode.ai/install | bash
   echo "${GREEN}✓ OpenCode installed — update with: opencode upgrade${NC}"
+}
+
+# qmd (tobi/qmd) — "Quick Markdown Search", a local BM25+vector search engine
+# over the Obsidian vault. Secondary retrieval + compile-time discovery aid for
+# the knowledge base (see ~/notes/.claude/CLAUDE.md; wired in ~/notes/scripts/
+# qmd.py). Installed as a bun global like codex, then the vault collection is
+# bootstrapped idempotently. Embeddings are NOT built here (slow, downloads a
+# local GGUF model) — the nightly vault-compile's reindex step handles that;
+# until then hybrid queries fall back to BM25.
+install_qmd() {
+  purge_nix_wrapper qmd
+  local bun
+  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
+  if want "qmd" qmd; then
+    echo "${YELLOW}→ Installing qmd (bun global)...${NC}"
+    "$bun" install -g @tobilu/qmd@latest
+    echo "${GREEN}✓ qmd installed — update with: nix run ~/nix#update-ai-tools${NC}"
+  fi
+  # Bootstrap the vault collection if the vault exists and isn't indexed yet.
+  local qmd_bin
+  qmd_bin=$(command -v qmd 2>/dev/null || echo "$HOME/.bun/bin/qmd")
+  if [ -x "$qmd_bin" ] && [ -d "$HOME/notes" ]; then
+    if ! "$qmd_bin" collection list 2>/dev/null | grep -q '\bnotes\b'; then
+      echo "${YELLOW}→ Bootstrapping qmd 'notes' collection over ~/notes${NC}"
+      "$qmd_bin" collection add "$HOME/notes" --name notes || true
+      echo "${GREEN}✓ qmd 'notes' collection added — vectors build on next vault-compile (or run 'qmd embed').${NC}"
+    fi
+  fi
 }
 
 # happy CLI is built from the slopus/happy pnpm monorepo (mirrors
@@ -255,6 +283,7 @@ for t in "${TOOLS[@]}"; do
     happy-agent)  install_happy_agent ;;
     gemini)       install_gemini ;;
     agy)          install_agy ;;
+    qmd)          install_qmd ;;
   esac
 done
 
