@@ -591,8 +591,6 @@
         "presmihaylov-taps": "presmihaylov-taps",
         "seance": "seance",
         "stylix": "stylix",
-        "zathura-pdf-mupdf-src": "zathura-pdf-mupdf-src",
-        "zathura-src": "zathura-src",
         "zellij-switch-wasm": "zellij-switch-wasm"
       }
     },
@@ -790,38 +788,6 @@
       "original": {
         "owner": "tinted-theming",
         "repo": "base16-zed",
-        "type": "github"
-      }
-    },
-    "zathura-pdf-mupdf-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1773187237,
-        "narHash": "sha256-RRUZBMvoSJEUPPh3yNrodbrqFkz9fqiPgMNamhllj9o=",
-        "owner": "edwinhu",
-        "repo": "zathura-pdf-mupdf",
-        "rev": "9920f0bc0e2d91710629fead4647433985bf8b9b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "edwinhu",
-        "repo": "zathura-pdf-mupdf",
-        "type": "github"
-      }
-    },
-    "zathura-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1773186677,
-        "narHash": "sha256-vB7bYFaVG2N/GqTra6SiDQP5rfwBZZfy2jaL+4Hlz7c=",
-        "owner": "edwinhu",
-        "repo": "zathura",
-        "rev": "f01bba9ba6d5ffd38fcdf91f58a2a3f1c1bfc84a",
-        "type": "github"
-      },
-      "original": {
-        "owner": "edwinhu",
-        "repo": "zathura",
         "type": "github"
       }
     },

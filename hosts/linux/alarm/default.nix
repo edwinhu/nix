@@ -15,9 +15,7 @@ in
     stateVersion = "25.05";
 
     # Cherry-picked packages not in Omarchy/pacman
-    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; }) ++ [
-      pkgs.zathura  # Custom fork with annotations
-    ];
+    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; });
 
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
@@ -159,17 +157,6 @@ in
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Calculator.svg";
       startupNotify = true;
-    };
-
-    zathura = {
-      name = "Zathura";
-      comment = "Document viewer";
-      exec = "${pkgs.zathura}/bin/zathura %U";
-      terminal = false;
-      type = "Application";
-      icon = "org.pwmt.zathura";
-      categories = [ "Office" "Viewer" ];
-      mimeType = [ "application/pdf" "application/epub+zip" "image/vnd.djvu" ];
     };
   };
 }
