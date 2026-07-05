@@ -244,7 +244,9 @@
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         morgen-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/morgen-cli.nix {};
         happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
-        elio = (import nixpkgs { inherit system; }).callPackage ./modules/shared/elio.nix {};
+        # elio via newer nixpkgs: the main lock's cargo vendor fetcher sends
+        # no User-Agent and crates.io now 403s it (affects all platforms).
+        elio = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/elio.nix {};
         revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
         onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
         onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
@@ -272,7 +274,9 @@
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
-                  elio = prev.callPackage ./modules/shared/elio.nix {};
+                  # elio via newer nixpkgs: the main lock's cargo vendor fetcher
+                  # sends no User-Agent and crates.io now 403s it.
+                  elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
                   revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                   onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                   onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
@@ -333,12 +337,9 @@
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
-                # elio via newer nixpkgs on linux: the main lock's cargo vendor
-                # fetcher sends no User-Agent and crates.io now 403s it
-                elio =
-                  if prev.stdenv.isDarwin
-                  then prev.callPackage ./modules/shared/elio.nix {}
-                  else (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
+                # elio via newer nixpkgs: the main lock's cargo vendor fetcher
+                # sends no User-Agent and crates.io now 403s it.
+                elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};

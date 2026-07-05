@@ -2,16 +2,16 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "elio";
-  version = "1.4.0";
+  version = "1.10.0";
 
   src = fetchFromGitHub {
     owner = "elio-fm";
     repo = "elio";
     rev = "v${version}";
-    hash = "sha256-9c96Im5Bbp/cULM0IBwQmha6iIxmb/3kWu/PvRZ2ssI=";
+    hash = "sha256-/Y9KtGoqD78QHmUtAooQmmI7ZTOSNY7DdrhHYVFMj5E=";
   };
 
-  cargoHash = "sha256-tb9TnZD5bdPuULKEV0Q6oOIIP1ZIbw8roJFiIzCAvUg=";
+  cargoHash = "sha256-7BP/LoNBnukD2ThtjhAYN8iv0cA0tNg3+GNAjlN6yIM=";
 
   # Sandbox-incompatible: trash, macOS Launch Services discovery, process groups
   doCheck = false;
