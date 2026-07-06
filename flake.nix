@@ -291,6 +291,17 @@
               environment.variables = {
                 ZELLIJ_SWITCH_PLUGIN = "${pkgs.zellij-switch}/share/zellij/plugins/zellij-switch.wasm";
               };
+
+              # Disable the nix-darwin HTML manual (darwin-manual-html). As of
+              # nixpkgs 2026-07 nixos-render-docs removed the --toc-depth flag
+              # (use --sidebar-depth), but nix-darwin master (a1fa429, 2026-06-18)
+              # still passes --toc-depth, so the manual build fails. It's purely
+              # local docs; man pages (documentation.man) are unaffected.
+              documentation.doc.enable = false;
+              # The uninstaller tool embeds its own default-config darwin-system,
+              # which rebuilds the broken manual regardless of the setting above.
+              # Drop it from the system path (re-enable once upstream fixes docs).
+              system.tools.darwin-uninstaller.enable = false;
             })
             agenix.darwinModules.default
             inputs.stylix.darwinModules.stylix
