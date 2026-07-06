@@ -34,6 +34,14 @@
       file = "${nix-secrets}/gws-client-secret-json.age";
       mode = "400";
     };
+    gws-credentials-enc = {
+      file = "${nix-secrets}/gws-credentials-enc.age";
+      mode = "400";
+    };
+    gws-encryption-key = {
+      file = "${nix-secrets}/gws-encryption-key.age";
+      mode = "400";
+    };
   };
   
   # NOTE: nix-darwin home-manager activation runs without /dev/tty, so
@@ -60,6 +68,7 @@
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
     CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
+    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND = "file";
   };
 
   # Create shell aliases for reading secrets when needed
@@ -73,14 +82,36 @@
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
   };
 
-  # gws expects the OAuth client configuration at a fixed path. Keep the
-  # app-level client secret in agenix, but leave per-machine user OAuth
-  # credentials (`credentials.enc`, `.encryption_key`, `token.json`) local.
+  # gws expects OAuth files at fixed paths. Keep the app-level client secret
+  # and the portable user OAuth grant in agenix; token_cache.json is runtime
+  # cache and can be regenerated from credentials.enc.
   home.activation.installGwsClientSecret =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       GWS_CONFIG_DIR="$HOME/.config/gws"
       $DRY_RUN_CMD mkdir -p "$GWS_CONFIG_DIR"
       $DRY_RUN_CMD chmod 700 "$GWS_CONFIG_DIR"
-      $DRY_RUN_CMD install -m 600 "${config.age.secrets.gws-client-secret-json.path}" "$GWS_CONFIG_DIR/client_secret.json"
+
+      install_gws_age_secret() {
+        encrypted="$1"
+        target="$2"
+        identity="$3"
+
+        if [ -n "''${DRY_RUN_CMD:-}" ]; then
+          $DRY_RUN_CMD install -m 600 "$encrypted" "$target"
+          return
+        fi
+
+        tmp="$target.tmp.$$"
+        rm -f "$tmp"
+        umask 077
+        "${pkgs.age}/bin/age" --decrypt -i "$identity" -o "$tmp" "$encrypted"
+        install -m 600 "$tmp" "$target"
+        rm -f "$tmp"
+      }
+
+      GWS_AGE_IDENTITY="${if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}"}/.ssh/id_ed25519_agenix"
+      install_gws_age_secret "${nix-secrets}/gws-client-secret-json.age" "$GWS_CONFIG_DIR/client_secret.json" "$GWS_AGE_IDENTITY"
+      install_gws_age_secret "${nix-secrets}/gws-credentials-enc.age" "$GWS_CONFIG_DIR/credentials.enc" "$GWS_AGE_IDENTITY"
+      install_gws_age_secret "${nix-secrets}/gws-encryption-key.age" "$GWS_CONFIG_DIR/.encryption_key" "$GWS_AGE_IDENTITY"
     '';
 }

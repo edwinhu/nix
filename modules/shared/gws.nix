@@ -43,7 +43,13 @@ in stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out/bin
-    cp gws $out/bin/gws
+    cp gws $out/bin/.gws-unwrapped
+    chmod +x $out/bin/.gws-unwrapped
+    cat > $out/bin/gws <<EOF
+#!/bin/sh
+export GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND="\''${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-file}"
+exec "$out/bin/.gws-unwrapped" "\$@"
+EOF
     chmod +x $out/bin/gws
     runHook postInstall
   '';

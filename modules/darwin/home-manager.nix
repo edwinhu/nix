@@ -181,6 +181,7 @@
               launchctl setenv CLAUDE_API_KEY_FILE "$AGENIX_DIR/claude-api-key"
               launchctl setenv READWISE_TOKEN_FILE "$AGENIX_DIR/readwise-token"
               launchctl setenv QUALTRICS_API_TOKEN_FILE "$AGENIX_DIR/qualtrics-api-token"
+              launchctl setenv GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND file
               launchctl setenv COMPANION_FORCE_BYPASS_IN_CONTAINER 1
             ''
           ];
