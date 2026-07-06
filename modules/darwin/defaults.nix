@@ -1,4 +1,4 @@
-{ config, pkgs, user, userInfo, clawdbot-skills, ... }:
+{ config, lib, pkgs, user, userInfo, clawdbot-skills, ... }:
 
 {
   imports = [
@@ -164,24 +164,20 @@
         done
       fi
 
-      # YubiKey FIDO2 authentication for sudo and screen unlock
-      PAM_U2F="${pkgs.pam_u2f}/lib/security/pam_u2f.so"
-      if [ -f "$PAM_U2F" ]; then
-        # sudo: YubiKey alongside Touch ID
-        if ! grep -q pam_u2f /etc/pam.d/sudo_local 2>/dev/null; then
-          echo "auth       sufficient     $PAM_U2F cue" >> /etc/pam.d/sudo_local
-        fi
-        # Note: screen unlock uses PIV/smart card (screensaver_ctk), not FIDO2.
-      fi
-
       # PIV smart card login: allow but never enforce (password/Touch ID fallback)
       defaults write /Library/Preferences/com.apple.security.smartcard allowSmartCard -bool true
       defaults write /Library/Preferences/com.apple.security.smartcard enforceSmartCard -bool false
     '';
   };
 
-  # Enable Touch ID authentication for sudo
-  security.pam.services.sudo_local.touchIdAuth = true;
+  # sudo: Touch ID first, then YubiKey FIDO2 (reads ~/.config/Yubico/u2f_keys).
+  # Both `sufficient`, so password remains the fallback.
+  # Screen unlock uses PIV/smart card (screensaver_ctk), not FIDO2/PAM.
+  security.pam.services.sudo_local = {
+    touchIdAuth = true;
+    text = lib.mkAfter
+      "auth       sufficient     ${pkgs.pam_u2f}/lib/security/pam_u2f.so cue";
+  };
 
   # Allow admin group members to use sudo without password
   security.sudo.extraConfig = ''
