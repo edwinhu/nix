@@ -3,24 +3,24 @@
 { lib, stdenv, fetchurl, autoPatchelfHook }:
 
 let
-  version = "0.4.4";
+  version = "0.22.5";
 
   platforms = {
     x86_64-linux = {
       platform = "x86_64-unknown-linux-gnu";
-      hash = "sha256-ZRwXENjHleC2tOS5UMdVQMIyJLtcsnLp0NwuMKm+iFU=";
+      hash = "sha256-3njs29LxqEzKAGOn7LxEAkD8FLbrzLsX9GRreSqMXB8=";
     };
     aarch64-linux = {
       platform = "aarch64-unknown-linux-gnu";
-      hash = "sha256-e56mRMIM/IrI1Yz1KzVo6Jm8GMHtU28kHCU9ST85dT8=";
+      hash = "sha256-lEkCldlYDh6IV05xWgoWKZF0fRLWL4x7jcyCaLbBzqA=";
     };
     x86_64-darwin = {
       platform = "x86_64-apple-darwin";
-      hash = "sha256-4GUZPcwJ684m2S1q01lW3Z86uJacIw8GX7P6iOOdWXE=";
+      hash = "sha256-Ufm9cxQE1LuibDbi4w3WjFbczR+DTAElLLCxTWplRLI=";
     };
     aarch64-darwin = {
       platform = "aarch64-apple-darwin";
-      hash = "sha256-483dX6mZIvMBSKBZv98tFbOejpVkDs0DPQkY6MzIAQo=";
+      hash = "sha256-HSqf/VvJssLEtIYw2vCC+tE9nlfXQZiKLCSO7VYvfaw=";
     };
   };
 
@@ -31,9 +31,11 @@ in stdenv.mkDerivation {
   inherit version;
 
   src = fetchurl {
-    url = "https://github.com/googleworkspace/cli/releases/download/v${version}/gws-${platformInfo.platform}.tar.gz";
+    url = "https://github.com/googleworkspace/cli/releases/download/v${version}/google-workspace-cli-${platformInfo.platform}.tar.gz";
     inherit (platformInfo) hash;
   };
+
+  sourceRoot = ".";
 
   dontBuild = true;
   dontStrip = true;

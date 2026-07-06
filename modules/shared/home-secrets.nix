@@ -1,4 +1,4 @@
-{ config, pkgs, user, nix-secrets, ... }:
+{ config, pkgs, lib, user, nix-secrets, ... }:
 
 {
   age.secrets = {
@@ -28,6 +28,10 @@
     };
     canvas-api-token = {
       file = "${nix-secrets}/canvas-api-token.age";
+      mode = "400";
+    };
+    gws-client-secret-json = {
+      file = "${nix-secrets}/gws-client-secret-json.age";
       mode = "400";
     };
   };
@@ -68,4 +72,15 @@
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
   };
+
+  # gws expects the OAuth client configuration at a fixed path. Keep the
+  # app-level client secret in agenix, but leave per-machine user OAuth
+  # credentials (`credentials.enc`, `.encryption_key`, `token.json`) local.
+  home.activation.installGwsClientSecret =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      GWS_CONFIG_DIR="$HOME/.config/gws"
+      $DRY_RUN_CMD mkdir -p "$GWS_CONFIG_DIR"
+      $DRY_RUN_CMD chmod 700 "$GWS_CONFIG_DIR"
+      $DRY_RUN_CMD install -m 600 "${config.age.secrets.gws-client-secret-json.path}" "$GWS_CONFIG_DIR/client_secret.json"
+    '';
 }
