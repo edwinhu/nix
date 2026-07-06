@@ -65,6 +65,11 @@
         ../shared/home-secrets.nix
       ];
 
+      # Work around ryantm/agenix#352: Crashed=false makes launchd restart
+      # the successful activation job every ten seconds on Darwin.
+      launchd.agents.activate-agenix.config.KeepAlive.Crashed =
+        lib.mkForce true;
+
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527
         enableNixpkgsReleaseCheck = false;
