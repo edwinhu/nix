@@ -13,12 +13,18 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "omniwm";
-  version = "0.5.4";
+  # Pinned to the newest release that actually RUNS on macOS 15 (Sequoia):
+  #   - v0.5.3+ raised LSMinimumSystemVersion to macOS 26 (Tahoe): won't launch.
+  #   - v0.5.2.1 claims min-OS 15.0 but links a SkyLight symbol
+  #     (SLSWindowIteratorGetCornerRadii) absent on 15.7 → fatal crash at launch.
+  #   - v0.5.2 is the last build without that dependency.
+  # Revisit this ceiling after upgrading macOS to 26 (Tahoe).
+  version = "0.5.2";
 
   # The release zip contains OmniWM.app/ at top level; keep it (don't strip).
   src = fetchzip {
     url = "https://github.com/BarutSRB/OmniWM/releases/download/v${finalAttrs.version}/OmniWM-v${finalAttrs.version}.zip";
-    hash = "sha256-I3LxVkH3BoqvJX5qXguv22r1pznCgdk+W8hOuROGdTQ=";
+    hash = "sha256-Xh6I18aJNBjWy4WdMFclTJFiIaI3/XV0J30/QJUYa+0=";
     stripRoot = false;
   };
 
@@ -30,6 +36,11 @@ stdenv.mkDerivation (finalAttrs: {
     runHook preInstall
     mkdir -p "$out/Applications"
     cp -R OmniWM.app "$out/Applications/OmniWM.app"
+    # fetchzip's unzip materializes macOS AppleDouble sidecars (._foo) as real
+    # files inside the bundle, which are extra sealed resources that invalidate
+    # the Developer-ID signature ("sealed resource is missing or invalid").
+    # Strip them so codesign/Gatekeeper accept the notarized app.
+    find "$out/Applications/OmniWM.app" \( -name '._*' -o -name '.DS_Store' \) -delete
     runHook postInstall
   '';
 
