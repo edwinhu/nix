@@ -164,9 +164,25 @@
         done
       fi
 
-      # PIV smart card login: allow but never enforce (password/Touch ID fallback)
-      defaults write /Library/Preferences/com.apple.security.smartcard allowSmartCard -bool true
-      defaults write /Library/Preferences/com.apple.security.smartcard enforceSmartCard -bool false
+      # PIV smart card login: allow but never enforce (password/Touch ID fallback).
+      # System-level `defaults write` can hang if cfprefsd is wedged, so keep
+      # these writes idempotent and bounded.
+      write_smartcard_default() {
+        key="$1"
+        expected="$2"
+        current="$(${pkgs.coreutils}/bin/timeout 3s defaults read /Library/Preferences/com.apple.security.smartcard "$key" 2>/dev/null || true)"
+
+        if [ "$current" = "$expected" ]; then
+          return 0
+        fi
+
+        if ! ${pkgs.coreutils}/bin/timeout 5s defaults write /Library/Preferences/com.apple.security.smartcard "$key" -bool "$expected"; then
+          echo "warning: timed out setting com.apple.security.smartcard $key=$expected; continuing" >&2
+        fi
+      }
+
+      write_smartcard_default allowSmartCard true
+      write_smartcard_default enforceSmartCard false
     '';
   };
 
