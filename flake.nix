@@ -43,10 +43,6 @@
       url = "github:presmihaylov/homebrew-taps";
       flake = false;
     };
-    barutsrb-tap = {
-      url = "github:BarutSRB/homebrew-tap";
-      flake = false;
-    };
     dimentium-autoraise = {
       url = "github:Dimentium/homebrew-autoraise";
       flake = false;
@@ -76,7 +72,7 @@
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, barutsrb-tap, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, clawdbot-skills, seance } @inputs:
+  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, clawdbot-skills, seance } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -135,7 +131,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Bootstrap-install claude, codex, opencode, happy, happy-agent, agy (idempotent)";
+        meta.description = "Bootstrap-install claude, codex, opencode, agy (idempotent)";
         program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
@@ -146,7 +142,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Force-reinstall claude, codex, opencode, happy, happy-agent, agy to latest";
+        meta.description = "Force-reinstall claude, codex, opencode, agy to latest";
         program = "${(pkgs.writeScriptBin "update-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh --force "$@"
@@ -243,7 +239,7 @@
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         morgen-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/morgen-cli.nix {};
-        happy-app = (import nixpkgs { inherit system; }).callPackage ./modules/shared/happy-app.nix {};
+        omniwm = (import nixpkgs { inherit system; }).callPackage ./modules/shared/omniwm.nix {};
         # elio via newer nixpkgs: the main lock's cargo vendor fetcher sends
         # no User-Agent and crates.io now 403s it (affects all platforms).
         elio = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/elio.nix {};
@@ -273,7 +269,7 @@
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
-                  happy-app = prev.callPackage ./modules/shared/happy-app.nix {};
+                  omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
                   elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
@@ -317,7 +313,6 @@
                   "homebrew/homebrew-bundle" = homebrew-bundle;
                   "railwaycat/homebrew-emacsmacport" = emacsmacport;
                   "presmihaylov/homebrew-taps" = presmihaylov-taps;
-                  "barutsrb/homebrew-tap" = barutsrb-tap;
                   "dimentium/homebrew-autoraise" = dimentium-autoraise;
                 };
                 mutableTaps = false;

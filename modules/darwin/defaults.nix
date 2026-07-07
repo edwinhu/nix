@@ -133,10 +133,10 @@
       # Web-app wrappers built outside the Nix Apps tree (not in environment.systemPackages).
       # Copied directly from their derivation outputs so /Applications/<App>.app is
       # always in sync with the current build.
-      rm -rf "/Applications/Happy.app"
-      cp -RL "${pkgs.happy-app}/Applications/Happy.app" "/Applications/Happy.app"
-      chmod -R u+w "/Applications/Happy.app"
-      echo "  Copied Happy.app"
+      rm -rf "/Applications/OmniWM.app"
+      cp -RL "${pkgs.omniwm}/Applications/OmniWM.app" "/Applications/OmniWM.app"
+      chmod -R u+w "/Applications/OmniWM.app"
+      echo "  Copied OmniWM.app"
       # Disable Karabiner-Elements' built-in Sparkle auto-updater.
       # Every auto-update replaces the .app and DriverKit extension, which
       # forces re-approval of Input Monitoring, Accessibility, and the DEXT.

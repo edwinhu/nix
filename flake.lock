@@ -23,22 +23,6 @@
         "type": "github"
       }
     },
-    "barutsrb-tap": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1778008725,
-        "narHash": "sha256-lATrlXuipJnSveRQJ7VRyMSaC4Oc7VhbwoTpLFFpng0=",
-        "owner": "BarutSRB",
-        "repo": "homebrew-tap",
-        "rev": "e10fab65888edebd1d884ba406b362103864cbab",
-        "type": "github"
-      },
-      "original": {
-        "owner": "BarutSRB",
-        "repo": "homebrew-tap",
-        "type": "github"
-      }
-    },
     "base16": {
       "inputs": {
         "fromYaml": "fromYaml"
@@ -574,7 +558,6 @@
     "root": {
       "inputs": {
         "agenix": "agenix",
-        "barutsrb-tap": "barutsrb-tap",
         "clawdbot-skills": "clawdbot-skills",
         "darwin": "darwin_2",
         "dimentium-autoraise": "dimentium-autoraise",

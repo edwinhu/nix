@@ -50,7 +50,9 @@ _:
 
   # Window Management
   # "dimentium/autoraise/autoraiseapp"  # Replaced by omniwm
-  "barutsrb/tap/omniwm"
+  # omniwm: self-managed from GitHub releases (modules/shared/omniwm.nix);
+  #   the barutsrb tap lagged upstream by weeks. Copied to /Applications
+  #   via modules/darwin/defaults.nix postActivation.
 
   # Productivity Tools
   "forklift"
