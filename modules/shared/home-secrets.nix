@@ -25,6 +25,14 @@ in
       file = "${nix-secrets}/readwise-token.age";
       mode = "400";
     };
+    raindrop-token = {
+      file = "${nix-secrets}/raindrop-token.age";
+      mode = "400";
+    };
+    webhook-secret = {
+      file = "${nix-secrets}/webhook-secret.age";
+      mode = "400";
+    };
     qualtrics-api-token = {
       file = "${nix-secrets}/qualtrics-api-token.age";
       mode = "400";
@@ -71,6 +79,8 @@ in
     GEMINI_API_KEY_FILE = "${tempDir}/gemini-api-key";
     CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
+    RAINDROP_TOKEN_FILE = "${tempDir}/raindrop-token";
+    WEBHOOK_SECRET_FILE = "${tempDir}/webhook-secret";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
     CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
     FLAKEHUB_TOKEN_FILE = "${tempDir}/flakehub-token";
@@ -84,6 +94,8 @@ in
     get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
     get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
+    get-raindrop-token = "cat $RAINDROP_TOKEN_FILE";
+    get-webhook-secret = "cat $WEBHOOK_SECRET_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
     get-flakehub-token = "cat $FLAKEHUB_TOKEN_FILE";

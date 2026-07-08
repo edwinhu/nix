@@ -180,6 +180,8 @@
               launchctl setenv GEMINI_API_KEY_FILE "$AGENIX_DIR/gemini-api-key"
               launchctl setenv CLAUDE_API_KEY_FILE "$AGENIX_DIR/claude-api-key"
               launchctl setenv READWISE_TOKEN_FILE "$AGENIX_DIR/readwise-token"
+              launchctl setenv RAINDROP_TOKEN_FILE "$AGENIX_DIR/raindrop-token"
+              launchctl setenv WEBHOOK_SECRET_FILE "$AGENIX_DIR/webhook-secret"
               launchctl setenv QUALTRICS_API_TOKEN_FILE "$AGENIX_DIR/qualtrics-api-token"
               launchctl setenv GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND file
               launchctl setenv COMPANION_FORCE_BYPASS_IN_CONTAINER 1
