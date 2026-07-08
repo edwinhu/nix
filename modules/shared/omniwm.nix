@@ -19,6 +19,13 @@ stdenv.mkDerivation (finalAttrs: {
   #     (SLSWindowIteratorGetCornerRadii) absent on 15.7 → fatal crash at launch.
   #   - v0.5.2 is the last build without that dependency.
   # Revisit this ceiling after upgrading macOS to 26 (Tahoe).
+  #
+  # Known 0.5.2 bug (2026-07-08, report upstream / re-check on next bump):
+  # tiles non-standard AX windows (AXUnknown menubar status items, AXDialog
+  # panels) — e.g. cmux's "Item-0" menubar icon gets a tiling slot, breaking
+  # single-window centering. Do NOT chase it by downgrading: 0.4.8.1 lacks
+  # appRules assignToWorkspace/layout entirely and re-serializes settings.toml
+  # in its old schema on launch (drops those keys + resets hotkeys).
   version = "0.5.2";
 
   # The release zip contains OmniWM.app/ at top level; keep it (don't strip).

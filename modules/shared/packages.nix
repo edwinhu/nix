@@ -5,6 +5,7 @@ with pkgs; [
   bash-completion
   cmake
   coreutils
+  fh
   gh
   killall
   lazygit
