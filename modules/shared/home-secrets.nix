@@ -1,5 +1,8 @@
 { config, pkgs, lib, user, nix-secrets, ... }:
 
+let
+  homeDir = if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}";
+in
 {
   age.secrets = {
     google-search-api-key = {
@@ -30,6 +33,10 @@
       file = "${nix-secrets}/canvas-api-token.age";
       mode = "400";
     };
+    flakehub-token = {
+      file = "${nix-secrets}/flakehub-token.age";
+      mode = "400";
+    };
     gws-client-secret-json = {
       file = "${nix-secrets}/gws-client-secret-json.age";
       mode = "400";
@@ -49,9 +56,7 @@
   # SSH key remains the activation-time identity. YubiKey identities are kept
   # as recipients in nix-secrets/secrets.nix so manual decryption from a fresh
   # machine works (agenix CLI run interactively can use the plugin).
-  age.identityPaths = let
-    homeDir = if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}";
-  in [
+  age.identityPaths = [
     "${homeDir}/.ssh/id_ed25519_agenix"
   ];
 
@@ -68,6 +73,7 @@
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
     CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
+    FLAKEHUB_TOKEN_FILE = "${tempDir}/flakehub-token";
     GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND = "file";
   };
 
@@ -80,7 +86,27 @@
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
+    get-flakehub-token = "cat $FLAKEHUB_TOKEN_FILE";
   };
+
+  home.activation.loginFlakeHub =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      if [ -n "''${DRY_RUN_CMD:-}" ]; then
+        $DRY_RUN_CMD echo "Skipping FlakeHub login during dry run"
+      else
+        DETERMINATE_NIXD="$(PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH" command -v determinate-nixd || true)"
+        if [ -n "$DETERMINATE_NIXD" ]; then
+          TOKEN_TMP="$(mktemp)"
+          trap 'rm -f "$TOKEN_TMP"' EXIT
+          chmod 600 "$TOKEN_TMP"
+          "${pkgs.age}/bin/age" --decrypt \
+            -i "${homeDir}/.ssh/id_ed25519_agenix" \
+            -o "$TOKEN_TMP" \
+            "${nix-secrets}/flakehub-token.age"
+          "$DETERMINATE_NIXD" login token --token-file "$TOKEN_TMP" >/dev/null
+        fi
+      fi
+    '';
 
   # gws expects OAuth files at fixed paths. Keep the app-level client secret
   # and the portable user OAuth grant in agenix; token_cache.json is runtime
@@ -109,7 +135,7 @@
         rm -f "$tmp"
       }
 
-      GWS_AGE_IDENTITY="${if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}"}/.ssh/id_ed25519_agenix"
+      GWS_AGE_IDENTITY="${homeDir}/.ssh/id_ed25519_agenix"
       install_gws_age_secret "${nix-secrets}/gws-client-secret-json.age" "$GWS_CONFIG_DIR/client_secret.json" "$GWS_AGE_IDENTITY"
       install_gws_age_secret "${nix-secrets}/gws-credentials-enc.age" "$GWS_CONFIG_DIR/credentials.enc" "$GWS_AGE_IDENTITY"
       install_gws_age_secret "${nix-secrets}/gws-encryption-key.age" "$GWS_CONFIG_DIR/.encryption_key" "$GWS_AGE_IDENTITY"
