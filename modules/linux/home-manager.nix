@@ -3,6 +3,10 @@
 {
   imports = [
     ../shared/stylix.nix
+    # Faithful docx->PDF via real Word in a QEMU Win11 x64 + KVM guest.
+    # Imported so the options exist; enable per host once the guest is stood up:
+    #   programs.wordRender.enable = true;  (see ../shared/word-render/README.md)
+    ../shared/word-render.nix
   ];
 
   # Linux-specific Stylix configuration (Qt theming)
