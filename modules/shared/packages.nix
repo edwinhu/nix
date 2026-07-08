@@ -62,11 +62,6 @@ with pkgs; [
   ast-grep
   atuin
   bat
-  bat-extras.batdiff
-  bat-extras.batgrep
-  bat-extras.batman
-  bat-extras.batwatch
-  bat-extras.prettybat
   btop
   numr
   direnv

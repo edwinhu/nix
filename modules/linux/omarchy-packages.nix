@@ -41,11 +41,6 @@ with pkgs; [
 
   # Terminal utilities
   atuin
-  bat-extras.batdiff
-  bat-extras.batgrep
-  bat-extras.batman
-  bat-extras.batwatch
-  bat-extras.prettybat
   fswatch
   numr
   tabiew

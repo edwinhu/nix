@@ -1,4 +1,4 @@
-{ config, lib, pkgs, user, userInfo, clawdbot-skills, ... }:
+{ config, lib, pkgs, user, userInfo, ... }:
 
 {
   imports = [
@@ -51,9 +51,7 @@
   system.checks.verifyNixPath = false;
 
   # Load darwin packages (includes shared)
-  environment.systemPackages = with pkgs; [
-    clawdbot-skills.packages.${pkgs.system}.clawdbot-skills
-  ] ++ (import ./packages.nix { inherit pkgs; });
+  environment.systemPackages = import ./packages.nix { inherit pkgs; };
 
   system = {
     stateVersion = 4;
@@ -121,14 +119,12 @@
       # so permissions persist across nix rebuilds (TCC ties to binary path,
       # and /Applications/Nix Apps/ gets recreated on every rebuild).
       echo "Copying nix apps to /Applications (stable paths for TCC permissions)..."
-      for app in WezTerm Emacs; do
-        if [ -e "/Applications/Nix Apps/$app.app" ]; then
-          rm -rf "/Applications/$app.app"
-          cp -RL "/Applications/Nix Apps/$app.app" "/Applications/$app.app"
-          chmod -R u+w "/Applications/$app.app"
-          echo "  Copied $app.app"
-        fi
-      done
+      if [ -e "/Applications/Nix Apps/WezTerm.app" ]; then
+        rm -rf "/Applications/WezTerm.app"
+        cp -RL "/Applications/Nix Apps/WezTerm.app" "/Applications/WezTerm.app"
+        chmod -R u+w "/Applications/WezTerm.app"
+        echo "  Copied WezTerm.app"
+      fi
 
       # Web-app wrappers built outside the Nix Apps tree (not in environment.systemPackages).
       # Copied directly from their derivation outputs so /Applications/<App>.app is
@@ -205,9 +201,6 @@
     enable = true;
     package = pkgs.sketchybar;
   };
-
-  # Emacs service
-  services.emacs.enable = true;
 
   # Declarative dock configuration shared across all Darwin systems
   local.dock = {

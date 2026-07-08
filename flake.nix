@@ -16,10 +16,6 @@
       url = "github:LnL7/nix-darwin/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    emacsmacport = {
-      url = "github:railwaycat/homebrew-emacsmacport";
-      flake = false;
-    };
     nix-homebrew = {
       url = "github:zhaofengli-wip/nix-homebrew";
     };
@@ -58,21 +54,13 @@
       url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
       flake = false;
     };
-    emacs-overlay = {
-      url = "github:nix-community/emacs-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    clawdbot-skills = {
-      url = "path:./clawdbot";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     seance = {
       url = "git+https://github.com/no1msd/seance?submodules=1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { self, darwin, emacsmacport, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, emacs-overlay, clawdbot-skills, seance } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, seance } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -258,7 +246,6 @@
           modules = [
             ({ pkgs, ... }: {
               nixpkgs.overlays = [
-                emacs-overlay.overlays.default
                 (final: prev: {
                   zellij-switch = prev.runCommand "zellij-switch" {} ''
                     mkdir -p $out/share/zellij/plugins
@@ -311,7 +298,6 @@
                   "homebrew/homebrew-core" = homebrew-core;
                   "homebrew/homebrew-cask" = homebrew-cask;
                   "homebrew/homebrew-bundle" = homebrew-bundle;
-                  "railwaycat/homebrew-emacsmacport" = emacsmacport;
                   "presmihaylov/homebrew-taps" = presmihaylov-taps;
                   "dimentium/homebrew-autoraise" = dimentium-autoraise;
                 };
@@ -338,7 +324,6 @@
             system = info.system;
             config.allowUnfree = true;
             overlays = [
-              emacs-overlay.overlays.default
               (final: prev: {
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
