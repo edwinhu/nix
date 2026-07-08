@@ -64,6 +64,6 @@ _:
   # "chromium"  # Deprecated, doesn't install properly on macOS - using google-chrome for tunnel browser instead
   "google-chrome"
 
-  # libreoffice removed 2026-06-10: replaced by onlyoffice-docbuilder
-  # (source-built, watermark-free xlsx recalc + x2t render paths)
+  # libreoffice removed 2026-06-10: Word Quartz handles docx rendering; shared
+  # packages keep only the lightweight x2t converter.
 ]

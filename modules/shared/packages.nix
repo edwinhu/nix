@@ -79,7 +79,7 @@ with pkgs; [
   elio
   (import ./leaf { inherit pkgs; })  # terminal Markdown previewer (LaTeX/Mermaid/watch); not in nixpkgs
   revdiff
-  onlyoffice-docbuilder  # docx/pptx/xlsx conversion + watermark-free xlsx recalc; replaces LibreOffice (see modules/shared/onlyoffice/)
+  onlyoffice-x2t  # lightweight OOXML converter; keep source-built docbuilder out of the base system
   jq
   pandoc
   haskellPackages.pandoc-crossref

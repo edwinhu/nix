@@ -22,8 +22,8 @@
       xdg-utils
       inotify-tools
       imagemagick
-      # libreoffice removed 2026-06-10: replaced by onlyoffice-docbuilder
-      # (shared/packages.nix) — source-built, watermark-free xlsx recalc + x2t
+      # libreoffice removed 2026-06-10: Word Quartz handles docx rendering; shared
+      # packages keep only the lightweight x2t converter.
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
       # Qt configuration tools for Stylix
       libsForQt5.qt5ct

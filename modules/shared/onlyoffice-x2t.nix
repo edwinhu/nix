@@ -6,9 +6,8 @@
 # bin/x2t       — watermark-free converter. Direct: `x2t in.docx out.pdf` needs a
 #                 writable CWD for temp files; for control use an XML params file
 #                 (m_sFileFrom/m_sFileTo/m_sTempDir/m_sFontDir).
-# bin/docbuilder — JS-scripted generation/edit engine. NOTE: the free binary
-#                 watermarks all output ("Unregistered Version"); kept only for
-#                 experimentation. Do not use for real documents.
+# The upstream tarball also contains docbuilder, but the free binary watermarks
+# output ("Unregistered Version"), so this package intentionally exposes only x2t.
 #
 # Investigation: ~/projects/workflows/docs/investigations/2026-06-10_onlyoffice-vs-libreoffice.md
 { lib, stdenv, fetchurl, autoPatchelfHook ? null, makeWrapper }:
@@ -65,7 +64,6 @@ in stdenv.mkDerivation {
     rm -f "$out/lib/onlyoffice-documentbuilder/env-vars"
 
     makeWrapper "$out/lib/onlyoffice-documentbuilder/x2t" "$out/bin/x2t"
-    makeWrapper "$out/lib/onlyoffice-documentbuilder/docbuilder" "$out/bin/docbuilder"
 
     runHook postInstall
   '';
