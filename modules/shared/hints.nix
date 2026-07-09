@@ -49,6 +49,13 @@ python3.pkgs.buildPythonApplication rec {
   # Drop the setup.py PostInstallCommand (writes a systemd user service into
   # $HOME at install time — nonsensical for a store build) so a plain setuptools
   # install runs.
+  #
+  # Vimium/Homerow-style hint markers: upstream draws a flat filled rectangle,
+  # so the patch replaces that with a rounded-rectangle fill plus a 1px darker
+  # border for a closer match to Vimium's yellow key-badges. Radius/border derive
+  # from the existing background colour, so no new config keys are needed.
+  patches = [ ./hints-vimium-style.patch ];
+
   postPatch = ''
     substituteInPlace setup.py \
       --replace-fail 'cmdclass={"install": PostInstallCommand},' ""
