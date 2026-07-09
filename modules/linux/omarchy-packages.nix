@@ -26,6 +26,7 @@ with pkgs; [
   # Cloud and sync
   google-cloud-sdk
   rclone
+  croc  # fast P2P file transfer (direct over LAN when peers are local)
 
   # Security and secrets
   # 1password GUI: install via AUR (`yay -S 1password`) — nixpkgs _1password-gui
