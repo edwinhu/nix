@@ -54,7 +54,14 @@ python3.pkgs.buildPythonApplication rec {
   # so the patch replaces that with a rounded-rectangle fill plus a 1px darker
   # border for a closer match to Vimium's yellow key-badges. Radius/border derive
   # from the existing background colour, so no new config keys are needed.
-  patches = [ ./hints-vimium-style.patch ];
+  patches = [
+    ./hints-vimium-style.patch
+    # Clip hints to the window viewport: upstream only skips content scrolled
+    # off the top/left (<0), so Chromium/Electron content scrolled off the
+    # bottom/right (marked SHOWING, positioned past the window) still gets
+    # hinted. Also drop positions >= window width/height.
+    ./hints-viewport-filter.patch
+  ];
 
   postPatch = ''
     substituteInPlace setup.py \
