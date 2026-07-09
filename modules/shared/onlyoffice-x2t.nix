@@ -58,9 +58,14 @@ in stdenv.mkDerivation {
     runHook preInstall
 
     # x2t locates its frameworks/sdkjs/DoctRenderer.config relative to the
-    # binary, so install the whole tree intact and wrap from outside.
+    # binary, so install the whole tree intact and wrap from outside. Tarball
+    # layout varies by release: older releases place x2t at the top level, 9.4.0+
+    # nests it under opt/onlyoffice/documentbuilder/ — locate x2t and install its
+    # containing directory so this works across layouts and platforms.
+    x2tPath="$(find . -type f -name x2t -print -quit)"
+    [ -n "$x2tPath" ] || { echo "onlyoffice-x2t: x2t not found in tarball" >&2; exit 1; }
     mkdir -p "$out/lib/onlyoffice-documentbuilder" "$out/bin"
-    cp -R . "$out/lib/onlyoffice-documentbuilder/"
+    cp -R "$(dirname "$x2tPath")"/. "$out/lib/onlyoffice-documentbuilder/"
     rm -f "$out/lib/onlyoffice-documentbuilder/env-vars"
 
     makeWrapper "$out/lib/onlyoffice-documentbuilder/x2t" "$out/bin/x2t"
