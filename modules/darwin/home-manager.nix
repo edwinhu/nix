@@ -63,6 +63,7 @@
       imports = [
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
+        ../shared/word-render.nix
       ];
 
       # Work around ryantm/agenix#352: Crashed=false makes launchd restart
@@ -190,7 +191,11 @@
           RunAtLoad = true;
         };
       };
-      programs = {} // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
+      # Faithful docx->PDF via real Word in a QEMU Win11 ARM guest (see
+      # ../shared/word-render/README.md for one-time guest setup). Portable:
+      # the same config drives a Win11 x64 + KVM guest on a Linux host later.
+      programs = { wordRender.enable = true; }
+        // import ../shared/home-manager.nix { inherit pkgs lib user userInfo; };
     };
     extraSpecialArgs = { inherit user userInfo nix-secrets agenix; };
   };
