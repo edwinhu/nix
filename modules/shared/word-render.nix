@@ -8,9 +8,12 @@
 # Mac (Win11 ARM guest) -> Linux (Win11 x64 + KVM guest) hypervisor change.
 # Only the SSH target differs between environments.
 #
-# This module provisions the HOST side only (QEMU + the render scripts). Standing
-# up the Windows guest, installing/licensing Office, and enabling OpenSSH inside
-# it are one-time manual steps Nix cannot do — see ./word-render/README.md.
+# This module ships the HOST side: QEMU + swtpm, the render scripts, AND the full
+# VM provisioning kit (./word-render/vm/) — launcher, unattended-install answer
+# file, and guest bootstrap — so a fresh machine can rebuild the guest from an
+# ISO with `word-render-provision`. The genuinely manual bits Nix can't do (the
+# Win11 ISO download, the ~20-min install, optional Office activation) are
+# documented in ./word-render/README.md.
 #
 # Enable per host, e.g. in modules/darwin/home-manager.nix or a Linux host:
 #   programs.wordRender.enable = true;
@@ -51,9 +54,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # QEMU: runs the Win11 guest. On aarch64-darwin it uses the built-in HVF
-    # accelerator for the ARM guest; on x86_64-linux it uses KVM (/dev/kvm).
-    home.packages = [ pkgs.qemu ];
+    # QEMU runs the Win11 guest (HVF on aarch64-darwin, KVM on x86_64-linux);
+    # swtpm provides the TPM 2.0 Win11 requires. On Linux, xorriso builds the
+    # unattend ISO (macOS uses the system `hdiutil`).
+    home.packages = [ pkgs.qemu pkgs.swtpm ]
+      ++ lib.optionals pkgs.stdenv.isLinux [ pkgs.xorriso ];
 
     # Adopted scripts land at stable paths on any machine.
     #  - render_docx.ps1 is the GUEST-side renderer; kept here so the setup doc
@@ -68,6 +73,26 @@ in
     home.file.".local/share/word-render/word_render_remote.sh" = {
       source = ./word-render/word_render_remote.sh;
       executable = true;
+    };
+
+    # VM provisioning kit — the host scripts that stand up / boot / drive the
+    # Windows guest, plus the unattended-install automation. Deployed to stable
+    # paths so a fresh machine can rebuild the guest from an ISO. See
+    # ./word-render/README.md and ./word-render/vm/provision.sh.
+    home.file.".local/share/word-render/vm/start-winvm.sh"   = { source = ./word-render/vm/start-winvm.sh;   executable = true; };
+    home.file.".local/share/word-render/vm/start-tpm.sh"     = { source = ./word-render/vm/start-tpm.sh;     executable = true; };
+    home.file.".local/share/word-render/vm/typer.sh"         = { source = ./word-render/vm/typer.sh;         executable = true; };
+    home.file.".local/share/word-render/vm/provision.sh"     = { source = ./word-render/vm/provision.sh;     executable = true; };
+    home.file.".local/share/word-render/vm/guest-setup.ps1".source  = ./word-render/vm/guest-setup.ps1;
+    home.file.".local/share/word-render/vm/autounattend.xml".source = ./word-render/vm/autounattend.xml;
+
+    # Launcher on PATH: word-render-provision (one-time host setup for the guest).
+    home.file.".local/bin/word-render-provision" = {
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        exec "$HOME/.local/share/word-render/vm/provision.sh" "$@"
+      '';
     };
 
     # Convenience launcher on PATH:  word-render <docx> [out.pdf]
