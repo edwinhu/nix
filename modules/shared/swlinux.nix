@@ -46,7 +46,9 @@ python3.pkgs.buildPythonApplication {
 
   # sherpa-onnx/llama-cpp pin loose versions; skip the runtime-deps check.
   dontCheckRuntimeDeps = true;
-  doCheck = false;
+
+  # Run the pytest suite at build time (pure glue logic; no models/hardware).
+  nativeCheckInputs = [ python3.pkgs.pytestCheckHook ];
 
   # Let wrapGAppsHook3 assemble GI_TYPELIB_PATH etc., but add our own env: the
   # HUD interpreter and the external CLIs the daemon shells out to.
