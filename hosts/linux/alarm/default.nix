@@ -41,6 +41,44 @@ in
   # Enable fonts
   fonts.fontconfig.enable = true;
 
+  # hints config: vimium-style hint appearance + per-app coordinate scaling.
+  # On this 2x HiDPI output, Chromium-family apps (the browser, chrome-web.*
+  # PWAs, and Electron apps like Beeper/Morgen) report accessibility coords in
+  # physical pixels, so the default scale_factor is 0.5. Genuinely-native GTK/Qt
+  # apps report logical coords and are whitelisted back to 1.0. The atspi
+  # backend is the only one enabled (opencv visual-detection produced misaligned
+  # duplicates and isn't needed now that apps expose accessibility). Add a
+  # "<window-class>".scale_factor = 1 entry for any native app that hints wrong.
+  xdg.configFile."hints/config.json".text = builtins.toJSON {
+    hints = {
+      hint_height = 22;
+      hint_font_size = 11;
+      hint_font_face = "Sans";
+      hint_upercase = true;
+      hint_background_r = 1.0;
+      hint_background_g = 0.86;
+      hint_background_b = 0.24;
+      hint_background_a = 0.95;
+      hint_font_r = 0.18;
+      hint_font_g = 0.13;
+      hint_font_b = 0.02;
+      hint_font_a = 1.0;
+      hint_pressed_font_r = 0.72;
+      hint_pressed_font_g = 0.6;
+      hint_pressed_font_b = 0.25;
+      hint_pressed_font_a = 1.0;
+    };
+    backends = {
+      enable = [ "atspi" ];
+      atspi.application_rules = {
+        default.scale_factor = 0.5;
+        "dev.limux.linux".scale_factor = 1;
+        "doublecmd".scale_factor = 1;
+        "org.gnome.Nautilus".scale_factor = 1;
+      };
+    };
+  };
+
   # Enable home-manager
   programs.home-manager.enable = true;
 
