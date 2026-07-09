@@ -505,11 +505,11 @@
     "swlinux-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1783617860,
-        "narHash": "sha256-6XkzhliFMBF/li2VLTe6i5O+GjRldk7fJFRrGXtytpY=",
+        "lastModified": 1783618181,
+        "narHash": "sha256-GE8mProh6tA3LJdq9vsO0HL87TzXxQeXTWlNJDJqAVY=",
         "ref": "refs/heads/main",
-        "rev": "6db1c8427b017bf5b0a082b5d3980addf3bbc843",
-        "revCount": 1,
+        "rev": "a148d0434ae38d548891c97d83bb696ef5bbedcb",
+        "revCount": 2,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/superwhisper-linux.git"
       },
