@@ -88,15 +88,19 @@ in
         "dev.limux.linux".scale_factor = 1;
         "doublecmd".scale_factor = 1;
         "org.gnome.Nautilus".scale_factor = 1;
-        # Beeper exposes its clickable conversation rows as FOCUSABLE `section`
-        # (role 85) containers, not buttons/links — so the default allow-list
-        # skips them and threads get no hints. Add section to the roles, but
-        # require the FOCUSABLE state (11) alongside SENSITIVE (24) + SHOWING
-        # (25), states_match_type 1 = ALL, so only the ~24 real rows are hinted,
-        # not the 70+ decorative section containers or static text. scale_factor
-        # (0.5) and roles_match_type (2) inherit from the default rule.
+        # Beeper: hint only what's useful for keyboard navigation — the
+        # conversation threads (FOCUSABLE `section` role 85) plus the message
+        # composer (entry role 79). Buttons (role 43) are dropped because Beeper
+        # renders ~60 per-message action buttons in the conversation pane (the
+        # "extra chat hints" clutter) that share the button role with the useful
+        # sidebar buttons and can't be separated by role/state — only by screen
+        # position, which the config can't filter on. Require FOCUSABLE (11) +
+        # SENSITIVE (24) + SHOWING (25), states_match_type 1 = ALL, so only the
+        # real ~13 thread rows match (not the 70+ decorative sections).
+        # scale_factor (0.5) inherits from the default rule.
         "BeeperTexts" = {
-          roles = [ 43 88 79 7 44 11 62 35 8 45 37 32 51 52 85 ];
+          roles = [ 85 79 ];
+          roles_match_type = 2;
           states = [ 24 25 11 ];
           states_match_type = 1;
         };
