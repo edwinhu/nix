@@ -19,8 +19,9 @@ with pkgs; [
   # Communication
   beeper
 
-  # AI agent terminal multiplexer (gh:no1msd/seance, packaged via flake input)
-  seance
+  # GPU-accelerated terminal workspace manager (gh:am-will/limux, built from
+  # source — no upstream aarch64 build or flake; see modules/shared/limux.nix)
+  limux
 
   # Cloud and sync
   google-cloud-sdk
@@ -38,6 +39,11 @@ with pkgs; [
   dotool
   xdotool
   ydotool
+
+  # Keyboard-driven GUI navigation, vimium-style (gh:AlfredoSequeida/hints,
+  # built from source — see modules/shared/hints.nix). Run the `hintsd` daemon
+  # to arm the global hotkey (needs the user in the `input` group).
+  hints
 
   # Terminal utilities
   atuin

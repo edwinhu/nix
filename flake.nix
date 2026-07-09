@@ -54,13 +54,9 @@
       url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
       flake = false;
     };
-    seance = {
-      url = "git+https://github.com/no1msd/seance?submodules=1";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, seance } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -334,7 +330,10 @@
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
-                seance = seance.packages.${prev.system}.seance;
+                limux = prev.callPackage ./modules/shared/limux.nix {};
+                # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
+                # built from source — not in nixpkgs. See modules/shared/hints.nix.
+                hints = prev.callPackage ./modules/shared/hints.nix {};
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {
