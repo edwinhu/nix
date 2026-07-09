@@ -44,6 +44,34 @@ in
   # Enable home-manager
   programs.home-manager.enable = true;
 
+  # Global accessibility toggle. Chromium/Electron/Qt apps only publish their
+  # AT-SPI accessibility tree when assistive tech is marked active on the a11y
+  # bus (org.a11y.Status.IsEnabled). Without this, `hints` gets no real elements
+  # for those apps and falls back to opencv edge-detection (misaligned dupes).
+  # GTK apps expose it regardless, so this is what makes hints work everywhere.
+  dconf.settings = {
+    "org/gnome/desktop/interface".toolkit-accessibility = true;
+  };
+
+  # Run the hints daemon as part of the graphical session (replaces the manual
+  # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
+  # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
+  # services inherit WAYLAND_DISPLAY etc. hintsd needs /dev/input (evdev) access,
+  # i.e. the user in the `input` group — host/OS config, not managed here.
+  systemd.user.services.hintsd = {
+    Unit = {
+      Description = "Hints daemon (keyboard GUI navigation)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.hints}/bin/hintsd";
+      Restart = "on-failure";
+      RestartSec = 1;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
     opencode = {

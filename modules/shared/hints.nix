@@ -1,7 +1,13 @@
 # Hints — "Click, scroll, and drag with your keyboard" (gh:AlfredoSequeida/hints).
 #
-# A GTK4 desktop overlay that lets you drive any Linux GUI (X11 or Wayland) with
+# A GTK3 desktop overlay that lets you drive any Linux GUI (X11 or Wayland) with
 # keyboard hints, à la vimium. Not in nixpkgs, so we build it from source here.
+#
+# It pulls a specific set of GObject-introspection namespaces at import time:
+# Gtk/Gdk 3.0 (gtk3), GtkLayerShell 0.1 (gtk-layer-shell — the GTK3 layer-shell,
+# NOT gtk4-layer-shell), Atspi 2.0 (at-spi2-core) and Wnck 3.0 (libwnck). All
+# four typelibs must be on GI_TYPELIB_PATH, which wrapGAppsHook wires up from
+# buildInputs.
 #
 # Two entry points ship: `hints` (the CLI/overlay) and `hintsd` (the daemon that
 # listens for the global hotkey via evdev — it needs read access to /dev/input,
@@ -16,11 +22,12 @@
   python3,
   fetchFromGitHub,
   gobject-introspection,
-  wrapGAppsHook4,
+  wrapGAppsHook3,
   pkg-config,
   cairo,
-  gtk4,
-  gtk4-layer-shell,
+  gtk3,
+  gtk-layer-shell,
+  at-spi2-core,
   libwnck,
   grim,
   wl-clipboard,
@@ -51,15 +58,16 @@ python3.pkgs.buildPythonApplication rec {
 
   nativeBuildInputs = [
     gobject-introspection
-    wrapGAppsHook4
+    wrapGAppsHook3
     pkg-config
     makeWrapper
   ];
 
   buildInputs = [
     cairo
-    gtk4
-    gtk4-layer-shell
+    gtk3
+    gtk-layer-shell
+    at-spi2-core
     libwnck
   ];
 
