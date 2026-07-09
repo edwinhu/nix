@@ -133,18 +133,18 @@ in
       startupNotify = true;
     };
 
+    # Morgen runs as a Chromium PWA (web.morgen.so) rather than the native
+    # Electron app, so the real Vimium extension handles in-page keyboard
+    # navigation (superior to hints for web content). The native app + its
+    # autostart were removed; keybind SUPER+SHIFT+C launches this webapp.
     morgen = {
       name = "Morgen";
       comment = "Calendar and Tasks";
-      # --force-renderer-accessibility: Electron apps don't honor the global
-      # toolkit-accessibility toggle, so hints only sees their elements with
-      # this flag (same reason Chromium needs it in chromium-flags.conf).
-      exec = "/home/${user}/.local/opt/Morgen/morgen --force-renderer-accessibility %U";
+      exec = "omarchy-launch-webapp https://web.morgen.so/";
       terminal = false;
       type = "Application";
       icon = "morgen";
       categories = [ "Utility" ];
-      mimeType = [ "text/calendar" "x-scheme-handler/morgen" ];
     };
 
     beepertexts = {
