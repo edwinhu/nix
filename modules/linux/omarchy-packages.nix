@@ -45,6 +45,11 @@ with pkgs; [
   # to arm the global hotkey (needs the user in the `input` group).
   hints
 
+  # Local Wayland dictation, superwhisper-style (gh:edwinhu/superwhisper-linux;
+  # see modules/shared/swlinux.nix). Daemon + keybinds set up on the alarm host;
+  # models fetched to ~/.local/share/swlinux/models by activation.
+  swlinux
+
   # Terminal utilities
   atuin
   fswatch
