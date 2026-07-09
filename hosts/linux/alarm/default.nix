@@ -71,7 +71,20 @@ in
     backends = {
       enable = [ "atspi" ];
       atspi.application_rules = {
-        default.scale_factor = 0.5;
+        default = {
+          scale_factor = 0.5;
+          # Allow-list only genuinely-interactive roles (roles_match_type 2 =
+          # Atspi.CollectionMatchType.ANY) instead of the upstream default,
+          # which hints everything except containers — that pulled in images,
+          # static text, headings, table cells, etc. and cluttered dense
+          # Chromium/Electron apps (e.g. Beeper). Atspi.Role int values:
+          #   43 push button   88 link          79 entry        7 check box
+          #   44 radio button  11 combo box     62 toggle btn  35 menu item
+          #    8 check menuitem 45 radio menuitem 37 page tab   32 list item
+          #   51 slider        52 spin button
+          roles_match_type = 2;
+          roles = [ 43 88 79 7 44 11 62 35 8 45 37 32 51 52 ];
+        };
         "dev.limux.linux".scale_factor = 1;
         "doublecmd".scale_factor = 1;
         "org.gnome.Nautilus".scale_factor = 1;
