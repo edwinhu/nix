@@ -98,7 +98,10 @@ in
     morgen = {
       name = "Morgen";
       comment = "Calendar and Tasks";
-      exec = "/home/${user}/.local/opt/Morgen/morgen %U";
+      # --force-renderer-accessibility: Electron apps don't honor the global
+      # toolkit-accessibility toggle, so hints only sees their elements with
+      # this flag (same reason Chromium needs it in chromium-flags.conf).
+      exec = "/home/${user}/.local/opt/Morgen/morgen --force-renderer-accessibility %U";
       terminal = false;
       type = "Application";
       icon = "morgen";
@@ -109,7 +112,7 @@ in
     beepertexts = {
       name = "Beeper";
       comment = "Beeper messaging app";
-      exec = "beeper %U";
+      exec = "beeper --force-renderer-accessibility %U";  # expose a11y tree to hints (Electron)
       terminal = false;
       type = "Application";
       icon = "beeper";
