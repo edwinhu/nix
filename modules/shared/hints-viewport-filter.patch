@@ -1,0 +1,21 @@
+--- a/hints/backends/atspi.py	2026-07-09 10:43:45.459233163 -0400
++++ b/hints/backends/atspi.py	2026-07-09 10:44:37.313860426 -0400
+@@ -177,8 +177,16 @@
+             self.get_relative_and_absolute_extents(root)
+         )
+ 
+-        # exit early for elements that are not visible
+-        if relative_position[0] < 0 or relative_position[1] < 0:
++        # exit early for elements that are not visible. The <0 check drops
++        # content scrolled off the top/left; Chromium/Electron also mark
++        # scrolled-off content below/right as SHOWING and expose it past the
++        # window bounds, so clip to the window viewport (w, h) as well.
++        if (
++            relative_position[0] < 0
++            or relative_position[1] < 0
++            or relative_position[0] >= self._window_extents[2]
++            or relative_position[1] >= self._window_extents[3]
++        ):
+             return
+ 
+         try:

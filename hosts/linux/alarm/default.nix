@@ -41,6 +41,73 @@ in
   # Enable fonts
   fonts.fontconfig.enable = true;
 
+  # hints config: vimium-style hint appearance + per-app coordinate scaling.
+  # On this 2x HiDPI output, Chromium-family apps (the browser, chrome-web.*
+  # PWAs, and Electron apps like Beeper/Morgen) report accessibility coords in
+  # physical pixels, so the default scale_factor is 0.5. Genuinely-native GTK/Qt
+  # apps report logical coords and are whitelisted back to 1.0. The atspi
+  # backend is the only one enabled (opencv visual-detection produced misaligned
+  # duplicates and isn't needed now that apps expose accessibility). Add a
+  # "<window-class>".scale_factor = 1 entry for any native app that hints wrong.
+  xdg.configFile."hints/config.json".text = builtins.toJSON {
+    hints = {
+      hint_height = 22;
+      hint_font_size = 11;
+      hint_font_face = "Sans";
+      hint_upercase = true;
+      hint_background_r = 1.0;
+      hint_background_g = 0.86;
+      hint_background_b = 0.24;
+      hint_background_a = 0.95;
+      hint_font_r = 0.18;
+      hint_font_g = 0.13;
+      hint_font_b = 0.02;
+      hint_font_a = 1.0;
+      hint_pressed_font_r = 0.72;
+      hint_pressed_font_g = 0.6;
+      hint_pressed_font_b = 0.25;
+      hint_pressed_font_a = 1.0;
+    };
+    backends = {
+      enable = [ "atspi" ];
+      atspi.application_rules = {
+        default = {
+          scale_factor = 0.5;
+          # Allow-list only genuinely-interactive roles (roles_match_type 2 =
+          # Atspi.CollectionMatchType.ANY) instead of the upstream default,
+          # which hints everything except containers — that pulled in images,
+          # static text, headings, table cells, etc. and cluttered dense
+          # Chromium/Electron apps (e.g. Beeper). Atspi.Role int values:
+          #   43 push button   88 link          79 entry        7 check box
+          #   44 radio button  11 combo box     62 toggle btn  35 menu item
+          #    8 check menuitem 45 radio menuitem 37 page tab   32 list item
+          #   51 slider        52 spin button
+          roles_match_type = 2;
+          roles = [ 43 88 79 7 44 11 62 35 8 45 37 32 51 52 ];
+        };
+        "dev.limux.linux".scale_factor = 1;
+        "doublecmd".scale_factor = 1;
+        "org.gnome.Nautilus".scale_factor = 1;
+        # Beeper: hint only what's useful for keyboard navigation — the
+        # conversation threads (FOCUSABLE `section` role 85) plus the message
+        # composer (entry role 79). Buttons (role 43) are dropped because Beeper
+        # renders ~60 per-message action buttons in the conversation pane (the
+        # "extra chat hints" clutter) that share the button role with the useful
+        # sidebar buttons and can't be separated by role/state — only by screen
+        # position, which the config can't filter on. Require FOCUSABLE (11) +
+        # SENSITIVE (24) + SHOWING (25), states_match_type 1 = ALL, so only the
+        # real ~13 thread rows match (not the 70+ decorative sections).
+        # scale_factor (0.5) inherits from the default rule.
+        "BeeperTexts" = {
+          roles = [ 85 79 ];
+          roles_match_type = 2;
+          states = [ 24 25 11 ];
+          states_match_type = 1;
+        };
+      };
+    };
+  };
+
   # Enable home-manager
   programs.home-manager.enable = true;
 
@@ -95,21 +162,24 @@ in
       startupNotify = true;
     };
 
+    # Morgen runs as a Chromium PWA (web.morgen.so) rather than the native
+    # Electron app, so the real Vimium extension handles in-page keyboard
+    # navigation (superior to hints for web content). The native app + its
+    # autostart were removed; keybind SUPER+SHIFT+C launches this webapp.
     morgen = {
       name = "Morgen";
       comment = "Calendar and Tasks";
-      exec = "/home/${user}/.local/opt/Morgen/morgen %U";
+      exec = "omarchy-launch-webapp https://web.morgen.so/";
       terminal = false;
       type = "Application";
       icon = "morgen";
       categories = [ "Utility" ];
-      mimeType = [ "text/calendar" "x-scheme-handler/morgen" ];
     };
 
     beepertexts = {
       name = "Beeper";
       comment = "Beeper messaging app";
-      exec = "beeper %U";
+      exec = "beeper --force-renderer-accessibility %U";  # expose a11y tree to hints (Electron)
       terminal = false;
       type = "Application";
       icon = "beeper";

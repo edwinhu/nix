@@ -1,0 +1,33 @@
+--- a/hints/huds/overlay.py	2026-07-09 10:37:07.953599849 -0400
++++ b/hints/huds/overlay.py	2026-07-09 10:39:24.566476433 -0400
+@@ -393,14 +393,28 @@
+             hint_y_offset + hint_height / 2,
+         )
+ 
+-        cr.rectangle(0, 0, hint_width, hint_height)
++        _rad = min(4.0, hint_height / 4.0)
++        cr.new_sub_path()
++        cr.arc(hint_width - _rad, _rad, _rad, -1.5707963, 0.0)
++        cr.arc(hint_width - _rad, hint_height - _rad, _rad, 0.0, 1.5707963)
++        cr.arc(_rad, hint_height - _rad, _rad, 1.5707963, 3.1415926)
++        cr.arc(_rad, _rad, _rad, 3.1415926, 4.7123889)
++        cr.close_path()
+         cr.set_source_rgba(
+             self.hint_background_r,
+             self.hint_background_g,
+             self.hint_background_b,
+             self.hint_background_a * alpha_mult,
+         )
+-        cr.fill()
++        cr.fill_preserve()
++        cr.set_source_rgba(
++            self.hint_background_r * 0.6,
++            self.hint_background_g * 0.55,
++            self.hint_background_b * 0.35,
++            self.hint_background_a * alpha_mult,
++        )
++        cr.set_line_width(1.0)
++        cr.stroke()
+ 
+         # draw hint
+         cr.move_to(text_x, text_y)
