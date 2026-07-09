@@ -139,6 +139,40 @@ in
     Install.WantedBy = [ "graphical-session.target" ];
   };
 
+  # swlinux dictation: fetch the (large, non-store) models once, then run the
+  # daemon as a graphical-session service. Keybinds live in the user's Hyprland
+  # config (SUPER+; = cleanup, SUPER+SHIFT+; = raw), like the hints keybinds.
+  home.activation.swlinuxModels = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    MODELS="$HOME/.local/share/swlinux/models"
+    $DRY_RUN_CMD mkdir -p "$MODELS"
+    # Parakeet v3 (multilingual STT)
+    if [ ! -d "$MODELS/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" ]; then
+      $DRY_RUN_CMD ${pkgs.curl}/bin/curl -fL --retry 3 -o "$MODELS/p.tar.bz2" \
+        https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 \
+        && $DRY_RUN_CMD ${pkgs.gnutar}/bin/tar -xjf "$MODELS/p.tar.bz2" -C "$MODELS" \
+        && $DRY_RUN_CMD rm -f "$MODELS/p.tar.bz2"
+    fi
+    # Local cleanup LLM (open Qwen2.5-1.5B; ≈ superwhisper's S1-Mini)
+    if [ ! -f "$MODELS/qwen2.5-1.5b-instruct-q4.gguf" ]; then
+      $DRY_RUN_CMD ${pkgs.curl}/bin/curl -fL --retry 3 -o "$MODELS/qwen2.5-1.5b-instruct-q4.gguf" \
+        https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
+    fi
+  '';
+
+  systemd.user.services.swlinux = {
+    Unit = {
+      Description = "swlinux dictation daemon (Parakeet STT + local cleanup)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.swlinux}/bin/swlinux daemon";
+      Restart = "on-failure";
+      RestartSec = 2;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
     opencode = {

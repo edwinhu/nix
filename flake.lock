@@ -466,6 +466,7 @@
         "nixpkgs-onlyoffice": "nixpkgs-onlyoffice",
         "presmihaylov-taps": "presmihaylov-taps",
         "stylix": "stylix",
+        "swlinux-src": "swlinux-src",
         "zellij-switch-wasm": "zellij-switch-wasm"
       }
     },
@@ -499,6 +500,22 @@
         "owner": "danth",
         "repo": "stylix",
         "type": "github"
+      }
+    },
+    "swlinux-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783622304,
+        "narHash": "sha256-OOEx9SBaNLWKND9DWT3S6UdokhMvsAX1RP8ErGMqTEA=",
+        "ref": "refs/heads/main",
+        "rev": "77caf862a3a03d93d0d66535aa9058fc82b79ca3",
+        "revCount": 7,
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/superwhisper-linux.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/superwhisper-linux.git"
       }
     },
     "systems": {

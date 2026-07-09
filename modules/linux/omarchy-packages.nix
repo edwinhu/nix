@@ -26,6 +26,7 @@ with pkgs; [
   # Cloud and sync
   google-cloud-sdk
   rclone
+  croc  # fast P2P file transfer (direct over LAN when peers are local)
 
   # Security and secrets
   # 1password GUI: install via AUR (`yay -S 1password`) — nixpkgs _1password-gui
@@ -44,6 +45,11 @@ with pkgs; [
   # built from source — see modules/shared/hints.nix). Run the `hintsd` daemon
   # to arm the global hotkey (needs the user in the `input` group).
   hints
+
+  # Local Wayland dictation, superwhisper-style (gh:edwinhu/superwhisper-linux;
+  # see modules/shared/swlinux.nix). Daemon + keybinds set up on the alarm host;
+  # models fetched to ~/.local/share/swlinux/models by activation.
+  swlinux
 
   # Terminal utilities
   atuin

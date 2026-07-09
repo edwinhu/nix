@@ -54,9 +54,14 @@
       url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
       flake = false;
     };
+    # swlinux: local Wayland dictation tool (private repo, SSH-fetched like secrets)
+    swlinux-src = {
+      url = "git+ssh://git@github.com/edwinhu/superwhisper-linux.git";
+      flake = false;
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, swlinux-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -334,6 +339,11 @@
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
+                # Local Wayland dictation (gh:edwinhu/superwhisper-linux),
+                # source via the swlinux-src flake input. See modules/shared/swlinux.nix.
+                swlinux = prev.callPackage ./modules/shared/swlinux.nix {
+                  src = inputs.swlinux-src;
+                };
 
                 # Double Commander Qt6 from official releases
                 doublecmd = prev.stdenv.mkDerivation rec {

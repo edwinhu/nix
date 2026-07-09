@@ -90,6 +90,7 @@ with pkgs; [
   tinymist
   unrar
   unzip
+  croc  # fast P2P file transfer (direct over LAN when peers are local)
   websocat  # WebSocket client for Chrome DevTools Protocol
   # chrome-for-testing  # Removed: 338 MB app bundle slowed rsync; use homebrew google-chrome instead
   wezterm
