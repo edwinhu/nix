@@ -39,6 +39,8 @@ with pkgs; [
   age
   libfido2
   sops
+  # Tailscale TUI (gh:neuralink/tsui, prebuilt release; see modules/shared/tsui.nix)
+  tsui
 
   # Input simulation (for GUI automation/testing)
   dotool

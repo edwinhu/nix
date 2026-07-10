@@ -341,6 +341,7 @@
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
+                tsui = prev.callPackage ./modules/shared/tsui.nix {};
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};

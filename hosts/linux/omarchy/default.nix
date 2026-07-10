@@ -7,6 +7,18 @@
 
 let
   iconDir = ../../../modules/linux/desktop-icons;
+
+  # Real app icons pulled from each web app (the iconDir placeholders were the
+  # Superhuman logo reused, and Morgen's Superhuman.svg is a <symbol>-only SVG
+  # that renders blank). apple-touch-icon.png is a clean 180px raster.
+  morgenIcon = pkgs.fetchurl {
+    url = "https://web.morgen.so/apple-touch-icon.png";
+    hash = "sha256-MiLXn1LrP/9idaof4t2fAAADyh3+qw9bdqMva2h7LPE=";
+  };
+  superhumanIcon = pkgs.fetchurl {
+    url = "https://mail.superhuman.com/apple-touch-icon.png";
+    hash = "sha256-s5bO5MF4M8KvBto42l+UquWuKT/VbveFOBi+YMr6ufo=";
+  };
 in
 {
   imports = [
@@ -202,13 +214,17 @@ in
     # ~/.local/opt/Morgen — no per-machine binary to maintain. Trade-off: the PWA
     # can't register the morgen:// scheme or handle .ics files, so mimeType is
     # dropped (the native app was the only thing that could claim those).
+    # launch-or-focus (not plain launch): these web apps have single-instance
+    # behaviour on the shared profile — a second launch would open a duplicate
+    # tab that Morgen shows as "inactive". Matching on the window class/title
+    # ("morgen") focuses the existing window instead.
     morgen = {
       name = "Morgen";
       comment = "Calendar and Tasks";
-      exec = "omarchy-launch-webapp https://web.morgen.so";
+      exec = "omarchy-launch-or-focus-webapp morgen https://web.morgen.so";
       terminal = false;
       type = "Application";
-      icon = "morgen";
+      icon = "${morgenIcon}";
       categories = [ "Utility" ];
     };
 
@@ -230,20 +246,21 @@ in
     superhuman = {
       name = "Superhuman";
       comment = "Superhuman email client";
-      exec = "omarchy-launch-webapp https://mail.superhuman.com";
+      exec = "omarchy-launch-or-focus-webapp superhuman https://mail.superhuman.com";
       terminal = false;
       type = "Application";
-      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Superhuman.svg";
+      icon = "${superhumanIcon}";
       startupNotify = true;
     };
 
-    # tsui (the Tailscale TUI) is a manual /usr/local/bin binary on alarm and
-    # isn't in nixpkgs, so it's absent here. Point this entry at the admin webapp
-    # (Tailscale itself works via the CLI + tailscaled) instead of `sudo tsui`.
+    # tsui (Tailscale TUI) in a floating terminal. Full store path because sudo
+    # resets PATH and won't find the user nix-profile bin. Packaged from the
+    # neuralink/tsui release (modules/shared/tsui.nix); needs passwordless sudo
+    # for tsui or it'll prompt in the terminal.
     tailscale = {
       name = "Tailscale";
       comment = "Tailscale VPN";
-      exec = "omarchy-launch-webapp https://login.tailscale.com/admin/machines";
+      exec = "xdg-terminal-exec --app-id=TUI.float -e sudo ${pkgs.tsui}/bin/tsui";
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Tailscale.svg";
