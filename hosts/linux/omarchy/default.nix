@@ -47,6 +47,12 @@ in
   # Enable home-manager
   programs.home-manager.enable = true;
 
+  # Both CDP CLIs target the browser-wide endpoint (chromium-flags.conf, :9222).
+  # superhuman-cli auto-probes 9222, but morgen-cli defaults to 9253 — point it
+  # here. Host-scoped: the Mac uses native apps on 9252/9253, so this only
+  # belongs on omarchy where everything shares the one Chromium CDP port.
+  home.sessionVariables.CDP_PORT = "9222";
+
   # hints (keyboard-driven GUI navigation). Config, accessibility toggle and the
   # hintsd daemon service mirror hosts/linux/alarm — see there for the rationale
   # behind the role/state allow-lists. hintsd needs the user in the `input` group
