@@ -50,6 +50,10 @@
       url = "github:ryantm/agenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixGL = {
+      url = "github:nix-community/nixGL";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nix-secrets = {
       url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
       flake = false;
@@ -61,7 +65,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nix-secrets, zellij-switch-wasm, swlinux-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -423,8 +427,23 @@ EOF
                 };
 
                 # Beeper for aarch64-linux - extracted AppImage (no FUSE needed).
-                # The AppImage below is arm64; on x86_64 use the stock nixpkgs beeper.
-                beeper = if !prev.stdenv.hostPlatform.isAarch64 then prev.beeper else (let
+                # The AppImage below is arm64; on x86_64 wrap stock nixpkgs beeper
+                # with nixGLIntel so Mesa resolves against system GL on non-NixOS
+                # (Omarchy has no /run/opengl-driver). nixGLIntel drives AMD too.
+                beeper = if !prev.stdenv.hostPlatform.isAarch64 then prev.symlinkJoin {
+                  name = "beeper-nixgl-${prev.beeper.version or "unknown"}";
+                  paths = [
+                    # Shell wrapper wins over prev.beeper/bin/beeper via symlinkJoin
+                    # first-path-wins semantics; share/{applications,icons} come
+                    # unchanged from prev.beeper.
+                    (prev.writeShellScriptBin "beeper" ''
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${prev.beeper}/bin/beeper "$@"
+                    '')
+                    prev.beeper
+                  ];
+                  meta = prev.beeper.meta or {};
+                  passthru = { unwrapped = prev.beeper; };
+                } else (let
                   pname = "beeper";
                   version = "4.2.455";
                   src = prev.fetchurl {
