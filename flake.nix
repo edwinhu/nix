@@ -92,6 +92,14 @@
           email = "eddyhu@gmail.com";
           username = "edwinhu";  # Actual username on the system
         };
+        # Omarchy (Arch Linux) on Framework Desktop (AMD Ryzen AI Max, x86_64)
+        # Config key == username "eh", so build-switch resolves it with no special case.
+        eh = {
+          system = "x86_64-linux";
+          host = "omarchy";
+          fullName = "Edwin Hu";
+          email = "eddyhu@gmail.com";
+        };
       };
       
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
@@ -345,8 +353,10 @@
                   src = inputs.swlinux-src;
                 };
 
-                # Double Commander Qt6 from official releases
-                doublecmd = prev.stdenv.mkDerivation rec {
+                # Double Commander Qt6 from official releases (aarch64 only; the
+                # official release tarball below is arm64. On x86_64 use the stock
+                # nixpkgs doublecmd, which builds natively.)
+                doublecmd = if !prev.stdenv.hostPlatform.isAarch64 then prev.doublecmd else prev.stdenv.mkDerivation rec {
                   pname = "doublecmd";
                   version = "1.1.32";
 
@@ -412,8 +422,9 @@ EOF
                   };
                 };
 
-                # Beeper for aarch64-linux - extracted AppImage (no FUSE needed)
-                beeper = let
+                # Beeper for aarch64-linux - extracted AppImage (no FUSE needed).
+                # The AppImage below is arm64; on x86_64 use the stock nixpkgs beeper.
+                beeper = if !prev.stdenv.hostPlatform.isAarch64 then prev.beeper else (let
                   pname = "beeper";
                   version = "4.2.455";
                   src = prev.fetchurl {
@@ -437,7 +448,7 @@ EOF
                     cp ${extracted}/beepertexts.desktop $out/share/applications/ || true
                     cp ${extracted}/beepertexts.png $out/share/icons/hicolor/512x512/apps/beeper.png || true
                   '';
-                };
+                });
               })
             ];
           };

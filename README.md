@@ -16,6 +16,7 @@ A comprehensive Nix configuration supporting multiple users across macOS and Lin
 - **vwh7mb** on **macbook-pro** (macOS/Darwin, aarch64)
 - **eh2889** on **rjds** (Ubuntu Linux, x86_64)
 - **edwinhu** on **alarm** (Arch Linux/Asahi, aarch64)
+- **eh** on **omarchy** (Omarchy/Arch Linux, Framework Desktop, x86_64)
 
 ## Quick Start
 
