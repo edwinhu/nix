@@ -149,15 +149,18 @@ in
       startupNotify = true;
     };
 
+    # Morgen as a Chromium PWA (web.morgen.so) rather than the native tarball at
+    # ~/.local/opt/Morgen — no per-machine binary to maintain. Trade-off: the PWA
+    # can't register the morgen:// scheme or handle .ics files, so mimeType is
+    # dropped (the native app was the only thing that could claim those).
     morgen = {
       name = "Morgen";
       comment = "Calendar and Tasks";
-      exec = "/home/${user}/.local/opt/Morgen/morgen %U";
+      exec = "omarchy-launch-webapp https://web.morgen.so";
       terminal = false;
       type = "Application";
       icon = "morgen";
       categories = [ "Utility" ];
-      mimeType = [ "text/calendar" "x-scheme-handler/morgen" ];
     };
 
     beepertexts = {
