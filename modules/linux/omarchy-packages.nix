@@ -18,6 +18,10 @@ with pkgs; [
 
   # Communication
   beeper
+  # Superhuman/Morgen CLIs (Chrome-DevTools-Protocol clients; attach to the
+  # browser-wide CDP endpoint on :9222 — see hosts/linux/omarchy chromium-flags).
+  superhuman-cli
+  morgen-cli
 
   # GPU-accelerated terminal workspace manager (gh:am-will/limux, built from
   # source — no upstream aarch64 build or flake; see modules/shared/limux.nix)
