@@ -108,6 +108,28 @@ in
     "org/gnome/desktop/interface".toolkit-accessibility = true;
   };
 
+  # Chromium flags (Arch's chromium wrapper appends every line to each launch).
+  # Reproduces the Omarchy defaults and adds browser-wide CDP: the main Default
+  # profile (already logged in) owns the debug endpoint on :9222, and every
+  # app window (Superhuman, Morgen, etc. launched via omarchy-launch-webapp)
+  # is a page on that one endpoint — so superhuman-cli (probes 9222) and
+  # morgen-cli (CDP_PORT=9222) read tokens from the live session, no per-app
+  # profile or manual re-login. force = it seeds a real file at install time.
+  # SECURITY: this leaves a CDP port open on localhost whenever Chromium runs;
+  # any local process can drive the browser. Acceptable on a personal machine;
+  # scoped to this host only (not in shared dotfiles).
+  xdg.configFile."chromium-flags.conf" = {
+    force = true;
+    text = ''
+      --ozone-platform=wayland
+      --ozone-platform-hint=wayland
+      --enable-features=TouchpadOverscrollHistoryNavigation
+      --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url
+      --remote-debugging-port=9222
+      --remote-allow-origins=*
+    '';
+  };
+
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
@@ -195,10 +217,14 @@ in
       mimeType = [ "x-scheme-handler/beeper" ];
     };
 
+    # Superhuman as a Chromium app on the shared Default profile (where you're
+    # already logged in). CDP is enabled browser-wide via chromium-flags.conf
+    # below (one endpoint on :9222), so superhuman-cli attaches there — no
+    # per-app profile or hardcoded --app-id needed.
     superhuman = {
       name = "Superhuman";
       comment = "Superhuman email client";
-      exec = "/usr/bin/chromium --profile-directory=Default --app-id=cabkgbgkeonbpeoedbaeolhgfkempoka";
+      exec = "omarchy-launch-webapp https://mail.superhuman.com";
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Superhuman.svg";
