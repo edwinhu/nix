@@ -47,6 +47,85 @@ in
   # Enable home-manager
   programs.home-manager.enable = true;
 
+  # hints (keyboard-driven GUI navigation). Config, accessibility toggle and the
+  # hintsd daemon service mirror hosts/linux/alarm — see there for the rationale
+  # behind the role/state allow-lists. hintsd needs the user in the `input` group
+  # (host/OS config, not managed here).
+  xdg.configFile."hints/config.json".text = builtins.toJSON {
+    hints = {
+      hint_height = 22;
+      hint_font_size = 11;
+      hint_font_face = "Sans";
+      hint_upercase = true;
+      hint_background_r = 1.0;
+      hint_background_g = 0.86;
+      hint_background_b = 0.24;
+      hint_background_a = 0.95;
+      hint_font_r = 0.18;
+      hint_font_g = 0.13;
+      hint_font_b = 0.02;
+      hint_font_a = 1.0;
+      hint_pressed_font_r = 0.72;
+      hint_pressed_font_g = 0.6;
+      hint_pressed_font_b = 0.25;
+      hint_pressed_font_a = 1.0;
+    };
+    backends = {
+      enable = [ "atspi" ];
+      atspi.application_rules = {
+        default = {
+          scale_factor = 0.5;
+          # Allow-list only genuinely-interactive roles (roles_match_type 2 =
+          # Atspi.CollectionMatchType.ANY). Atspi.Role int values:
+          #   43 push button   88 link          79 entry        7 check box
+          #   44 radio button  11 combo box     62 toggle btn  35 menu item
+          #    8 check menuitem 45 radio menuitem 37 page tab   32 list item
+          #   51 slider        52 spin button
+          roles_match_type = 2;
+          roles = [ 43 88 79 7 44 11 62 35 8 45 37 32 51 52 ];
+        };
+        "dev.limux.linux".scale_factor = 1;
+        "doublecmd".scale_factor = 1;
+        "org.gnome.Nautilus".scale_factor = 1;
+        # Beeper: hint only conversation threads (FOCUSABLE `section` role 85)
+        # plus the composer (entry role 79); require FOCUSABLE (11) + SENSITIVE
+        # (24) + SHOWING (25), states_match_type 1 = ALL. See alarm for details.
+        "BeeperTexts" = {
+          roles = [ 85 79 ];
+          roles_match_type = 2;
+          states = [ 24 25 11 ];
+          states_match_type = 1;
+        };
+      };
+    };
+  };
+
+  # Global accessibility toggle. Chromium/Electron/Qt apps only publish their
+  # AT-SPI accessibility tree when assistive tech is marked active on the a11y
+  # bus (org.a11y.Status.IsEnabled). Without this, `hints` gets no real elements
+  # for those apps and falls back to opencv edge-detection (misaligned dupes).
+  dconf.settings = {
+    "org/gnome/desktop/interface".toolkit-accessibility = true;
+  };
+
+  # Run the hints daemon as part of the graphical session (replaces the manual
+  # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
+  # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
+  # services inherit WAYLAND_DISPLAY etc.
+  systemd.user.services.hintsd = {
+    Unit = {
+      Description = "Hints daemon (keyboard GUI navigation)";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.hints}/bin/hintsd";
+      Restart = "on-failure";
+      RestartSec = 1;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
     opencode = {
