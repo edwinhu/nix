@@ -126,6 +126,27 @@ in
     Install.WantedBy = [ "graphical-session.target" ];
   };
 
+  # Stremio streaming server (the "download-service" / server.js that actually
+  # streams+transcodes for the web app at web.strem.io). Not in nixpkgs; run the
+  # official docker image as a graphical-session user service on :11470, which
+  # web.strem.io auto-detects. Uses the system docker daemon (/usr/bin/docker;
+  # user is in the docker group). ExecStartPre clears any stale container.
+  systemd.user.services.stremio-server = {
+    Unit = {
+      Description = "Stremio streaming server (docker)";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStartPre = "-/usr/bin/docker rm -f stremio-server";
+      ExecStart = "/usr/bin/docker run --rm --name stremio-server -p 11470:11470 -p 12470:12470 stremio/server:latest";
+      ExecStop = "/usr/bin/docker stop stremio-server";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
     opencode = {
@@ -184,10 +205,13 @@ in
       startupNotify = true;
     };
 
+    # tsui (the Tailscale TUI) is a manual /usr/local/bin binary on alarm and
+    # isn't in nixpkgs, so it's absent here. Point this entry at the admin webapp
+    # (Tailscale itself works via the CLI + tailscaled) instead of `sudo tsui`.
     tailscale = {
       name = "Tailscale";
       comment = "Tailscale VPN";
-      exec = "xdg-terminal-exec --app-id=TUI.float -e sudo tsui";
+      exec = "omarchy-launch-webapp https://login.tailscale.com/admin/machines";
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Tailscale.svg";
