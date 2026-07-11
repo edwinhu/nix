@@ -183,6 +183,11 @@ in
   # official docker image as a graphical-session user service on :11470, which
   # web.strem.io auto-detects. Uses the system docker daemon (/usr/bin/docker;
   # user is in the docker group). ExecStartPre clears any stale container.
+  #
+  # NAMED volume `stremio-cache` (not an anonymous one) so the on-disk cache and
+  # settings survive `--rm` across restarts/reboots — keeps the buffer warm.
+  # ExecStartPost bumps the cache/buffer to 10 GiB (default is 2 GiB) so streams
+  # buffer far enough ahead to avoid stalls on source-speed dips.
   systemd.user.services.stremio-server = {
     Unit = {
       Description = "Stremio streaming server (docker)";
@@ -191,7 +196,8 @@ in
     };
     Service = {
       ExecStartPre = "-/usr/bin/docker rm -f stremio-server";
-      ExecStart = "/usr/bin/docker run --rm --name stremio-server -p 11470:11470 -p 12470:12470 stremio/server:latest";
+      ExecStart = "/usr/bin/docker run --rm --name stremio-server -v stremio-cache:/root/.stremio-server -p 11470:11470 -p 12470:12470 stremio/server:latest";
+      ExecStartPost = "${pkgs.bash}/bin/bash ${./files/stremio-tune.sh}";
       ExecStop = "/usr/bin/docker stop stremio-server";
       Restart = "on-failure";
       RestartSec = 5;
