@@ -268,6 +268,15 @@ in
   # is a page on that one endpoint — so superhuman-cli (probes 9222) and
   # morgen-cli (CDP_PORT=9222) read tokens from the live session, no per-app
   # profile or manual re-login. force = it seeds a real file at install time.
+  #
+  # REQUIRES a managed policy: Chromium 136+ silently IGNORES
+  # --remote-debugging-port on the *default* profile (anti-cookie-theft
+  # mitigation), so the browser-wide CDP above is dead without it — :9222 never
+  # opens. Re-enable it with a root-owned system policy (one-time; outside
+  # home-manager's /etc scope, so not declarative here):
+  #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-managed-policy.json \
+  #     /etc/chromium/policies/managed/enable-remote-debugging.json
+  # (RemoteDebuggingAllowed=true). Verify: curl -s localhost:9222/json/version.
   # SECURITY: this leaves a CDP port open on localhost whenever Chromium runs;
   # any local process can drive the browser. Acceptable on a personal machine;
   # scoped to this host only (not in shared dotfiles).
@@ -295,6 +304,19 @@ in
   xdg.configFile."wireplumber/wireplumber.conf.d/50-prefer-hdmi.conf" = {
     source = ./files/wireplumber-prefer-hdmi.conf;
     force = true;
+  };
+
+  # Autostart the CDP web apps on login (Hyprland sources this user autostart
+  # slot; Omarchy's own defaults live in a separate file). Guarantees Superhuman
+  # + Morgen — and thus the browser-wide :9222 endpoint the morgen/superhuman
+  # CLIs attach to — are up for the 08:00 scheduled briefing even after a reboot.
+  # launch-or-focus (not launch) won't duplicate the windows you keep open all day.
+  xdg.configFile."hypr/autostart.conf" = {
+    force = true;
+    text = ''
+      exec-once = omarchy-launch-or-focus-webapp superhuman https://mail.superhuman.com
+      exec-once = omarchy-launch-or-focus-webapp morgen https://web.morgen.so
+    '';
   };
 
   # Host-local ghostty override (included last by the shared ~/.config/ghostty/
