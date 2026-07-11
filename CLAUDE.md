@@ -83,3 +83,14 @@ nix flake update nix-secrets  # Update only secrets
   package's `share/` icons+desktop entry come through unchanged). See the
   `beeper`, `limux`, and `stremio-linux-shell` overrides for working examples.
   nixGL is a no-op where the system GL driver is already found, so it's safe.
+  - **Also patch the .desktop entry** if the app ships one whose `Exec`/`TryExec`
+    hard-codes an ABSOLUTE store path to its own binary (e.g. limux's
+    `dev.limux.linux.desktop`). The wrapper only fixes launches that resolve to
+    `~/.nix-profile/bin/<app>` (relative `Exec=<app>`, terminal invocation) — a
+    hard-coded absolute path bypasses the wrapper, so the launcher still hits the
+    EGL error. Fix with a `symlinkJoin` `postBuild` that `sed`s the entry's
+    Exec/TryExec from `${pkg}/bin/<app>` to `$out/bin/<app>` (see limux).
+  - **GDK_SCALE double-scaling:** Omarchy sets `GDK_SCALE=2` globally
+    (monitors.conf) for the 2x display. Apps that already honor the Wayland
+    wl_output scale (e.g. limux/libghostty) then double-scale → huge UI. Fix per
+    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.

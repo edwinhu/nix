@@ -359,7 +359,10 @@
                   name = "limux-nixgl-${limuxPkg.version or "unknown"}";
                   paths = [
                     (prev.writeShellScriptBin "limux" ''
-                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${limuxPkg}/bin/limux "$@"
+                      # Unset GDK_SCALE (Omarchy sets =2 globally in monitors.conf):
+                      # libghostty does its own HiDPI scaling from the compositor's
+                      # 2x wl_output, so GDK_SCALE=2 double-scales -> huge terminal.
+                      exec env -u GDK_SCALE ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${limuxPkg}/bin/limux "$@"
                     '')
                     limuxPkg
                   ];
