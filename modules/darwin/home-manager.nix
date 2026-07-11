@@ -64,7 +64,21 @@
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
         ../shared/word-render.nix
+        # chrome-cdp + readwise-reader-tools services. Cross-platform module:
+        # emits launchd agents here (macOS) and systemd user services on Linux.
+        # NOTE: this now owns com.chrome-cdp / com.user.readwise-webhook /
+        # com.readwise.sweep declaratively. The legacy activation.installChromeCdp
+        # block below still copies com.chrome-cdp{,​-watchdog}.plist from the repo
+        # and launchctl-bootstraps them; before switching the Mac, retire the
+        # com.chrome-cdp half of that activation (or the watchdog will fight the
+        # HM-managed agent over the same plist path).
+        ../shared/reader-services.nix
       ];
+
+      # This Mac runs chrome-cdp (native Superhuman/paper-fetch) but NOT the
+      # readwise webhook + sweep — that primary lives on omarchy (the tunnel
+      # points there; a second sweep would double-save).
+      readerServices.enableChromeCdp = true;
 
       # Work around ryantm/agenix#352: Crashed=false makes launchd restart
       # the successful activation job every ten seconds on Darwin.

@@ -1,0 +1,230 @@
+# Cross-platform reader services: chrome-cdp + readwise-reader-tools.
+#
+# ONE module, TWO backends. On Linux (home-manager on omarchy/alarm) it emits
+# systemd *user* services + a timer; on macOS (home-manager inside nix-darwin)
+# it emits launchd *agents*. The service bodies are thin wrappers around the
+# platform-aware CLIs/scripts that already live in the repos
+# (~/projects/chrome-cdp, ~/projects/readwise-reader-tools): those handle the
+# chromium-vs-Chrome binary, headless mode, XDG isolation, and the agenix
+# secrets dir, so this module only has to invoke them per-platform.
+#
+# CRITICAL EVAL PATTERN: `systemd.*` exists only on Linux home-manager and
+# `launchd.*` only on Darwin. Referencing the missing one — even under
+# `lib.mkIf` — is an "option does not exist" error. So we gate at the ATTRSET
+# level with `lib.optionalAttrs`: the whole `systemd`/`launchd` key is absent on
+# the wrong platform, so its option is never touched there.
+{ config, pkgs, lib, userInfo, ... }:
+
+# Platform gate uses `userInfo.system` (a plain string from specialArgs), NOT
+# `pkgs.stdenv.is*`. Whether the top-level `systemd`/`launchd` key exists decides
+# the module's freeform type; if that decision reads `pkgs`, the module system
+# must resolve `_module.args.pkgs` (→ config → options) before it can compute the
+# option set → infinite recursion. `userInfo.system` is available in the module
+# fixpoint without forcing config, so it breaks that cycle.
+let
+  isLinux = lib.hasSuffix "linux" userInfo.system;
+  isDarwin = lib.hasSuffix "darwin" userInfo.system;
+
+  # WHICH services run is decided per-computer in the host config files, via the
+  # options.readerServices toggles defined below — NOT hardcoded here. omarchy
+  # sets enableReadwise + enableChromeCdp; the Mac sets enableChromeCdp only
+  # (readwise webhook+sweep run on the always-on primary ONLY, else a second
+  # sweep double-saves and its webhook fights the Cloudflare tunnel). Defaults
+  # are false, so a host that imports this module but toggles nothing gets nothing.
+  cfg = config.readerServices;
+
+  home = config.home.homeDirectory;
+
+  # ---- shared constants (mirror the local systemd units + the repo plists) ----
+  cdpPort = "9250";
+  cdpUrl = "http://localhost:${cdpPort}";
+  webhookPort = "8000";
+  sweepInterval = 3 * 60 * 60; # 3h == 10800s (matches launchd StartInterval)
+
+  chromeCdpBin = "${home}/.local/bin/chrome-cdp"; # symlink -> repo bin/chrome-cdp
+  readwiseDir = "${home}/projects/readwise-reader-tools";
+  sweepScript = "${readwiseDir}/scripts/sweep.sh";
+  envFile = "${readwiseDir}/.env"; # 0600, agenix-sourced, gitignored — never committed
+  logDir = "${home}/.local/log";
+  readwiseLogDir = "${readwiseDir}/logs";
+
+  # pixi (nix-profile) + user local bin + system dirs. curl/python3 live in /usr/bin.
+  linuxPath = "${home}/.nix-profile/bin:${home}/.local/bin:/usr/local/bin:/usr/bin:/bin";
+  darwinPath = "${home}/.nix-profile/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+
+  pixiBin = "${home}/.nix-profile/bin/pixi";
+  # webhook server: uvicorn under pixi, bound to all interfaces on :8000.
+  uvicornArgs = [ "run" "uvicorn" "src.webhook:app" "--host" "0.0.0.0" "--port" webhookPort ];
+in
+{
+  # Per-computer toggles — SET THESE IN THE HOST CONFIG FILES, not here.
+  #   omarchy:     readerServices = { enableChromeCdp = true; enableReadwise = true; };
+  #   macbook-pro: readerServices.enableChromeCdp = true;   # readwise off (primary = omarchy)
+  #   alarm:       (leave both false — the module is imported but emits nothing)
+  options.readerServices = {
+    enableChromeCdp = lib.mkEnableOption
+      "the chrome-cdp authenticated headless browser daemon (CDP on :9250)";
+    enableReadwise = lib.mkEnableOption
+      "the readwise-reader-tools webhook + sweep (enable on exactly ONE always-on host — a second sweep double-saves)";
+  };
+
+  config = lib.mkMerge [
+
+  # ===================== Linux: systemd user services =====================
+  (lib.optionalAttrs isLinux {
+    systemd.user.services.chrome-cdp = lib.mkIf cfg.enableChromeCdp {
+      Unit = {
+        Description = "chrome-cdp — persistent headless chromium bound to CDP port ${cdpPort}";
+        # uwsm exports WAYLAND_DISPLAY / DBUS into graphical-session.target user
+        # services, which chromium needs even headless.
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        WorkingDirectory = "%h";
+        # Force the dedicated port explicitly: the omarchy login session exports
+        # CDP_PORT=9222 (the Superhuman/Morgen browser); without this the daemon
+        # would inherit 9222 and collide with that instance.
+        Environment = [ "CDP_PORT=${cdpPort}" ];
+        ExecStart = "${chromeCdpBin} daemon";
+        Restart = "on-failure";
+        RestartSec = 5;
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 5;
+        Nice = 5;
+        StandardOutput = "append:${logDir}/chrome-cdp.log";
+        StandardError = "append:${logDir}/chrome-cdp.err";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    systemd.user.services.readwise-webhook = lib.mkIf cfg.enableReadwise {
+      Unit = {
+        Description = "readwise-reader-tools webhook server (uvicorn on :${webhookPort})";
+        # Needs the chrome-cdp browser (:${cdpPort}) to fetch paywalled articles.
+        Requires = [ "chrome-cdp.service" ];
+        After = [ "chrome-cdp.service" "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        WorkingDirectory = readwiseDir;
+        Environment = [ "PATH=${linuxPath}" "HOME=${home}" ];
+        # Tokens + CDP config come from the 0600 .env (agenix-sourced, gitignored).
+        EnvironmentFile = envFile;
+        ExecStart = "${pixiBin} ${lib.concatStringsSep " " uvicornArgs}";
+        Restart = "on-failure";
+        RestartSec = 10;
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 5;
+        Nice = 5;
+        StandardOutput = "append:${readwiseLogDir}/webhook.log";
+        StandardError = "append:${readwiseLogDir}/webhook.err";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    systemd.user.services.readwise-sweep = lib.mkIf cfg.enableReadwise {
+      Unit = {
+        Description = "readwise-reader-tools sweep — resave articles that missed the webhook";
+        # Needs the chrome-cdp browser (:${cdpPort}). sweep.sh no-ops if CDP is down.
+        Requires = [ "chrome-cdp.service" ];
+        After = [ "chrome-cdp.service" "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        WorkingDirectory = readwiseDir;
+        Environment = [ "PATH=${linuxPath}" "HOME=${home}" ];
+        EnvironmentFile = envFile;
+        ExecStart = sweepScript;
+        Nice = 10;
+        StandardOutput = "append:${readwiseLogDir}/sweep.log";
+        StandardError = "append:${readwiseLogDir}/sweep.log";
+      };
+    };
+
+    systemd.user.timers.readwise-sweep = lib.mkIf cfg.enableReadwise {
+      Unit.Description = "readwise-reader-tools sweep timer (every 3h + shortly after login)";
+      Timer = {
+        # Mirror the launchd plist: StartInterval=10800 (3h) + RunAtLoad.
+        # OnStartupSec fires ~2min after the user manager starts (login/boot);
+        # OnUnitActiveSec repeats every 3h thereafter.
+        OnStartupSec = "2min";
+        OnUnitActiveSec = "3h";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+  })
+
+  # ===================== macOS: launchd user agents =====================
+  (lib.optionalAttrs isDarwin {
+    # Mirrors chrome-cdp/LaunchAgents/com.chrome-cdp.plist.
+    launchd.agents.chrome-cdp = lib.mkIf cfg.enableChromeCdp {
+      enable = true;
+      config = {
+        Label = "com.chrome-cdp";
+        ProgramArguments = [ chromeCdpBin "daemon" ];
+        WorkingDirectory = home;
+        RunAtLoad = true;
+        KeepAlive = { SuccessfulExit = false; };
+        ThrottleInterval = 30;
+        StandardOutPath = "${logDir}/chrome-cdp.log";
+        StandardErrorPath = "${logDir}/chrome-cdp.err";
+        EnvironmentVariables = {
+          PATH = darwinPath;
+          HOME = home;
+          CDP_PORT = cdpPort;
+        };
+        Nice = 5;
+      };
+    };
+
+    # Mirrors readwise-reader-tools/com.user.readwise-webhook.plist. Tokens are
+    # NOT baked here — webhook_server.sh sources the agenix dir + .env itself.
+    launchd.agents.readwise-webhook = lib.mkIf cfg.enableReadwise {
+      enable = true;
+      config = {
+        Label = "com.user.readwise-webhook";
+        ProgramArguments = [ pixiBin ] ++ uvicornArgs;
+        WorkingDirectory = readwiseDir;
+        RunAtLoad = true;
+        KeepAlive = { SuccessfulExit = false; };
+        ThrottleInterval = 10;
+        StandardOutPath = "${readwiseLogDir}/webhook.log";
+        StandardErrorPath = "${readwiseLogDir}/webhook.err";
+        EnvironmentVariables = {
+          PATH = darwinPath;
+          HOME = home;
+          CDP_PORT = cdpPort;
+          CDP_URL = cdpUrl;
+        };
+        ProcessType = "Interactive";
+        Nice = 5;
+      };
+    };
+
+    # Mirrors readwise-reader-tools/com.readwise.sweep.plist (StartInterval=10800).
+    launchd.agents.readwise-sweep = lib.mkIf cfg.enableReadwise {
+      enable = true;
+      config = {
+        Label = "com.readwise.sweep";
+        ProgramArguments = [ sweepScript ];
+        WorkingDirectory = readwiseDir;
+        StartInterval = sweepInterval;
+        RunAtLoad = true;
+        StandardOutPath = "${readwiseLogDir}/sweep.log";
+        StandardErrorPath = "${readwiseLogDir}/sweep.log";
+        EnvironmentVariables = {
+          PATH = darwinPath;
+          HOME = home;
+          CDP_PORT = cdpPort;
+          CDP_URL = cdpUrl;
+        };
+        Nice = 10;
+      };
+    };
+  })
+  ];
+}

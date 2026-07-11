@@ -8,6 +8,9 @@ in
 {
   imports = [
     ../../../modules/shared/home-secrets.nix
+    # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
+    # systemd user services + a timer here (Linux) and launchd agents on macOS.
+    ../../../modules/shared/reader-services.nix
   ];
 
   # Basic home-manager configuration
