@@ -133,6 +133,40 @@
             ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
         '';
 
+        # claude-stable: a stable HARDLINK to the live `claude` worker inode.
+        # macOS-ONLY TCC workaround — Claude auto-updates repoint
+        # ~/.local/bin/claude -> versions/<new>, and macOS treats each new binary
+        # path as a new app, re-prompting for Full Disk Access / Photos / folders
+        # every update. Grant FDA once to ~/.local/bin/claude-stable and it
+        # survives updates. Lives in THIS darwin-only module on purpose: other
+        # hosts (omarchy/alarm) have no TCC and use plain `claude` — the shared
+        # scripts (ensure.sh, rc-watchdog, rc-recover) fall back to it there.
+        #
+        # This activation guarantees the link exists right after a build-switch
+        # (before any interactive shell), which the launchd scheduled-tasks that
+        # launch through claude-stable rely on. Between build-switches it's kept
+        # fresh lazily by .shell_env and on version-change by rc-after-upgrade.
+        activation.installClaudeStable = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          CLAUDE_LINK="$HOME/.local/bin/claude"
+          CLAUDE_STABLE="$HOME/.local/bin/claude-stable"
+          if [ -e "$CLAUDE_LINK" ]; then
+            # Resolve the single-hop install symlink (macOS readlink has no -f).
+            worker="$(readlink "$CLAUDE_LINK" 2>/dev/null || true)"
+            [ -z "$worker" ] && worker="$CLAUDE_LINK"
+            case "$worker" in
+              /*) ;;
+              *)  worker="$(dirname "$CLAUDE_LINK")/$worker" ;;
+            esac
+            # Re-link only when the live worker inode changed (new version).
+            if [ -f "$worker" ] && ! [ "$CLAUDE_STABLE" -ef "$worker" ]; then
+              $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
+              $DRY_RUN_CMD ln -f "$worker" "$CLAUDE_STABLE" && echo "claude-stable -> $worker"
+            fi
+          else
+            echo "claude-stable: $CLAUDE_LINK not present, skipping (install claude, then re-run build-switch)"
+          fi
+        '';
+
         # chrome-cdp: headless Chrome on CDP 9250 for browser automation
         # (Reader, Readwise, scraping). Source of truth lives at
         # ~/projects/chrome-cdp/. The com.chrome-cdp DAEMON agent is now managed
