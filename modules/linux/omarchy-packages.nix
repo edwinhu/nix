@@ -35,6 +35,11 @@ with pkgs; [
   # Cloud and sync
   google-cloud-sdk
   rclone
+  # Google Workspace CLI (calendar/contacts/Drive/Sheets). It's in
+  # modules/shared/packages.nix, but omarchy's home.packages is ONLY this file
+  # (shared isn't imported here), so it must be listed explicitly. nightly-wrapup
+  # uses it for the business-card -> Contacts step.
+  gws
   croc  # fast P2P file transfer (direct over LAN when peers are local)
 
   # Security and secrets

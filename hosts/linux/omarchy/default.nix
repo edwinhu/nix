@@ -29,8 +29,15 @@ let
   # Mac path, vault at ~/notes not ~/Documents/Notes/Vault. Logs -> the journal
   # (journalctl --user -u claude-<name>). See ~/nix/CLAUDE.md.
   claudeRoutineEnv = [
-    "PATH=%h/.local/bin:%h/.nix-profile/bin:/usr/bin:/bin"
+    # systemd user services get a bare env — no shell rc, no home.sessionVariables.
+    # Include the bun/pixi global-bin dirs (qmd etc.) and CDP_PORT so the routines'
+    # morgen/superhuman calls hit the browser-wide CDP endpoint on :9222 (both the
+    # web apps are pages there — see chromium-flags.conf). BUN_INSTALL keeps bun's
+    # global dir on-PATH despite XDG_CACHE_HOME (see dotfiles/.shell_path).
+    "PATH=%h/.local/bin:%h/.bun/bin:%h/.pixi/bin:%h/.nix-profile/bin:/usr/bin:/bin"
     "CLAUDE_CONFIG_DIR=%h/.claude"
+    "BUN_INSTALL=%h/.bun"
+    "CDP_PORT=9222"
   ];
   claudeRoutines = {
     # Daily 08:00. Weekday: spawn the day's long-lived "🦞 assistant" session
