@@ -164,6 +164,14 @@ in
     # Cherry-picked packages not in Omarchy/pacman
     packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; });
 
+    # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
+    # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
+    # editable, matches the macOS ~/.claude/agents/host-dispatch layout that
+    # ensure.sh's AGENT_DIR/PROMPT_FILE expect). Consumed by the host-dispatch
+    # systemd service above.
+    file.".claude/agents/host-dispatch".source =
+      config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/.claude/agents/host-dispatch";
+
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
     file.".local/share/icons/Papirus-Dark".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark";
@@ -365,10 +373,40 @@ in
     };
     Install.WantedBy = [ "graphical-session.target" ];
     }; }
+    # host-dispatch: keep exactly one always-on `claude --rc --bg` dispatcher
+    # session ("omarchy:host-dispatch") alive so the Mac can route work here via
+    # agent-msg. The ensure.sh + system-prompt live in dotfiles
+    # (~/.claude/agents/host-dispatch/, stow-linked); ~/.config/systemd/user is
+    # home-manager-managed here, so the unit is declared in nix rather than
+    # dropped alongside the dotfiles copy. Mirrors dotfiles' host-dispatch.service.
+    { host-dispatch = {
+      Unit = {
+        Description = "Ensure host-dispatch Claude session is running";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        # KillMode=process: the default control-group teardown would kill the
+        # freshly-spawned `claude ... --bg` supervisor when ensure.sh exits.
+        KillMode = "process";
+        ExecStart = "/bin/bash -lc %h/.claude/agents/host-dispatch/ensure.sh";
+      };
+    }; }
   ];
 
-  # Timers for the Claude scheduled routines (see claudeRoutines, let block).
-  systemd.user.timers = lib.mapAttrs (_: mkRoutineTimer) claudeRoutines;
+  # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
+  systemd.user.timers = lib.mkMerge [
+    (lib.mapAttrs (_: mkRoutineTimer) claudeRoutines)
+    { host-dispatch = {
+      Unit.Description = "Periodically ensure host-dispatch Claude session is running";
+      Timer = {
+        OnBootSec = "30s";
+        OnUnitActiveSec = "5min";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
+  ];
 
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {

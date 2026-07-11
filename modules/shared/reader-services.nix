@@ -50,6 +50,23 @@ let
   logDir = "${home}/.local/log";
   readwiseLogDir = "${readwiseDir}/logs";
 
+  # chrome-cdp watchdog (Linux). The service's Restart=on-failure only catches
+  # process EXIT, not "process alive but CDP socket wedged" (chromium came up
+  # without --remote-debugging-port, or the tab host hung). This probes the HTTP
+  # endpoint and restarts the service when it can't be reached — the Linux
+  # analogue of the repo's launchd-only bin/chrome-cdp-watchdog. `systemctl`
+  # resolves from /usr/bin via the unit's PATH (linuxPath).
+  cdpWatchdogScript = pkgs.writeShellScript "chrome-cdp-watchdog" ''
+    set -u
+    # No desktop session -> chrome-cdp is intentionally down; don't fight it.
+    systemctl --user is-active --quiet graphical-session.target || exit 0
+    if ${pkgs.curl}/bin/curl -sf --max-time 5 "${cdpUrl}/json/version" >/dev/null 2>&1; then
+      exit 0  # healthy — silent, so the log stays quiet
+    fi
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) chrome-cdp-watchdog: CDP probe failed (${cdpUrl}/json/version); restarting chrome-cdp.service" >&2
+    systemctl --user restart chrome-cdp.service || true
+  '';
+
   # pixi (nix-profile) + user local bin + system dirs. curl/python3 live in /usr/bin.
   linuxPath = "${home}/.nix-profile/bin:${home}/.local/bin:/usr/local/bin:/usr/bin:/bin";
   darwinPath = "${home}/.nix-profile/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
@@ -118,6 +135,36 @@ in
         StandardError = "append:${logDir}/chrome-cdp.err";
       };
       Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    # Detects a wedged (alive-but-unresponsive) CDP port and restarts the daemon;
+    # see cdpWatchdogScript above. Timer fires every 2min (mirrors the macOS
+    # com.chrome-cdp-watchdog StartInterval=120).
+    systemd.user.services.chrome-cdp-watchdog = lib.mkIf cfg.enableChromeCdp {
+      Unit = {
+        Description = "chrome-cdp watchdog — restart chrome-cdp.service if CDP :${cdpPort} is unresponsive";
+        After = [ "chrome-cdp.service" ];
+      };
+      Service = {
+        Type = "oneshot";
+        Environment = [ "PATH=${linuxPath}" ];
+        ExecStart = "${cdpWatchdogScript}";
+        Nice = 10;
+        StandardOutput = "append:${logDir}/chrome-cdp-watchdog.log";
+        StandardError = "append:${logDir}/chrome-cdp-watchdog.log";
+      };
+    };
+
+    systemd.user.timers.chrome-cdp-watchdog = lib.mkIf cfg.enableChromeCdp {
+      Unit.Description = "chrome-cdp watchdog timer (probe CDP :${cdpPort} every 2min)";
+      Timer = {
+        # First probe ~2min after login (chrome-cdp needs time to come up), then
+        # every 2min thereafter.
+        OnStartupSec = "2min";
+        OnUnitActiveSec = "2min";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
     };
 
     systemd.user.services.readwise-webhook = lib.mkIf cfg.enableReadwise {
