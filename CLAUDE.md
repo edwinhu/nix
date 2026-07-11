@@ -70,3 +70,16 @@ nix flake update nix-secrets  # Update only secrets
 - Build scripts automatically detect current user and platform
 - All secrets encrypted with agenix in separate private repository
 - The flake uses nixpkgs-unstable channel for latest packages
+- **nixGL wrap for GPU/GL apps on Omarchy (non-NixOS):** nixpkgs GUI apps that
+  use GL/EGL/mpv (beeper, limux, stremio-linux-shell, …) fail on the Omarchy
+  hosts with `MESA-LOADER: failed to open dri … gbm` or `failed to create EGL
+  display` — a nix-built binary can't find the system Mesa/EGL driver because
+  there's no `/run/opengl-driver`. Fix: wrap the app's binary in `nixGLIntel`
+  (the `nixGL` flake input; `nixGLIntel` covers AMD/Intel Mesa) in the **Linux
+  `homeConfigurations` overlay** in `flake.nix`. Pattern — `symlinkJoin` a
+  `writeShellScriptBin "<bin>"` that `exec`s
+  `${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/<bin> "$@"`
+  over the base package (wrapper shadows `bin/<bin>` via first-path-wins; the
+  package's `share/` icons+desktop entry come through unchanged). See the
+  `beeper`, `limux`, and `stremio-linux-shell` overrides for working examples.
+  nixGL is a no-op where the system GL driver is already found, so it's safe.
