@@ -57,6 +57,52 @@ in
       file = "${nix-secrets}/gws-encryption-key.age";
       mode = "400";
     };
+
+    # Institutional SSH keys, decrypted to ~/.ssh/<key> (paper-fetch SOCKS
+    # tunnels: rjds=NYU, wrds=Penn/Wharton). symlink=false places a real 600
+    # keyfile at the path so ssh/StrictModes accept it and it persists across
+    # reboots between activations. ~/.ssh is stowed to dotfiles/.ssh, which
+    # gitignores these keys anyway.
+    ssh-rjds = {
+      file = "${nix-secrets}/ssh-rjds.age";
+      path = "${homeDir}/.ssh/rjds";
+      mode = "600";
+      symlink = false;
+    };
+    ssh-wrds-nyu = {
+      file = "${nix-secrets}/ssh-wrds-nyu.age";
+      path = "${homeDir}/.ssh/wrds_nyu";
+      mode = "600";
+      symlink = false;
+    };
+    ssh-wrds-uva = {
+      file = "${nix-secrets}/ssh-wrds-uva.age";
+      path = "${homeDir}/.ssh/wrds_uva";
+      mode = "600";
+      symlink = false;
+    };
+    ssh-satori = {
+      file = "${nix-secrets}/ssh-satori.age";
+      path = "${homeDir}/.ssh/satori";
+      mode = "600";
+      symlink = false;
+    };
+
+    # Cross-host access keys → ~/.ssh/{mbp,omarchy} (ssh mbp / ssh omarchy).
+    # Pubkeys are authorized in each target's authorized_keys; config in
+    # dotfiles/.ssh/config_external.
+    ssh-mbp = {
+      file = "${nix-secrets}/ssh-mbp.age";
+      path = "${homeDir}/.ssh/mbp";
+      mode = "600";
+      symlink = false;
+    };
+    ssh-omarchy = {
+      file = "${nix-secrets}/ssh-omarchy.age";
+      path = "${homeDir}/.ssh/omarchy";
+      mode = "600";
+      symlink = false;
+    };
   };
   
   # NOTE: nix-darwin home-manager activation runs without /dev/tty, so
