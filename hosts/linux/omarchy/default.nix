@@ -8,16 +8,14 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # Real app icons pulled from each web app (the iconDir placeholders were the
-  # Superhuman logo reused, and Morgen's Superhuman.svg is a <symbol>-only SVG
-  # that renders blank). apple-touch-icon.png is a clean 180px raster.
+  # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
+  # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
+  # Superhuman uses the committed iconDir Superhuman.svg — a valid <symbol>+<use>
+  # SVG that renders fine (same file the alarm host uses); the mail.superhuman.com
+  # apple-touch-icon URL returns HTML, not an image, so don't fetch that.
   morgenIcon = pkgs.fetchurl {
     url = "https://web.morgen.so/apple-touch-icon.png";
     hash = "sha256-MiLXn1LrP/9idaof4t2fAAADyh3+qw9bdqMva2h7LPE=";
-  };
-  superhumanIcon = pkgs.fetchurl {
-    url = "https://mail.superhuman.com/apple-touch-icon.png";
-    hash = "sha256-s5bO5MF4M8KvBto42l+UquWuKT/VbveFOBi+YMr6ufo=";
   };
 in
 {
@@ -148,6 +146,20 @@ in
     '';
   };
 
+  # Machine-specific Hyprland/audio config, managed here (not shared dotfiles)
+  # because it's tied to THIS box's hardware — the DCN31 GPU + BenQ display and
+  # the ALC623 audio codec — and would be wrong on the alarm host. force = true
+  # overrides the Omarchy-seeded defaults. See each file for the rationale.
+  #   - hypridle.conf: never dpms-off the panel (DCN31 dp_blank wedge workaround)
+  #   - monitors.conf: DP-4 @ preferred(144), scale 2
+  #   - 50-prefer-hdmi.conf: disable onboard analog out, prefer HDMI/DP audio
+  xdg.configFile."hypr/hypridle.conf" = { source = ./files/hypridle.conf; force = true; };
+  xdg.configFile."hypr/monitors.conf" = { source = ./files/monitors.conf; force = true; };
+  xdg.configFile."wireplumber/wireplumber.conf.d/50-prefer-hdmi.conf" = {
+    source = ./files/wireplumber-prefer-hdmi.conf;
+    force = true;
+  };
+
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
@@ -249,7 +261,7 @@ in
       exec = "omarchy-launch-or-focus-webapp superhuman https://mail.superhuman.com";
       terminal = false;
       type = "Application";
-      icon = "${superhumanIcon}";
+      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Superhuman.svg";
       startupNotify = true;
     };
 

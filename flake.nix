@@ -348,7 +348,24 @@
                 revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
-                limux = prev.callPackage ./modules/shared/limux.nix {};
+                # limux is a GPU/GL app (libghostty + GTK4). Like beeper, on a
+                # non-NixOS host it can't find system Mesa/EGL and dies with
+                # "failed to create EGL display" — wrap bin/limux in nixGLIntel
+                # (the wrapper's GL env is inherited by the limux-host child that
+                # actually creates the GL context). x86_64/aarch64 both need it.
+                limux = let
+                  limuxPkg = prev.callPackage ./modules/shared/limux.nix {};
+                in prev.symlinkJoin {
+                  name = "limux-nixgl-${limuxPkg.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "limux" ''
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${limuxPkg}/bin/limux "$@"
+                    '')
+                    limuxPkg
+                  ];
+                  meta = limuxPkg.meta or {};
+                  passthru = { unwrapped = limuxPkg; };
+                };
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
