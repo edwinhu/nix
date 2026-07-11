@@ -1,0 +1,24 @@
+# Extra Arch (pacman) packages added on top of a base Omarchy install, for the
+# omarchy host (Framework Desktop, x86_64). This is the reproducible record of
+# the system/desktop-layer packages we add by hand — the nix flake owns user
+# apps/tools, but the compositor + session layer belongs to pacman here (same
+# as Omarchy's own Hyprland, which is a pacman package, not nix). `omarchy-pkg-add`
+# does not track anything, so this file is the source of truth for a reinstall.
+#
+# Apply (strips comments/blank lines):
+#   grep -vE '^\s*#|^\s*$' arch-packages.txt | sudo pacman -S --needed -
+#
+# Some packages need a one-time post-install step (noted below).
+
+# scrollable-tiling Wayland compositor; coexists with Hyprland (SDDM offers both
+# via the /usr/share/wayland-sessions/niri.desktop the package ships). Native
+# GL/DRM — deliberately NOT nix (a nix-store compositor on non-NixOS needs
+# nixGL + a root-placed session file and is fragile). Config: dotfiles config.kdl.
+niri
+
+# GNU stow — symlinks the ~/dotfiles repo into $HOME (`cd ~/dotfiles && stow .`).
+stow
+
+# Tailscale mesh VPN. Post-install: sudo systemctl enable --now tailscaled && sudo tailscale up
+# (or run omarchy-install-tailscale, which also adds the admin webapp).
+tailscale
