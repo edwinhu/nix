@@ -23,6 +23,11 @@ with pkgs; [
   superhuman-cli
   morgen-cli
 
+  # Media: native Stremio shell (nixpkgs replacement for the removed `stremio`).
+  # Uses mpv for playback so it plays .mkv/HEVC directly — no browser HLS remux,
+  # which is what made web.strem.io buffer. Bundles its own streaming server.
+  stremio-linux-shell
+
   # GPU-accelerated terminal workspace manager (gh:am-will/limux, built from
   # source — no upstream aarch64 build or flake; see modules/shared/limux.nix)
   limux
