@@ -91,7 +91,26 @@ in
       enable = [ "atspi" ];
       atspi.application_rules = {
         default = {
-          scale_factor = 0.5;
+          # scale_factor converts AT-SPI element coords -> Hyprland LOGICAL
+          # coords (hints adds them to `hyprctl activewindow` .at, which is
+          # logical). The right factor depends on the coord space the toolkit
+          # reports, which is set by the app's env, not hintsd's.
+          #
+          # On this host GDK_SCALE=2 is exported to every app (monitors.conf
+          # `env = GDK_SCALE,2`), so GTK3/GTK4/Chromium apps report AT-SPI
+          # extents already in LOGICAL pixels (measured: waybar/stremio report a
+          # 1920-wide window on the 3840px 2x panel, matching hyprctl's logical
+          # 1920). They therefore need scale_factor = 1. With the upstream/alarm
+          # default of 0.5 these coords get halved, so every hint drifts toward
+          # the top-left by half its in-window offset — the misalignment Edwin
+          # saw. Hence default = 1 here.
+          #
+          # (alarm keeps default 0.5 because the apps hit there are Qt, which
+          # reports PHYSICAL 2x extents needing the halving; its GTK apps carry
+          # explicit scale_factor=1 overrides. Same code, different app/toolkit
+          # mix. If a PHYSICAL-reporting Qt app ever needs hinting here, give it
+          # a per-class `scale_factor = 0.5` override — the inverse of alarm.)
+          scale_factor = 1;
           # Allow-list only genuinely-interactive roles (roles_match_type 2 =
           # Atspi.CollectionMatchType.ANY). Atspi.Role int values:
           #   43 push button   88 link          79 entry        7 check box
@@ -101,6 +120,9 @@ in
           roles_match_type = 2;
           roles = [ 43 88 79 7 44 11 62 35 8 45 37 32 51 52 ];
         };
+        # These GTK apps report LOGICAL coords like everything else here, so
+        # scale_factor=1 now just matches the default. Kept explicit for parity
+        # with alarm (where they override alarm's 0.5 default).
         "dev.limux.linux".scale_factor = 1;
         "doublecmd".scale_factor = 1;
         "org.gnome.Nautilus".scale_factor = 1;
