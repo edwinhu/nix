@@ -64,14 +64,13 @@
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
         ../shared/word-render.nix
-        # chrome-cdp + readwise-reader-tools services. Cross-platform module:
-        # emits launchd agents here (macOS) and systemd user services on Linux.
-        # NOTE: this now owns com.chrome-cdp / com.user.readwise-webhook /
-        # com.readwise.sweep declaratively. The legacy activation.installChromeCdp
-        # block below still copies com.chrome-cdp{,​-watchdog}.plist from the repo
-        # and launchctl-bootstraps them; before switching the Mac, retire the
-        # com.chrome-cdp half of that activation (or the watchdog will fight the
-        # HM-managed agent over the same plist path).
+        # chrome-cdp + readwise services. Cross-platform module: emits launchd
+        # agents here (macOS) and systemd user services on Linux. On THIS Mac
+        # only com.chrome-cdp is emitted (readerServices.enableChromeCdp = true;
+        # the readwise webhook + sweep run on omarchy, the always-on primary).
+        # HM now owns com.chrome-cdp declaratively — the legacy
+        # activation.installChromeCdp block below no longer touches it (retired),
+        # it only installs the watchdog that HM has no equivalent for.
         ../shared/reader-services.nix
       ];
 
@@ -136,36 +135,35 @@
 
         # chrome-cdp: headless Chrome on CDP 9250 for browser automation
         # (Reader, Readwise, scraping). Source of truth lives at
-        # ~/projects/chrome-cdp/. We mirror what install.sh does so a fresh
-        # machine ends up with the same setup after `build-switch` — provided
-        # the repo has been cloned. If not, we skip silently and the user can
-        # re-run after cloning.
-        # Pattern: wrapper + plists managed here, daemon script stays in repo.
+        # ~/projects/chrome-cdp/. The com.chrome-cdp DAEMON agent is now managed
+        # declaratively by ../shared/reader-services.nix — do NOT install or
+        # bootstrap com.chrome-cdp here, or the two ping-pong over
+        # ~/Library/LaunchAgents/com.chrome-cdp.plist on every build-switch.
+        # This activation only: (1) symlinks the repo scripts onto PATH for
+        # interactive use, and (2) installs the com.chrome-cdp-watchdog agent,
+        # which has no HM equivalent — it restarts chrome-cdp when the CDP port
+        # hangs while the process is still alive, a mode KeepAlive can't catch.
         activation.installChromeCdp = lib.hm.dag.entryAfter ["writeBoundary"] ''
           CHROME_CDP_REPO="$HOME/projects/chrome-cdp"
           if [ ! -d "$CHROME_CDP_REPO" ]; then
             echo "chrome-cdp: $CHROME_CDP_REPO not present, skipping (clone repo then re-run build-switch)"
           else
             $DRY_RUN_CMD mkdir -p "$HOME/.local/bin" "$HOME/.local/log" "$HOME/Library/LaunchAgents"
-            # Symlink the daemon + watchdog scripts so they're on PATH. The
-            # plists reference the repo path directly, so these symlinks are
-            # for interactive use only.
+            # Symlink the daemon + watchdog scripts so they're on PATH (interactive
+            # use; the launchd agents reference the repo path directly).
             $DRY_RUN_CMD ln -sfn "$CHROME_CDP_REPO/bin/chrome-cdp" "$HOME/.local/bin/chrome-cdp"
             $DRY_RUN_CMD ln -sfn "$CHROME_CDP_REPO/bin/chrome-cdp-watchdog" "$HOME/.local/bin/chrome-cdp-watchdog"
-            # Copy plists (launchctl is finicky about symlinked plists across
-            # macOS versions). install -m 644 makes this a no-op when the
-            # contents already match.
-            for label in com.chrome-cdp com.chrome-cdp-watchdog; do
-              SRC="$CHROME_CDP_REPO/LaunchAgents/$label.plist"
-              DST="$HOME/Library/LaunchAgents/$label.plist"
-              if [ ! -f "$DST" ] || ! cmp -s "$SRC" "$DST"; then
-                $DRY_RUN_CMD install -m 644 "$SRC" "$DST"
-                # Plist changed (or didn't exist): reload the job. bootout may
-                # legitimately fail if not loaded yet — hence || true.
-                $DRY_RUN_CMD launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-                $DRY_RUN_CMD launchctl bootstrap "gui/$(id -u)" "$DST" 2>/dev/null || true
-              fi
-            done
+            # Watchdog ONLY — com.chrome-cdp is HM-managed (reader-services.nix).
+            # install -m 644 is a no-op when contents already match.
+            label=com.chrome-cdp-watchdog
+            SRC="$CHROME_CDP_REPO/LaunchAgents/$label.plist"
+            DST="$HOME/Library/LaunchAgents/$label.plist"
+            if [ ! -f "$DST" ] || ! cmp -s "$SRC" "$DST"; then
+              $DRY_RUN_CMD install -m 644 "$SRC" "$DST"
+              # bootout may fail if not loaded yet — hence || true.
+              $DRY_RUN_CMD launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+              $DRY_RUN_CMD launchctl bootstrap "gui/$(id -u)" "$DST" 2>/dev/null || true
+            fi
           fi
         '';
 
