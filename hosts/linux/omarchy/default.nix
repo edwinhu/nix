@@ -45,7 +45,6 @@ in
     file.".local/share/applications/icons/Tailscale.svg".source = "${iconDir}/Tailscale.svg";
     file.".local/share/applications/icons/Tailscale Admin Console.png".source = "${iconDir}/Tailscale Admin Console.png";
     file.".local/share/applications/icons/YouTube Music.png".source = "${iconDir}/YouTube Music.png";
-    file.".local/share/applications/icons/Strem.io.svg".source = "${iconDir}/Strem.io.svg";
     file.".local/share/applications/icons/Readwise Reader.png".source = "${iconDir}/Readwise Reader.png";
     file.".local/share/applications/icons/Calculator.svg".source = "${iconDir}/Calculator.svg";
   };
@@ -304,16 +303,6 @@ in
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/YouTube Music.png";
-      startupNotify = true;
-    };
-
-    stremio = {
-      name = "Strem.io";
-      comment = "Strem.io streaming";
-      exec = "omarchy-launch-webapp https://web.strem.io/";
-      terminal = false;
-      type = "Application";
-      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Strem.io.svg";
       startupNotify = true;
     };
 
