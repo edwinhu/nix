@@ -9,19 +9,38 @@ let
   iconDir = ../../../modules/linux/desktop-icons;
 
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
-  # The DSmobile new-gen (DS-640/740D/940DW) is driven by Brother's proprietary
-  # **brscan4** backend. Note: brscan5 — despite being the only driver Brother's
-  # DS-740D download page offers (brscan5-1.7.0) — has NO model entry for this
-  # scanner and does not detect it; dsseries (1.0.5) is the old-gen 0x60xx
-  # generation. Verified on-device: only brscan4 detects it, generically, as
-  # `brother4:...*DS-740D`. See the one-time root setup note on `home.packages`.
+  # NONE of Brother's shipped backends support this model out of the box:
+  #   - brscan5 (what the DS-740D download page offers) has no model-table entry
+  #     for 0x0469, so it never even detects the scanner.
+  #   - brscan4 detects it generically ("*DS-740D") but has no scan profile, so
+  #     it starts the feed motor, fails the image read, and jams the feeder.
+  #   - dsseries (1.0.5) is the older 0x60xx DSmobile generation.
+  # Fix (verified on-device with a clean duplex-ADF scan): PATCH brscan5's model
+  # table to map 0x0469 onto the ADS-1250W protocol profile (`315,1`) — the
+  # compact-document-scanner engine drives the DS-740D correctly. `brscan5Patched`
+  # is pkgs.brscan5 with that one row added to brscan5.ini + models/brscan5ext_2.ini.
   #
-  # `brscan` = scanimage wrapped with the backend env: the brother4 + core SANE
-  # backends on LD_LIBRARY_PATH, and a config dir enabling only brother4 (its
-  # model tables are read from the hard-coded /etc/opt path, not from here).
+  # `brscan` = scanimage wrapped with the brother5 backend env. The backend reads
+  # its model tables from the hard-coded /etc/opt/brother/scanner paths, symlinked
+  # to this patched store copy by the one-time root step (see home.packages).
   # Named `brscan` (not `scanimage`) so it never shadows pacman's sane.
-  brscanBackends = "${pkgs.brscan4}/lib/sane:${pkgs.sane-backends}/lib/sane";
-  brscanConfigDir = pkgs.writeTextDir "dll.conf" "brother4\n";
+  #
+  # ⚠️ The DS-740D is unstable/undriveable at USB 3 SuperSpeed (spontaneous
+  # disconnects; "Error during device I/O" on read). It MUST run at USB 2.0 —
+  # forced by disabling the SuperSpeed side of its root port; see the
+  # ds740d-force-usb2 systemd service one-time install below.
+  brscan5Patched = pkgs.brscan5.overrideAttrs (old: {
+    postFixup = (old.postFixup or "") + ''
+      cfg=$out/opt/brother/scanner/brscan5
+      # Map the DS-740D (0x0469) onto the ADS-1250W (315) protocol profile.
+      sed -i '/0x045a,315,1,"ADS-1250W"/a 0x0469,315,1,"DS-740D"' \
+        "$cfg/models/brscan5ext_2.ini"
+      sed -i '/^\[Support Model\]/a 0x0469,315,1,"DS-740D"' "$cfg/brscan5.ini"
+    '';
+  });
+  brscanBackends =
+    "${brscan5Patched}/lib/sane:${brscan5Patched}/opt/brother/scanner/brscan5:${pkgs.sane-backends}/lib/sane";
+  brscanConfigDir = pkgs.writeTextDir "dll.conf" "brother5\n";
   brscan = pkgs.writeShellScriptBin "brscan" ''
     export LD_LIBRARY_PATH="${brscanBackends}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export SANE_CONFIG_DIR="${brscanConfigDir}"
@@ -183,27 +202,32 @@ in
 
     # Cherry-picked packages not in Omarchy/pacman
     packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; })
-      # Brother DS-740D scanner: brscan4 backend + wrapped scanimage (`brscan`).
-      # See the `brscan` let-binding above. Two root-owned deps that home-manager
-      # (foreign distro, no NixOS hardware.sane module) can't place — install
-      # once, like the chromium managed policy below:
+      # Brother DS-740D scanner: patched brscan5 + wrapped scanimage (`brscan`).
+      # See the `brscan5Patched`/`brscan` let-bindings above. Three root-owned
+      # deps home-manager (foreign distro, no NixOS hardware.sane module) can't
+      # place — install once, like the chromium managed policy below:
       #
-      #   # USB access rule:
+      #   # 1. USB access rule (grant the seat user the scanner node):
       #   sudo install -Dm644 \
       #     ~/nix/hosts/linux/omarchy/files/60-brother-ds740d.rules \
       #     /etc/udev/rules.d/60-brother-ds740d.rules
+      #
+      #   # 2. brother5 backend reads model tables from these hard-coded paths;
+      #   #    point them at the patched store config (via the home symlink below):
+      #   sudo mkdir -p /etc/opt/brother/scanner
+      #   sudo ln -sfn ~/.local/state/brother/brscan5 /etc/opt/brother/scanner/brscan5
+      #   sudo ln -sfn ~/.local/state/brother/brscan5/models /etc/opt/brother/scanner/models
+      #
+      #   # 3. Force the scanner's port to USB 2.0 at boot (unstable at SuperSpeed):
+      #   sudo install -Dm644 \
+      #     ~/nix/hosts/linux/omarchy/files/ds740d-force-usb2.service \
+      #     /etc/systemd/system/ds740d-force-usb2.service
+      #   sudo systemctl enable --now ds740d-force-usb2.service
       #   sudo udevadm control --reload && sudo udevadm trigger
       #
-      #   # brscan4 hard-codes /etc/opt/brother/scanner/brscan4 for its model
-      #   # tables (segfaults in modelinf.c without them). Point it at the
-      #   # home-managed symlink below (stable across brscan4 updates):
-      #   sudo mkdir -p /etc/opt/brother/scanner
-      #   sudo ln -sfn ~/.local/state/brother/brscan4 /etc/opt/brother/scanner/brscan4
-      #
-      # ⚠️ HARDWARE: the DS-740D throws "Error during device I/O" on a USB 3
-      # (SuperSpeed) link — it MUST run at USB 2.0. Use a USB 2.0 cable/hub
-      # between scanner and machine; the bundled USB 3 cable on a 5 Gbps port
-      # fails. Then: `brscan -L`  /  `brscan --resolution 300 --format=png -o out.png`
+      # Scan (duplex ADF): `brscan -L`  /
+      #   brscan --source 'Automatic Document Feeder(left aligned,Duplex)' \
+      #          --resolution 300 --format=png -o out.png
       ++ [ brscan ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
@@ -214,11 +238,11 @@ in
     file.".claude/agents/host-dispatch".source =
       config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/.claude/agents/host-dispatch";
 
-    # brscan4 model tables at a stable home path; /etc/opt/brother is symlinked
-    # here by the one-time sudo step (see home.packages above). The store's
-    # populated config lives under opt/ (its etc/ tree is an empty stub).
-    file.".local/state/brother/brscan4".source =
-      "${pkgs.brscan4}/opt/brother/scanner/brscan4";
+    # Patched brscan5 model tables at a stable home path; /etc/opt/brother is
+    # symlinked here by the one-time sudo step (see home.packages above). Stable
+    # across brscan5 updates — the symlink target (home path) never changes.
+    file.".local/state/brother/brscan5".source =
+      "${brscan5Patched}/opt/brother/scanner/brscan5";
 
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
