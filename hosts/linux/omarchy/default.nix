@@ -10,9 +10,10 @@ let
 
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
-  # Superhuman uses the committed iconDir Superhuman.png (256px). The SVG next to
-  # it has only a 23px viewBox in a <symbol>+<use>, which icon loaders rasterize
-  # at that low res -> blurry on a 2x HiDPI display; the 256px PNG stays crisp.
+  # Superhuman uses the committed iconDir Superhuman.png — a 512px raster rendered
+  # from the brand SVG (rsvg-convert -w 512). The SVG itself has only a 23px
+  # viewBox in a <symbol>+<use>, which icon loaders rasterize at that low res ->
+  # blurry on a 2x HiDPI display; the 512px PNG stays crisp at any launcher size.
   # (The mail.superhuman.com apple-touch-icon URL returns HTML, not an image.)
   morgenIcon = pkgs.fetchurl {
     url = "https://web.morgen.so/apple-touch-icon.png";
