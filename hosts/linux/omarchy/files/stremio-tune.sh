@@ -8,7 +8,7 @@
 for _ in $(seq 1 30); do
   if /usr/bin/curl -sf -m 5 -X POST http://127.0.0.1:11470/settings \
       -H 'Content-Type: application/json' \
-      -d '{"cacheSize":10737418240,"proxyStreamsEnabled":true}' >/dev/null 2>&1; then
+      -d '{"cacheSize":10737418240,"proxyStreamsEnabled":true,"btDownloadSpeedSoftLimit":73400320,"btDownloadSpeedHardLimit":104857600,"btMaxConnections":200}' >/dev/null 2>&1; then
     exit 0
   fi
   sleep 2
