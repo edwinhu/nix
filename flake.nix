@@ -363,6 +363,19 @@
                     '')
                     limuxPkg
                   ];
+                  # limux's dev.limux.linux.desktop hard-codes Exec/TryExec to the
+                  # UNWRAPPED ${limuxPkg}/bin/limux, so launching from the launcher
+                  # bypasses the nixGL wrap -> "failed to create EGL display".
+                  # Replace the symlinked desktop file with one whose Exec/TryExec
+                  # point at the wrapped $out/bin/limux.
+                  postBuild = ''
+                    d=$out/share/applications/dev.limux.linux.desktop
+                    if [ -e "$d" ]; then
+                      rm -f "$d"
+                      sed "s|${limuxPkg}/bin/limux|$out/bin/limux|g" \
+                        ${limuxPkg}/share/applications/dev.limux.linux.desktop > "$d"
+                    fi
+                  '';
                   meta = limuxPkg.meta or {};
                   passthru = { unwrapped = limuxPkg; };
                 };
