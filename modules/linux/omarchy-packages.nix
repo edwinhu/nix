@@ -76,6 +76,9 @@ with pkgs; [
 
   # File managers
   doublecmd
+  yazi            # TUI file manager (not shipped by Omarchy/pacman)
+  poppler-utils   # pdftoppm etc. — PDF previews for yazi
+  elio            # elio-fm file manager (gh:elio-fm/elio; see modules/shared/elio.nix)
 
   # Typesetting
   tectonic
