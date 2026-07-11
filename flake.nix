@@ -366,6 +366,22 @@
                   meta = limuxPkg.meta or {};
                   passthru = { unwrapped = limuxPkg; };
                 };
+                # stremio-linux-shell uses mpv (GL) — same as beeper/limux, wrap
+                # bin/stremio in nixGLIntel so it finds system Mesa/EGL on non-NixOS
+                # ("failed to create EGL display" otherwise).
+                stremio-linux-shell = let
+                  base = prev.stremio-linux-shell;
+                in prev.symlinkJoin {
+                  name = "stremio-linux-shell-nixgl-${base.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "stremio" ''
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/stremio "$@"
+                    '')
+                    base
+                  ];
+                  meta = base.meta or {};
+                  passthru = { unwrapped = base; };
+                };
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
