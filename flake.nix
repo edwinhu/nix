@@ -368,14 +368,16 @@
                 };
                 # stremio-linux-shell uses mpv (GL) — same as beeper/limux, wrap
                 # bin/stremio in nixGLIntel so it finds system Mesa/EGL on non-NixOS
-                # ("failed to create EGL display" otherwise).
+                # ("failed to create EGL display" otherwise). Also pass
+                # --no-window-decorations: the app's client-side titlebar adds
+                # nothing under Hyprland's tiling.
                 stremio-linux-shell = let
                   base = prev.stremio-linux-shell;
                 in prev.symlinkJoin {
                   name = "stremio-linux-shell-nixgl-${base.version or "unknown"}";
                   paths = [
                     (prev.writeShellScriptBin "stremio" ''
-                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/stremio "$@"
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/stremio --no-window-decorations "$@"
                     '')
                     base
                   ];
