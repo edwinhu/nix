@@ -10,9 +10,10 @@ let
 
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
-  # Superhuman uses the committed iconDir Superhuman.svg — a valid <symbol>+<use>
-  # SVG that renders fine (same file the alarm host uses); the mail.superhuman.com
-  # apple-touch-icon URL returns HTML, not an image, so don't fetch that.
+  # Superhuman uses the committed iconDir Superhuman.png (256px). The SVG next to
+  # it has only a 23px viewBox in a <symbol>+<use>, which icon loaders rasterize
+  # at that low res -> blurry on a 2x HiDPI display; the 256px PNG stays crisp.
+  # (The mail.superhuman.com apple-touch-icon URL returns HTML, not an image.)
   morgenIcon = pkgs.fetchurl {
     url = "https://web.morgen.so/apple-touch-icon.png";
     hash = "sha256-MiLXn1LrP/9idaof4t2fAAADyh3+qw9bdqMva2h7LPE=";
@@ -267,7 +268,7 @@ in
       exec = "omarchy-launch-or-focus-webapp superhuman https://mail.superhuman.com";
       terminal = false;
       type = "Application";
-      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Superhuman.svg";
+      icon = "${iconDir}/Superhuman.png";
       startupNotify = true;
     };
 
