@@ -183,6 +183,12 @@ in
     force = true;
   };
 
+  # Host-local ghostty override (included last by the shared ~/.config/ghostty/
+  # config). The shared font-size 14 is tuned for macOS Retina and renders too
+  # big on this 32" 4K @ scale-2 panel (and in limux's embedded libghostty), so
+  # shrink it here only — macOS/alarm keep their own size.
+  xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
+
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
