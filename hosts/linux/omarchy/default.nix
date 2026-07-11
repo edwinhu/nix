@@ -8,6 +8,26 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
+  # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
+  # The DSmobile new-gen (DS-640/740D/940DW) is driven by Brother's proprietary
+  # **brscan4** backend. Note: brscan5 — despite being the only driver Brother's
+  # DS-740D download page offers (brscan5-1.7.0) — has NO model entry for this
+  # scanner and does not detect it; dsseries (1.0.5) is the old-gen 0x60xx
+  # generation. Verified on-device: only brscan4 detects it, generically, as
+  # `brother4:...*DS-740D`. See the one-time root setup note on `home.packages`.
+  #
+  # `brscan` = scanimage wrapped with the backend env: the brother4 + core SANE
+  # backends on LD_LIBRARY_PATH, and a config dir enabling only brother4 (its
+  # model tables are read from the hard-coded /etc/opt path, not from here).
+  # Named `brscan` (not `scanimage`) so it never shadows pacman's sane.
+  brscanBackends = "${pkgs.brscan4}/lib/sane:${pkgs.sane-backends}/lib/sane";
+  brscanConfigDir = pkgs.writeTextDir "dll.conf" "brother4\n";
+  brscan = pkgs.writeShellScriptBin "brscan" ''
+    export LD_LIBRARY_PATH="${brscanBackends}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export SANE_CONFIG_DIR="${brscanConfigDir}"
+    exec ${pkgs.sane-backends}/bin/scanimage "$@"
+  '';
+
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
   # Superhuman uses the committed iconDir Superhuman.png — a 512px raster rendered
@@ -162,7 +182,29 @@ in
     stateVersion = "25.05";
 
     # Cherry-picked packages not in Omarchy/pacman
-    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; });
+    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; })
+      # Brother DS-740D scanner: brscan4 backend + wrapped scanimage (`brscan`).
+      # See the `brscan` let-binding above. Two root-owned deps that home-manager
+      # (foreign distro, no NixOS hardware.sane module) can't place — install
+      # once, like the chromium managed policy below:
+      #
+      #   # USB access rule:
+      #   sudo install -Dm644 \
+      #     ~/nix/hosts/linux/omarchy/files/60-brother-ds740d.rules \
+      #     /etc/udev/rules.d/60-brother-ds740d.rules
+      #   sudo udevadm control --reload && sudo udevadm trigger
+      #
+      #   # brscan4 hard-codes /etc/opt/brother/scanner/brscan4 for its model
+      #   # tables (segfaults in modelinf.c without them). Point it at the
+      #   # home-managed symlink below (stable across brscan4 updates):
+      #   sudo mkdir -p /etc/opt/brother/scanner
+      #   sudo ln -sfn ~/.local/state/brother/brscan4 /etc/opt/brother/scanner/brscan4
+      #
+      # ⚠️ HARDWARE: the DS-740D throws "Error during device I/O" on a USB 3
+      # (SuperSpeed) link — it MUST run at USB 2.0. Use a USB 2.0 cable/hub
+      # between scanner and machine; the bundled USB 3 cable on a 5 Gbps port
+      # fails. Then: `brscan -L`  /  `brscan --resolution 300 --format=png -o out.png`
+      ++ [ brscan ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -171,6 +213,12 @@ in
     # systemd service above.
     file.".claude/agents/host-dispatch".source =
       config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/.claude/agents/host-dispatch";
+
+    # brscan4 model tables at a stable home path; /etc/opt/brother is symlinked
+    # here by the one-time sudo step (see home.packages above). The store's
+    # populated config lives under opt/ (its etc/ tree is an empty stub).
+    file.".local/state/brother/brscan4".source =
+      "${pkgs.brscan4}/opt/brother/scanner/brscan4";
 
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";

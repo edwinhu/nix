@@ -1,0 +1,9 @@
+# Brother DS-740D (retail: DS-7400) sheet-fed scanner — USB 04f9:0469.
+# Grants access to the scanner's USB node so the brscan4 SANE backend can be
+# used without root. MODE=0666 mirrors Brother's own shipped udev rule and is
+# fine on this single-user personal machine. ENV{libsane_matched}=yes stops
+# other SANE backends from also probing (and mis-claiming) the device.
+#
+# Installed out-of-band (root-owned, outside home-manager's scope) — see the
+# one-time install command in hosts/linux/omarchy/default.nix.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="04f9", ATTRS{idProduct}=="0469", MODE="0666", ENV{libsane_matched}="yes"
