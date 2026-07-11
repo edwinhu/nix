@@ -19,6 +19,120 @@ let
     url = "https://web.morgen.so/apple-touch-icon.png";
     hash = "sha256-MiLXn1LrP/9idaof4t2fAAADyh3+qw9bdqMva2h7LPE=";
   };
+
+  # Claude scheduled routines — the Linux equivalent of the macOS launchd agents
+  # in dotfiles/Library/LaunchAgents (which never ran here: Linux has no launchd
+  # and no ~/Library). Each is a systemd user timer+oneshot that invokes a
+  # /<skill> slash command through the `claude` CLI's Remote Control (--rc --bg),
+  # so no scheduled-tasks/ dir is needed — the skill bodies live in ~/.claude/
+  # skills. Adapted from the plists: `claude` not `claude-stable`, $HOME not the
+  # Mac path, vault at ~/notes not ~/Documents/Notes/Vault. Logs -> the journal
+  # (journalctl --user -u claude-<name>). See ~/nix/CLAUDE.md.
+  claudeRoutineEnv = [
+    "PATH=%h/.local/bin:%h/.nix-profile/bin:/usr/bin:/bin"
+    "CLAUDE_CONFIG_DIR=%h/.claude"
+  ];
+  claudeRoutines = {
+    # Daily 08:00. Weekday: spawn the day's long-lived "🦞 assistant" session
+    # with the briefing, then poke it for planning an hour later (same session,
+    # so it inherits context). Weekend: spawn an idle session, no briefing.
+    "claude-morning-briefing" = {
+      desc = "Claude morning briefing — spawn the day's 🦞 assistant session";
+      cwd = "%h/areas/assistant";
+      onCalendar = "*-*-* 08:00:00";
+      spawner = true;
+      script = pkgs.writeShellScript "claude-morning-briefing" ''
+        set -uo pipefail
+        cd "$HOME/areas/assistant" || exit 1
+        DOW=$(date +%u)  # 1=Mon … 7=Sun
+        if [ "$DOW" -le 5 ]; then
+          printf %s "/morning-briefing" | claude --rc --bg --effort medium -n "🦞 assistant" || true
+          # Poke the SAME session for planning 1h later; detached so it survives
+          # this oneshot exiting (KillMode=process keeps it out of the cgroup kill).
+          nohup bash -c 'sleep 3600; agent-msg send "🦞 assistant" "/morning-planning"' >/dev/null 2>&1 &
+        else
+          claude --rc --bg --effort medium -n "🦞 assistant" </dev/null || true
+        fi
+      '';
+    };
+    # Mon–Fri 23:00. Route /nightly-wrapup into the live 🦞 assistant session so
+    # it inherits the day's context; fall back to a standalone session if none.
+    "claude-nightly-wrapup" = {
+      desc = "Claude nightly wrapup — route into the day's 🦞 assistant session";
+      cwd = "%h/areas/assistant";
+      onCalendar = "Mon-Fri 23:00:00";
+      spawner = true;
+      script = pkgs.writeShellScript "claude-nightly-wrapup" ''
+        set -uo pipefail
+        cd "$HOME/areas/assistant" || exit 1
+        # Resolve the day's 🦞 assistant to a cloud control-plane id (cse_…) that
+        # `agent-msg send` accepts — the LOCAL section of `agent-msg list`.
+        target=$(agent-msg list 2>/dev/null \
+          | sed -n '/LOCAL/,/CLOUD/p' \
+          | grep -F '🦞 assistant' \
+          | grep -oE 'cse_[A-Za-z0-9]+' | head -1)
+        if [ -n "''${target:-}" ] && agent-msg send "$target" "/nightly-wrapup"; then
+          echo "wrapup routed into assistant session ($target)"
+          exit 0
+        fi
+        echo "no live assistant session — spawning standalone wrapup"
+        printf %s "/nightly-wrapup" | claude --rc --bg --effort medium -n nightly-wrapup
+      '';
+    };
+    # Daily 03:00, in the Obsidian vault (~/notes on Linux).
+    "claude-vault-compile" = {
+      desc = "Claude vault compile — nightly notes reindex";
+      cwd = "%h/notes";
+      onCalendar = "*-*-* 03:00:00";
+      spawner = true;
+      script = pkgs.writeShellScript "claude-vault-compile" ''
+        set -euo pipefail
+        cd "$HOME/notes" || exit 1
+        printf %s "/vault-compile" | claude --rc --bg --effort medium -n vault-compile
+      '';
+    };
+    # Daily 02:45 — cleanly stop the day's 🦞 assistant before the 03:00 vault
+    # compile. Deliberate stop (not a crash), so it is not auto-respawned.
+    "claude-assistant-shutdown" = {
+      desc = "Claude assistant shutdown — stop the day's 🦞 assistant session";
+      cwd = "%h/areas/assistant";
+      onCalendar = "*-*-* 02:45:00";
+      spawner = false;
+      script = pkgs.writeShellScript "claude-assistant-shutdown" ''
+        set -uo pipefail
+        ids=$(claude agents --json 2>/dev/null \
+          | jq -r '.[] | select(.name == "🦞 assistant" or .name == "morning-briefing" or .name == "nightly-wrapup") | .id')
+        if [ -z "''${ids:-}" ]; then
+          echo "nothing to stop"
+          exit 0
+        fi
+        for id in $ids; do
+          if claude stop "$id"; then echo "stopped $id"; else echo "FAILED to stop $id"; fi
+        done
+      '';
+    };
+  };
+  mkRoutineService = r: {
+    Unit.Description = r.desc;
+    Service = {
+      Type = "oneshot";
+      WorkingDirectory = r.cwd;
+      Environment = claudeRoutineEnv;
+      ExecStart = "${r.script}";
+    } // lib.optionalAttrs r.spawner {
+      # Leave the backgrounded `claude --rc --bg` session (and the planning poke)
+      # running after the oneshot exits — the launchd equivalent of the plist's
+      # AbandonProcessGroup=true.
+      KillMode = "process";
+    };
+  };
+  mkRoutineTimer = r: {
+    Unit.Description = "${r.desc} (timer)";
+    # Persistent=false: don't fire a stale routine on a late boot/wake — a
+    # briefing that missed 08:00 shouldn't spawn at noon.
+    Timer = { OnCalendar = r.onCalendar; Persistent = false; };
+    Install.WantedBy = [ "timers.target" ];
+  };
 in
 {
   imports = [
@@ -193,7 +307,12 @@ in
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
   # services inherit WAYLAND_DISPLAY etc.
-  systemd.user.services.hintsd = {
+  # hintsd + the Claude scheduled routines. mkMerge so both can define
+  # systemd.user.services (a plain attrset literal can't assign the same path
+  # twice; mkMerge combines them into one definition).
+  systemd.user.services = lib.mkMerge [
+    (lib.mapAttrs (_: mkRoutineService) claudeRoutines)
+    { hintsd = {
     Unit = {
       Description = "Hints daemon (keyboard GUI navigation)";
       PartOf = [ "graphical-session.target" ];
@@ -205,7 +324,11 @@ in
       RestartSec = 1;
     };
     Install.WantedBy = [ "graphical-session.target" ];
-  };
+    }; }
+  ];
+
+  # Timers for the Claude scheduled routines (see claudeRoutines, let block).
+  systemd.user.timers = lib.mapAttrs (_: mkRoutineTimer) claudeRoutines;
 
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
