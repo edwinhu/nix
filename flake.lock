@@ -367,11 +367,11 @@
     "nix-secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1783789709,
-        "narHash": "sha256-RPHWZ8kOmBWGxl+SJmMujlDcfuEYIGxtKCuCYq/rXgw=",
+        "lastModified": 1783799999,
+        "narHash": "sha256-J1vdZmB2AffT/UJKrO5q/zipPAatPc7h8KFVwh+RDvE=",
         "ref": "refs/heads/main",
-        "rev": "478e5cf3e5c0bfafad5ccbe81acbe4fc9b5b12d0",
-        "revCount": 27,
+        "rev": "7a65e115f43c8e12473d95eee75dc41fa78f2252",
+        "revCount": 28,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
       },

@@ -1,8 +1,10 @@
-# Cross-platform reader services: chrome-cdp + readwise-reader-tools.
+# Cross-platform reader services: chrome-cdp + readwise-reader-tools (+ its
+# cloudflared tunnel).
 #
 # ONE module, TWO backends. On Linux (home-manager on omarchy/alarm) it emits
-# systemd *user* services + a timer; on macOS (home-manager inside nix-darwin)
-# it emits launchd *agents*. The service bodies are thin wrappers around the
+# systemd *user* services + a timer (and, where readwise is enabled, the
+# cloudflared tunnel that fronts the webhook + its agenix creds); on macOS
+# (home-manager inside nix-darwin) it emits launchd *agents*. The service bodies are thin wrappers around the
 # platform-aware CLIs/scripts that already live in the repos
 # (~/projects/chrome-cdp, ~/projects/readwise-reader-tools): those handle the
 # chromium-vs-Chrome binary, headless mode, XDG isolation, and the agenix
@@ -13,7 +15,7 @@
 # `lib.mkIf` — is an "option does not exist" error. So we gate at the ATTRSET
 # level with `lib.optionalAttrs`: the whole `systemd`/`launchd` key is absent on
 # the wrong platform, so its option is never touched there.
-{ config, pkgs, lib, userInfo, ... }:
+{ config, pkgs, lib, userInfo, nix-secrets, ... }:
 
 # Platform gate uses `userInfo.system` (a plain string from specialArgs), NOT
 # `pkgs.stdenv.is*`. Whether the top-level `systemd`/`launchd` key exists decides
@@ -55,6 +57,25 @@ let
   pixiBin = "${home}/.nix-profile/bin/pixi";
   # webhook server: uvicorn under pixi, bound to all interfaces on :8000.
   uvicornArgs = [ "run" "uvicorn" "src.webhook:app" "--host" "0.0.0.0" "--port" webhookPort ];
+
+  # ---- cloudflared (Cloudflare Tunnel fronting the webhook) ----
+  # The named tunnel + its DNS route (webhook.eddyhu.com) already exist in the
+  # Cloudflare dashboard; this host just runs it. Creds JSON is agenix-decrypted
+  # to credsPath; the config is generated into the nix store so nothing loose
+  # lives in ~/.cloudflared any more.
+  tunnelId = "292cc54f-6568-47ed-a605-a428d892dcb1";
+  cfCredsPath = "${home}/.cloudflared/${tunnelId}.json";
+  cfCertPath = "${home}/.cloudflared/cert.pem";
+  cloudflaredBin = "${pkgs.cloudflared}/bin/cloudflared";
+  cloudflaredConfig = pkgs.writeText "cloudflared-config.yml" ''
+    tunnel: ${tunnelId}
+    credentials-file: ${cfCredsPath}
+
+    ingress:
+      - hostname: webhook.eddyhu.com
+        service: http://localhost:${webhookPort}
+      - service: http_status:404
+  '';
 in
 {
   # Per-computer toggles — SET THESE IN THE HOST CONFIG FILES, not here.
@@ -155,6 +176,49 @@ in
         Persistent = false;
       };
       Install.WantedBy = [ "timers.target" ];
+    };
+
+    # cloudflared CLI (management + the version the service runs), from nixpkgs
+    # rather than the pacman /usr/bin/cloudflared — shadows it via PATH order.
+    home.packages = lib.mkIf cfg.enableReadwise [ pkgs.cloudflared ];
+
+    # Tunnel creds + account cert, agenix-decrypted into ~/.cloudflared as real
+    # 0600 files (symlink=false so cloudflared/StrictModes accept them and they
+    # persist across reboots). agenix mkdir -p's ~/.cloudflared itself.
+    age.secrets.cloudflared-webhook-creds = lib.mkIf cfg.enableReadwise {
+      file = "${nix-secrets}/cloudflared-webhook-creds.age";
+      path = cfCredsPath;
+      mode = "600";
+      symlink = false;
+    };
+    age.secrets.cloudflared-cert = lib.mkIf cfg.enableReadwise {
+      file = "${nix-secrets}/cloudflared-cert.age";
+      path = cfCertPath;
+      mode = "600";
+      symlink = false;
+    };
+
+    systemd.user.services.cloudflared = lib.mkIf cfg.enableReadwise {
+      Unit = {
+        Description = "cloudflared tunnel (webhook.eddyhu.com -> readwise webhook :${webhookPort})";
+        # Lifecycle with the webhook it fronts; needs the network up first.
+        After = [ "network-online.target" "readwise-webhook.service" "graphical-session.target" ];
+        Wants = [ "network-online.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        # Config is a store file (tunnel id + creds path + ingress); no loose
+        # ~/.cloudflared/config.yml. --no-autoupdate: nix owns the binary version.
+        ExecStart = "${cloudflaredBin} tunnel --no-autoupdate --config ${cloudflaredConfig} run";
+        Restart = "on-failure";
+        RestartSec = 5;
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 5;
+        StandardOutput = "append:${logDir}/cloudflared.log";
+        StandardError = "append:${logDir}/cloudflared.err";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
     };
   })
 
