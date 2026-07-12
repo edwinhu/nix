@@ -86,6 +86,45 @@ let
     '';
   };
 
+  # brscan-skey: Brother's Scan Key daemon — watches the DS-740D's Start button
+  # (over USB via libusb polling) and runs an action on press. Verified working
+  # on the DS-740D. Not in nixpkgs; packaged from Brother's .deb, autopatchelf'd
+  # (the daemon dlopens libusb at runtime → the LD_LIBRARY_PATH wrap; skey-scanimage
+  # links libsane → sane-backends). The config is baked to run the scan-to-PDF
+  # action below on every button function. Runs via the brscan-skey user service.
+  #
+  # Button action: scan the whole feeder (duplex) → ~/scans/scan-<ts>.pdf.
+  brscanSkeyAction = pkgs.writeShellScript "brscan-skey-scan" ''
+    mkdir -p "$HOME/scans"
+    SCAN_DUPLEX=1 SCAN_DPI=300 SCAN_MODE='24bit Color[Fast]' \
+      ${brscanPdf}/bin/brscan-pdf "$HOME/scans/scan-$(date +%Y%m%d-%H%M%S).pdf" >/dev/null 2>&1
+  '';
+  brscanSkey = pkgs.stdenv.mkDerivation {
+    pname = "brscan-skey";
+    version = "0.3.1-2";
+    src = pkgs.fetchurl {
+      url = "https://download.brother.com/pub/com/linux/linux/packages/brscan-skey-0.3.1-2.amd64.deb";
+      hash = "sha256-ZsKPofdvgu0+c49VkrtlHw2YMyNj+3/Y23EsuMGJc4k=";
+    };
+    nativeBuildInputs = [ pkgs.dpkg pkgs.autoPatchelfHook pkgs.makeWrapper ];
+    buildInputs = [ pkgs.libusb1 pkgs.sane-backends (lib.getLib pkgs.stdenv.cc.cc) ];
+    unpackPhase = "dpkg-deb -x $src .";
+    installPhase = ''
+      mkdir -p $out/opt/brother/scanner
+      cp -r opt/brother/scanner/brscan-skey $out/opt/brother/scanner/
+      chmod -R u+w $out/opt/brother/scanner/brscan-skey
+      # Point every button function at our scan-to-PDF action.
+      printf '%s\n' 'password=' \
+        'IMAGE=${brscanSkeyAction}' 'OCR=${brscanSkeyAction}' \
+        'EMAIL=${brscanSkeyAction}' 'FILE=${brscanSkeyAction}' 'SEMID=b' \
+        > $out/opt/brother/scanner/brscan-skey/brscan-skey.config
+    '';
+    postFixup = ''
+      wrapProgram $out/opt/brother/scanner/brscan-skey/brscan-skey-exe \
+        --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ pkgs.libusb1 ]}
+    '';
+  };
+
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
   # Superhuman uses the committed iconDir Superhuman.png — a 512px raster rendered
@@ -264,6 +303,12 @@ in
       #     /etc/udev/rules.d/99-ds740d-force-usb2.rules
       #   sudo udevadm control --reload && sudo udevadm trigger
       #
+      #   # 4. Button watcher: the brscan-skey daemon hard-codes its /opt path.
+      #   #    Symlink it to the store copy (the brscan-skey user service runs it):
+      #   sudo mkdir -p /opt/brother/scanner
+      #   sudo ln -sfn ~/.local/state/brother/brscan-skey /opt/brother/scanner/brscan-skey
+      #   # Press the scanner's Start button → duplex scan lands in ~/scans/*.pdf.
+      #
       # Scanning front-ends:
       #   brscan-tui   # interactive gum TUI (mode/dpi/sides/format incl. PDF → scan)
       #   brscan …     # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
@@ -283,6 +328,12 @@ in
     # across brscan5 updates — the symlink target (home path) never changes.
     file.".local/state/brother/brscan5".source =
       "${brscan5Patched}/opt/brother/scanner/brscan5";
+
+    # brscan-skey daemon + baked config at a stable home path; the binary
+    # hard-codes /opt/brother/scanner/brscan-skey, symlinked here by the one-time
+    # root step (see home.packages). Run by the brscan-skey user service below.
+    file.".local/state/brother/brscan-skey".source =
+      "${brscanSkey}/opt/brother/scanner/brscan-skey";
 
     # Scanner launcher entry. MUST live under ~/.local/share/applications
     # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
@@ -521,6 +572,23 @@ in
         KillMode = "process";
         ExecStart = "/bin/bash -lc %h/.claude/agents/host-dispatch/ensure.sh";
       };
+    }; }
+    # brscan-skey: watch the DS-740D's Start button, scan-to-PDF on press. Runs
+    # in the graphical session (as the user — the udev rule grants USB access) so
+    # the action writes to ~/scans. The daemon reads /opt/brother/scanner/
+    # brscan-skey (symlinked to the store — one-time root step in home.packages).
+    { brscan-skey = {
+      Unit = {
+        Description = "Brother DS-740D scan-key button watcher";
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "/opt/brother/scanner/brscan-skey/brscan-skey-exe";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
     }; }
   ];
 
