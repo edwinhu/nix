@@ -3,7 +3,7 @@
 # Modeled on hosts/linux/alarm (the aarch64/Asahi Omarchy host); the two share
 # the same Omarchy desktop-entry + package set and differ only by architecture,
 # which is handled in flake.nix (userHosts + the doublecmd/beeper overlays).
-{ config, pkgs, lib, user, userInfo, ... }:
+{ config, pkgs, lib, user, userInfo, self, ... }:
 
 let
   iconDir = ../../../modules/linux/desktop-icons;
@@ -329,6 +329,29 @@ in
     # systemd service above.
     file.".claude/agents/host-dispatch".source =
       config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/.claude/agents/host-dispatch";
+
+    # Install the AI CLIs (claude, codex, opencode, agy) idempotently on every
+    # build-switch. They self-update after install, so this only fills in missing
+    # installs (mirrors the macOS installAITools). PATH includes curl (installer
+    # downloads) + the user bin dirs so already-installed tools are detected and
+    # skipped. setup-ai-tools.sh lives in this flake, hence ${self}.
+    activation.installAITools = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD env \
+        PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
+        ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
+    '';
+
+    # Then link the dotfiles-tracked ~/.claude children (CLAUDE.md, settings.json,
+    # hooks/, skills/, commands, …). `stow .` skips ~/.claude (it holds runtime
+    # state — sessions/, plugins/cache/, credentials), so this bootstrap is what
+    # deploys them; nothing ran it before, which is how the hooks/ link went
+    # missing. Ordered AFTER installAITools so Claude Code is present first.
+    # Idempotent and refuses to clobber real files. Script lives in dotfiles,
+    # so reference it under $HOME/dotfiles (not ${self}).
+    activation.setupClaudeSymlinks = lib.hm.dag.entryAfter [ "installAITools" ] ''
+      $DRY_RUN_CMD env PATH="${pkgs.coreutils}/bin:/usr/bin:/bin" \
+        ${pkgs.bash}/bin/bash "$HOME/dotfiles/scripts/setup-claude-symlinks.sh" || true
+    '';
 
     # Patched brscan5 model tables at a stable home path; /etc/opt/brother is
     # symlinked here by the one-time sudo step (see home.packages above). Stable
