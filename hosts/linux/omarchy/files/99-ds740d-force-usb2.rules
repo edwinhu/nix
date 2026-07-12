@@ -1,0 +1,16 @@
+# Brother DS-740D (USB 04f9:0469) is unstable/undriveable at USB 3 SuperSpeed:
+# it spontaneously disconnects and the brscan5 image read fails with "Error
+# during device I/O". Force it to USB 2.0 by toggling the SuperSpeed side of its
+# root port (usb2-port1); it then falls back to the High-Speed peer (usb1-port1)
+# and scans reliably. Only the scanner is on this port.
+#
+# Two event-driven rules keep it working across sleeps/drops/replugs (a plain
+# boot-time write is too fragile — a fresh connect with SS pre-disabled doesn't
+# fall back on this Realtek hub; only a live toggle bumps it):
+#   - on SuperSpeed connect: disable SS → the device re-enumerates at High-Speed.
+#   - on disconnect: re-enable SS so the next connect can trigger the bump again.
+#
+# Root-owned (home-manager can't manage /etc on a foreign distro); installed
+# out-of-band — see hosts/linux/omarchy/default.nix.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="04f9", ATTR{idProduct}=="0469", ATTR{speed}=="5000", RUN+="/bin/sh -c 'echo 1 > /sys/bus/usb/devices/usb2/2-0:1.0/usb2-port1/disable'"
+ACTION=="remove", SUBSYSTEM=="usb", ENV{PRODUCT}=="4f9/469/*", RUN+="/bin/sh -c 'echo 0 > /sys/bus/usb/devices/usb2/2-0:1.0/usb2-port1/disable'"

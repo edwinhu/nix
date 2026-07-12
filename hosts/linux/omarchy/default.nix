@@ -46,6 +46,40 @@ let
     export SANE_CONFIG_DIR="${brscanConfigDir}"
     exec ${pkgs.sane-backends}/bin/scanimage "$@"
   '';
+  # brscan-pdf: batch-scan the whole ADF into a single PDF (the natural output
+  # for a document scanner). Pages are scanned to JPEG and embedded losslessly
+  # by img2pdf → small multi-page PDFs. Overrides via env: SCAN_DPI (default
+  # 300), SCAN_MODE (default color; e.g. 'True Gray' for smaller text docs),
+  # SCAN_DUPLEX=1 (scan both sides). Usage: `brscan-pdf [out.pdf]`.
+  brscanPdf = pkgs.writeShellScriptBin "brscan-pdf" ''
+    set -uo pipefail
+    export LD_LIBRARY_PATH="${brscanBackends}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export SANE_CONFIG_DIR="${brscanConfigDir}"
+    out="''${1:-scan-$(date +%Y%m%d-%H%M%S).pdf}"
+    dev=$(${pkgs.sane-backends}/bin/scanimage -L 2>/dev/null \
+      | ${pkgs.gnugrep}/bin/grep -oE 'brother5:[^ ]+' | head -1 | tr -d "\`'")
+    if [ -z "$dev" ]; then echo "brscan-pdf: DS-740D not found (brscan -L)"; exit 1; fi
+    src="Automatic Document Feeder(left aligned)"
+    [ -n "''${SCAN_DUPLEX:-}" ] && src="Automatic Document Feeder(left aligned,Duplex)"
+    tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+    # batch mode returns non-zero when the feeder empties — that's normal.
+    ${pkgs.sane-backends}/bin/scanimage -d "$dev" --source "$src" \
+      --mode "''${SCAN_MODE:-24bit Color[Fast]}" --resolution "''${SCAN_DPI:-300}" \
+      --format=jpeg --batch="$tmp/p%04d.jpg" >/dev/null 2>&1 || true
+    n=$(ls "$tmp"/p*.jpg 2>/dev/null | wc -l)
+    if [ "$n" -eq 0 ]; then echo "brscan-pdf: no pages scanned (feeder empty / jam?)"; exit 1; fi
+    ${pkgs.img2pdf}/bin/img2pdf "$tmp"/p*.jpg -o "$out"
+    echo "brscan-pdf: wrote $out ($n page(s))"
+  '';
+  # brscan-tui: interactive scan front-end built on charmbracelet/gum — pick
+  # mode/resolution/sides/format, scan with a spinner, offer to open. Composes
+  # the brscan + brscan-pdf wrappers (on PATH via runtimeInputs). Script lives
+  # in files/brscan-tui.sh (shellcheck-validated by writeShellApplication).
+  brscanTui = pkgs.writeShellApplication {
+    name = "brscan-tui";
+    runtimeInputs = [ pkgs.gum pkgs.coreutils pkgs.xdg-utils brscan brscanPdf ];
+    text = builtins.readFile ./files/brscan-tui.sh;
+  };
 
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
@@ -218,17 +252,18 @@ in
       #   sudo ln -sfn ~/.local/state/brother/brscan5 /etc/opt/brother/scanner/brscan5
       #   sudo ln -sfn ~/.local/state/brother/brscan5/models /etc/opt/brother/scanner/models
       #
-      #   # 3. Force the scanner's port to USB 2.0 at boot (unstable at SuperSpeed):
+      #   # 3. Force the scanner's port to USB 2.0 (unstable at SuperSpeed) —
+      #   #    event-driven udev rules that survive sleeps/drops/replugs:
       #   sudo install -Dm644 \
-      #     ~/nix/hosts/linux/omarchy/files/ds740d-force-usb2.service \
-      #     /etc/systemd/system/ds740d-force-usb2.service
-      #   sudo systemctl enable --now ds740d-force-usb2.service
+      #     ~/nix/hosts/linux/omarchy/files/99-ds740d-force-usb2.rules \
+      #     /etc/udev/rules.d/99-ds740d-force-usb2.rules
       #   sudo udevadm control --reload && sudo udevadm trigger
       #
-      # Scan (duplex ADF): `brscan -L`  /
-      #   brscan --source 'Automatic Document Feeder(left aligned,Duplex)' \
-      #          --resolution 300 --format=png -o out.png
-      ++ [ brscan ];
+      # Scanning front-ends:
+      #   brscan-tui        # interactive gum TUI (mode/dpi/sides/format → scan)
+      #   brscan-pdf out.pdf  # batch feeder → one PDF; SCAN_DUPLEX=1 for both sides
+      #   brscan …          # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
+      ++ [ brscan brscanPdf brscanTui ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
