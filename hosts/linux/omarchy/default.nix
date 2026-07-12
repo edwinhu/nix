@@ -264,7 +264,14 @@ in
     # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
     # systemd user services + a timer here (Linux) and launchd agents on macOS.
     ../../../modules/shared/reader-services.nix
+    # Faithful docx->PDF via real Word in a QEMU Win11 x64 + KVM guest; also a
+    # host for Windows-only tools (e.g. BenQ Display QuicKit). Enabled below.
+    ../../../modules/shared/word-render.nix
   ];
+
+  # Ships qemu + swtpm + xorriso + the VM provisioning kit (word-render-provision,
+  # start-winvm.sh, ...). See modules/shared/word-render/README.md. (2026-07-11)
+  programs.wordRender.enable = true;
 
   # This computer is the always-on primary: it runs BOTH the chrome-cdp browser
   # and the readwise webhook + sweep (the tunnel points here). See
