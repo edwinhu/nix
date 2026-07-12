@@ -69,14 +69,20 @@ let
     ${pkgs.img2pdf}/bin/img2pdf "$tmp"/p*.jpg -o "$out"
     echo "brscan-pdf: wrote $out ($n page(s))"
   '';
-  # brscan-tui: interactive scan front-end built on charmbracelet/gum — pick
-  # mode/resolution/sides/format, scan with a spinner, offer to open. Composes
-  # the brscan + brscan-pdf wrappers (on PATH via runtimeInputs). Script lives
-  # in files/brscan-tui.sh (shellcheck-validated by writeShellApplication).
-  brscanTui = pkgs.writeShellApplication {
-    name = "brscan-tui";
-    runtimeInputs = [ pkgs.gum pkgs.coreutils pkgs.xdg-utils brscan brscanPdf ];
-    text = builtins.readFile ./files/brscan-tui.sh;
+  # brscan-tui: full-screen scan form (charmbracelet/huh) — all options visible
+  # at once (mode/dpi/sides/format/output), arrow between fields and toggle
+  # inline, then scan with a spinner. Go source in files/brscan-tui/; shells out
+  # to the brscan + brscan-pdf wrappers (put on PATH by wrapProgram below).
+  brscanTui = pkgs.buildGoModule {
+    pname = "brscan-tui";
+    version = "0.1.0";
+    src = ./files/brscan-tui;
+    vendorHash = "sha256-eqd1e6rzY1RdcmkpaRlmFIOKS3w19mphJ8aRgVXW8Q8=";
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postInstall = ''
+      wrapProgram $out/bin/brscan-tui \
+        --prefix PATH : ${lib.makeBinPath [ brscan brscanPdf ]}
+    '';
   };
 
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
