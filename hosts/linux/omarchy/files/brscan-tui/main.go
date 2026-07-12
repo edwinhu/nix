@@ -29,7 +29,7 @@ var (
 	cBase   = lipgloss.Color("0") // base
 
 	stTitle    = lipgloss.NewStyle().Foreground(cPink).Bold(true)
-	stPanel    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cMuted).Padding(0, 1)
+	stPanel    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(1, 3)
 	stLabel    = lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
 	stValue    = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
 	stSelLabel = lipgloss.NewStyle().Foreground(cBase).Background(cAccent).Bold(true)
@@ -64,6 +64,8 @@ type model struct {
 	result   string
 	failed   bool
 	quit     bool
+	width    int
+	height   int
 }
 
 func (m model) outRow() int { return len(m.settings) }
@@ -103,6 +105,9 @@ func (m model) Init() tea.Cmd { return textinput.Blink }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, nil
 	case tea.KeyMsg:
 		if m.scanning {
 			return m, nil
@@ -184,53 +189,66 @@ func (m model) runScan() tea.Cmd {
 }
 
 func (m model) View() string {
-	var b strings.Builder
+	// panel width scales with the window (bounded), so it fills a float nicely.
+	pw := 56
+	if m.width > 0 {
+		if w := m.width - 16; w < pw {
+			pw = w
+		} else if m.width >= 90 {
+			pw = 72
+		}
+	}
+	labelW := 13
+
 	// header
 	status := stOK.Render("● connected")
 	if m.dev == "" {
 		status = stBad.Render("● not found")
 	}
-	b.WriteString("  " + stTitle.Render("󰚫  Brother DS-740D") + "   " + status + "\n\n")
+	header := stTitle.Render("󰚫  Brother DS-740D") + "    " + status
 
-	// settings panel
+	// settings rows (blank line between for air)
 	var rows []string
 	for i, s := range m.settings {
-		label := stLabel.Render(fmt.Sprintf(" %-12s", s.label))
-		value := stValue.Render("‹ " + s.shown() + " ›")
+		lab, valSt := stLabel, stValue
 		if i == m.cursor {
-			label = stSelLabel.Render(fmt.Sprintf(" %-12s", s.label))
-			value = stSelValue.Render("‹ " + s.shown() + " ›")
+			lab, valSt = stSelLabel, stSelValue
 		}
-		rows = append(rows, label+"  "+value)
+		row := lab.Render(fmt.Sprintf(" %-*s", labelW, s.label)) +
+			"  " + valSt.Render("‹ "+s.shown()+" ›")
+		rows = append(rows, row)
 	}
-	// output row
-	olabel := stLabel.Render(" Save as")
+	olab := stLabel
 	if m.cursor == m.outRow() {
-		olabel = stSelLabel.Render(" Save as     ")
+		olab = stSelLabel
 	}
-	rows = append(rows, olabel+"  "+stValue.Render(m.out.View()))
-	panel := stPanel.Width(60).Render(strings.Join(rows, "\n"))
-	b.WriteString(panel + "\n")
+	rows = append(rows, olab.Render(fmt.Sprintf(" %-*s", labelW, "Save as"))+"  "+stValue.Render(m.out.View()))
+	panel := stPanel.Width(pw).Render(strings.Join(rows, "\n\n"))
 
-	// status line / result
+	// status / result line
+	var statusLine string
 	switch {
 	case m.scanning:
-		b.WriteString("\n  " + m.spin.View() + stValue.Render(" Scanning… feed the pages") + "\n")
-	case m.result != "" && m.failed:
-		b.WriteString("\n  " + stBad.Render("✗ "+m.result) + "\n")
+		statusLine = m.spin.View() + stValue.Render(" Scanning… feed the pages")
+	case m.failed && m.result != "":
+		statusLine = stBad.Render("✗ " + m.result)
 	case m.result != "":
-		b.WriteString("\n  " + stOK.Render("✓ "+m.result) + "\n")
-	default:
-		b.WriteString("\n")
+		statusLine = stOK.Render("✓ " + m.result)
 	}
 
 	// keybar
 	key := func(k, d string) string { return stKey.Render(k) + " " + stKeyDesc.Render(d) }
 	bar := strings.Join([]string{
 		key("↑/↓", "move"), key("←/→", "change"), key("s", "scan"), key("q", "quit"),
-	}, stKeyDesc.Render("  •  "))
-	b.WriteString("\n  " + bar + "\n")
-	return b.String()
+	}, stKeyDesc.Render("   •   "))
+
+	body := lipgloss.JoinVertical(lipgloss.Center,
+		header, "", panel, "", statusLine, "", bar)
+
+	if m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, body)
+	}
+	return body
 }
 
 func findDevice() string {
@@ -246,7 +264,7 @@ func lastLine(s string) string {
 }
 
 func main() {
-	if _, err := tea.NewProgram(initialModel()).Run(); err != nil {
+	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -639,5 +639,19 @@ in
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Calculator.svg";
       startupNotify = true;
     };
+
+    # Brother DS-740D scanner TUI in a floating terminal (TUI.float app-id →
+    # Hyprland floats it, like tsui). Full store path so it resolves regardless
+    # of the launcher's PATH. `scanner` is a Papirus icon name.
+    scanner = {
+      name = "Scanner (DS-740D)";
+      comment = "Brother DS-740D document scanner";
+      exec = "xdg-terminal-exec --app-id=TUI.float -e ${brscanTui}/bin/brscan-tui";
+      terminal = false;
+      type = "Application";
+      icon = "scanner";
+      categories = [ "Utility" "Graphics" ];
+      startupNotify = true;
+    };
   };
 }
