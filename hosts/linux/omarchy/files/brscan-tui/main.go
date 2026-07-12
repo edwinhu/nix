@@ -37,7 +37,7 @@ func main() {
 	home, _ := os.UserHomeDir()
 	mode := "24bit Color[Fast]"
 	res := "300"
-	sides := "single"
+	sides := "duplex"
 	format := "pdf"
 	output := fmt.Sprintf("%s/scan-%s.pdf", home, time.Now().Format("20060102-150405"))
 	scan := true
@@ -54,8 +54,8 @@ func main() {
 			huh.NewSelect[string]().Title("Resolution (dpi)").Value(&res).
 				Options(huh.NewOptions("150", "200", "300", "400", "600", "1200")...),
 			huh.NewSelect[string]().Title("Sides").Value(&sides).Options(
-				huh.NewOption("Single-sided", "single"),
 				huh.NewOption("Duplex (both sides)", "duplex"),
+				huh.NewOption("Single-sided", "single"),
 			),
 			huh.NewSelect[string]().Title("Format").Value(&format).Options(
 				huh.NewOption("PDF", "pdf"),
