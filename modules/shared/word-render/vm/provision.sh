@@ -35,6 +35,8 @@ elif [ "$os" = "Linux" ] && [ "$arch" = "x86_64" ]; then
   # UNVERIFIED path. OVMF filenames vary by distro; adjust if needed.
   for c in OVMF_CODE.fd edk2-x86_64-code.fd; do [ -f "$qshare/$c" ] && cp -n "$qshare/$c" "$VMDIR/OVMF_CODE.fd" && break; done
   for v in OVMF_VARS.fd edk2-i386-vars.fd;  do [ -f "$qshare/$v" ] && cp -n "$qshare/$v" "$VMDIR/OVMF_VARS.fd" && break; done
+  # nixpkgs ships the store copies 0444; qemu must WRITE the UEFI vars pflash.
+  chmod u+w "$VMDIR/OVMF_VARS.fd"
   ISO_NAME="Win11_x64.iso"
 else
   echo "provision.sh: unsupported platform $os/$arch" >&2; exit 1

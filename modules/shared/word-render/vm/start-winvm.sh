@@ -50,8 +50,10 @@ common=(
   -device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56
   -netdev user,id=net0,hostfwd=tcp::2222-:22
   # Headless VNC, password-protected so macOS Screen Sharing will connect.
+  # Display adapter is platform-specific (see plat[] below): ramfb for the ARM
+  # virt machine, a std VGA (inbox Windows driver) for x86 — Win11 x64 Setup
+  # renders NOTHING on ramfb alone (black screen), so x86 needs real VGA.
   -object secret,id=vncpw,data="$VNC_PASSWORD"
-  -device ramfb
   -display none
   -vnc 127.0.0.1:0,password-secret=vncpw
   -monitor unix:"$VMDIR/monitor.sock",server,nowait
@@ -66,6 +68,7 @@ if [ "$os" = "Darwin" ] && [ "$arch" = "arm64" ]; then
     -device tpm-tis-device,tpmdev=tpm0
     -drive if=pflash,format=raw,readonly=on,file="$VMDIR/edk2-aarch64-code.fd"
     -drive if=pflash,format=raw,file="$VMDIR/edk2-arm-vars.fd"
+    -device ramfb
   )
 elif [ "$os" = "Linux" ] && [ "$arch" = "x86_64" ]; then
   # UNVERIFIED — mirrors the darwin path for a Win11 x64 + KVM guest.
@@ -78,6 +81,7 @@ elif [ "$os" = "Linux" ] && [ "$arch" = "x86_64" ]; then
     -global driver=cfi.pflash01,property=secure,value=on
     -drive if=pflash,format=raw,readonly=on,file="$VMDIR/OVMF_CODE.fd"
     -drive if=pflash,format=raw,file="$VMDIR/OVMF_VARS.fd"
+    -device VGA
   )
 else
   echo "start-winvm.sh: unsupported platform $os/$arch" >&2; exit 1
