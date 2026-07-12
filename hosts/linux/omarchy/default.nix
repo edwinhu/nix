@@ -284,6 +284,23 @@ in
     file.".local/state/brother/brscan5".source =
       "${brscan5Patched}/opt/brother/scanner/brscan5";
 
+    # Scanner launcher entry. MUST live under ~/.local/share/applications
+    # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
+    # nix-profile share where xdg.desktopEntries would place it. TUI.float →
+    # Hyprland floats the terminal (see files/.../system.conf). `scanner` is a
+    # Papirus icon name.
+    file.".local/share/applications/scanner.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Scanner (DS-740D)
+      Comment=Brother DS-740D document scanner
+      Exec=xdg-terminal-exec --app-id=TUI.float -e ${brscanTui}/bin/brscan-tui
+      Icon=scanner
+      Terminal=false
+      Categories=Utility;
+      StartupNotify=true
+    '';
+
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
     file.".local/share/icons/Papirus-Dark".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark";
@@ -640,18 +657,5 @@ in
       startupNotify = true;
     };
 
-    # Brother DS-740D scanner TUI in a floating terminal (TUI.float app-id →
-    # Hyprland floats it, like tsui). Full store path so it resolves regardless
-    # of the launcher's PATH. `scanner` is a Papirus icon name.
-    scanner = {
-      name = "Scanner (DS-740D)";
-      comment = "Brother DS-740D document scanner";
-      exec = "xdg-terminal-exec --app-id=TUI.float -e ${brscanTui}/bin/brscan-tui";
-      terminal = false;
-      type = "Application";
-      icon = "scanner";
-      categories = [ "Utility" ];
-      startupNotify = true;
-    };
   };
 }
