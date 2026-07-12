@@ -46,11 +46,9 @@ let
     export SANE_CONFIG_DIR="${brscanConfigDir}"
     exec ${pkgs.sane-backends}/bin/scanimage "$@"
   '';
-  # brscan-pdf: batch-scan the whole ADF into a single PDF (the natural output
-  # for a document scanner). Pages are scanned to JPEG and embedded losslessly
-  # by img2pdf → small multi-page PDFs. Overrides via env: SCAN_DPI (default
-  # 300), SCAN_MODE (default color; e.g. 'True Gray' for smaller text docs),
-  # SCAN_DUPLEX=1 (scan both sides). Usage: `brscan-pdf [out.pdf]`.
+  # brscan-pdf: batch-scan the whole ADF into a single PDF (JPEG pages embedded
+  # losslessly by img2pdf → small multi-page PDFs). The TUI's PDF engine — not on
+  # PATH; driven via env: SCAN_DPI, SCAN_MODE, SCAN_DUPLEX=1. Usage: `brscan-pdf [out.pdf]`.
   brscanPdf = pkgs.writeShellScriptBin "brscan-pdf" ''
     set -uo pipefail
     export LD_LIBRARY_PATH="${brscanBackends}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -260,10 +258,10 @@ in
       #   sudo udevadm control --reload && sudo udevadm trigger
       #
       # Scanning front-ends:
-      #   brscan-tui        # interactive gum TUI (mode/dpi/sides/format → scan)
-      #   brscan-pdf out.pdf  # batch feeder → one PDF; SCAN_DUPLEX=1 for both sides
-      #   brscan …          # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
-      ++ [ brscan brscanPdf brscanTui ];
+      #   brscan-tui   # interactive gum TUI (mode/dpi/sides/format incl. PDF → scan)
+      #   brscan …     # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
+      # (brscanPdf is the TUI's internal PDF engine — see runtimeInputs, not on PATH.)
+      ++ [ brscan brscanTui ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
