@@ -262,6 +262,29 @@ let
     Timer = { OnCalendar = r.onCalendar; Persistent = false; };
     Install.WantedBy = [ "timers.target" ];
   };
+
+  # onepassword-yubikey-lock watcher: lock 1Password the instant the YubiKey
+  # (serial 37276233) is unplugged, so `op` / the vault never stay unlocked
+  # without the key present (strict presence-gating). Polls sysfs every 1s in the
+  # graphical session; `1password --lock` is the AUR GUI binary at /usr/bin (the
+  # GUI app is NOT nix-managed on Omarchy — nixpkgs' package needs NixOS polkit).
+  # sysfs is used (not `ykman`) so the check is a cheap file read, no subprocess
+  # per tick. Consumed by the systemd.user.service of the same name below.
+  onepasswordYubikeyLock = pkgs.writeShellScript "onepassword-yubikey-lock" ''
+    set -uo pipefail
+    yk_serial="37276233"
+    present() { ${pkgs.gnugrep}/bin/grep -qxs "$yk_serial" /sys/bus/usb/devices/*/serial; }
+    if present; then last=1; else last=0; fi
+    while :; do
+      if present; then cur=1; else cur=0; fi
+      # present -> absent transition: lock (|| true: harmless if app isn't running)
+      if [ "$last" = 1 ] && [ "$cur" = 0 ]; then
+        /usr/bin/1password --lock >/dev/null 2>&1 || true
+      fi
+      last=$cur
+      ${pkgs.coreutils}/bin/sleep 1
+    done
+  '';
 in
 {
   imports = [
@@ -643,6 +666,23 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${xremapHypr}/bin/xremap --watch %h/.config/xremap/config.yml";
+        Restart = "on-failure";
+        RestartSec = 2;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # onepassword-yubikey-lock: lock 1Password when the YubiKey is removed (the
+    # onepasswordYubikeyLock watcher is defined in the let block above).
+    # graphical-session scoped so `1password --lock` reaches the running app.
+    { onepassword-yubikey-lock = {
+      Unit = {
+        Description = "Lock 1Password when the YubiKey is unplugged";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${onepasswordYubikeyLock}";
         Restart = "on-failure";
         RestartSec = 2;
       };
