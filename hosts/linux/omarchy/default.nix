@@ -650,7 +650,7 @@ in
       terminal = false;
       type = "Application";
       icon = "scanner";
-      categories = [ "Utility" "Graphics" ];
+      categories = [ "Utility" ];
       startupNotify = true;
     };
   };
