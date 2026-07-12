@@ -9,6 +9,11 @@
     ../shared/word-render.nix
   ];
 
+  # Enabled 2026-07-11 on omarchy: ships qemu + swtpm + xorriso + the VM
+  # provisioning kit so we can stand up a Win11 x64 + KVM guest (docx rendering,
+  # and a host for Windows-only tools like BenQ Display QuicKit).
+  programs.wordRender.enable = true;
+
   # Linux-specific Stylix configuration (Qt theming)
   stylix.targets.qt = {
     enable = true;
