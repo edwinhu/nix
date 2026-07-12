@@ -8,6 +8,11 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
+  # xremap (Hyprland variant) drives the Hyper(F13) leader remaps for limux — see
+  # the xremap systemd user service + xdg.configFile below. `withVariant` (NOT
+  # `features`) selects the compositor connector; nixpkgs' default build is wlroots.
+  xremapHypr = pkgs.xremap.override { withVariant = "hyprland"; };
+
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
   # NONE of Brother's shipped backends support this model out of the box:
   #   - brscan5 (what the DS-740D download page offers) has no model-table entry
@@ -561,6 +566,11 @@ in
   # shrink it here only — macOS/alarm keep their own size.
   xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
 
+  # Hyper(F13) leader remaps for limux — consumed by the xremap service below.
+  # F13+<key> emits limux's stock Ctrl+Alt(+Shift) combo (limux can't bind F13
+  # itself). Hold F13 like Cmd/Shift while tapping the key.
+  xdg.configFile."xremap/config.yml".source = ./files/xremap.yml;
+
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
@@ -617,6 +627,24 @@ in
         ExecStart = "/opt/brother/scanner/brscan-skey/brscan-skey-exe";
         Restart = "on-failure";
         RestartSec = 5;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # xremap: Hyper(F13) leader -> limux combos (config: xdg.configFile above).
+    # HYPRLAND_INSTANCE_SIGNATURE comes from the graphical-session user env (uwsm);
+    # /dev/uinput is reachable because `eh` is in the `input` group. --watch
+    # re-grabs devices on hotplug (the Glove80 exposes 1 node on BT, 2 on USB).
+    { xremap = {
+      Unit = {
+        Description = "xremap — Hyper(F13) leader remaps for limux";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${xremapHypr}/bin/xremap --watch %h/.config/xremap/config.yml";
+        Restart = "on-failure";
+        RestartSec = 2;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }

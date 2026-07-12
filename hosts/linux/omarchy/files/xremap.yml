@@ -1,0 +1,33 @@
+# Hyper (F13) leader -> limux's default combos. Global (no app filter) for
+# reliability — the combos are limux-specific so they're inert elsewhere.
+virtual_modifiers:
+  - F13
+keymap:
+  - name: limux-hyper
+    remap:
+      F13-h: Ctrl-Alt-Left
+      F13-j: Ctrl-Alt-Down
+      F13-k: Ctrl-Alt-Up
+      F13-l: Ctrl-Alt-Right
+      F13-Backslash: Ctrl-Alt-d
+      F13-Minus: Ctrl-Alt-Shift-d
+      F13-Enter: Ctrl-Shift-t
+      F13-w: Ctrl-Alt-w
+      F13-z: Ctrl-Shift-z
+      F13-1: Ctrl-Alt-1
+      F13-2: Ctrl-Alt-2
+      F13-3: Ctrl-Alt-3
+      F13-4: Ctrl-Alt-4
+      F13-5: Ctrl-Alt-5
+      F13-6: Ctrl-Alt-6
+      F13-7: Ctrl-Alt-7
+      F13-8: Ctrl-Alt-8
+      F13-9: Ctrl-Alt-9
+      F13-n: Ctrl-Alt-Shift-n
+      F13-Tab: Ctrl-Alt-PageDown
+      F13-Shift-Tab: Ctrl-Alt-PageUp
+      F13-Shift-w: Ctrl-Alt-Shift-w
+      F13-LeftBrace: Ctrl-Alt-Shift-Left
+      F13-RightBrace: Ctrl-Alt-Shift-Right
+      F13-b: Ctrl-Alt-m
+      F13-f: Ctrl-Alt-f
