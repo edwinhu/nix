@@ -89,6 +89,31 @@ New-Item -ItemType Directory -Force -Path "C:\Users\$User\render" | Out-Null
 $rd = Join-Path $here 'render_docx.ps1'
 if (Test-Path $rd) { Copy-Item $rd "C:\Users\$User\render_docx.ps1" -Force }
 
+# --- 5. Office COM prep (so Word.Application initializes for rendering) ---
+# Two things trip up Word COM after a headless Office install:
+#  a) Office needs a systemprofile Desktop folder to fully init in a non-desktop
+#     context; create both (64- and 32-bit views).
+#  b) A freshly-installed Office blocks automation behind its first-run / EULA
+#     experience. Pre-accept it via HKCU so Word.Application.Documents isn't null.
+# NOTE: rendering must still run in an INTERACTIVE session (the host wrapper drives
+# it via a scheduled task with /IT) — COM never fully works from a bare non-
+# interactive SSH shell regardless of these keys.
+try {
+  New-Item -ItemType Directory -Force -Path `
+    'C:\Windows\System32\config\systemprofile\Desktop', `
+    'C:\Windows\SysWOW64\config\systemprofile\Desktop' | Out-Null
+  $g = 'HKCU:\Software\Microsoft\Office\16.0\Common\General'
+  $r = 'HKCU:\Software\Microsoft\Office\16.0\Registration'
+  $f = 'HKCU:\Software\Microsoft\Office\16.0\FirstRun'
+  foreach ($k in @($g,$r,$f)) { New-Item -Path $k -Force | Out-Null }
+  Set-ItemProperty $g 'ShownFirstRunOptin' 1 -Type DWord
+  Set-ItemProperty $g 'OptInDisabled'      1 -Type DWord
+  Set-ItemProperty $r 'AcceptAllEulas'     1 -Type DWord
+  Set-ItemProperty $f 'BootedRTM'          1 -Type DWord
+  Set-ItemProperty $f 'disablemovie'       1 -Type DWord
+  Log 'Office COM prep applied (systemprofile Desktop + first-run/EULA suppressed)'
+} catch { Log "Office COM prep error: $_" }
+
 Log 'done. Guest IPv4:'
 (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
   Where-Object { $_.IPAddress -ne '127.0.0.1' }).IPAddress
