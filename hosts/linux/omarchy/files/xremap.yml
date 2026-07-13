@@ -12,7 +12,7 @@ keymap:
       F13-Backslash: Ctrl-Alt-d
       F13-Minus: Ctrl-Alt-Shift-d
       F13-Enter: Ctrl-Shift-t
-      F13-w: Ctrl-Alt-w
+      F13-w: Ctrl-Shift-w
       F13-z: Ctrl-Shift-z
       F13-1: Ctrl-Alt-1
       F13-2: Ctrl-Alt-2
@@ -26,7 +26,7 @@ keymap:
       F13-n: Ctrl-Alt-Shift-n
       F13-Tab: Ctrl-Alt-PageDown
       F13-Shift-Tab: Ctrl-Alt-PageUp
-      F13-Shift-w: Ctrl-Alt-Shift-w
+      F13-Shift-w: Ctrl-Alt-w
       F13-LeftBrace: Ctrl-Alt-Shift-Left
       F13-RightBrace: Ctrl-Alt-Shift-Right
       F13-b: Ctrl-Alt-m
