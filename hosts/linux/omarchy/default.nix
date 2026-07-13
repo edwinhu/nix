@@ -769,7 +769,11 @@ in
       exec = "omarchy-launch-webapp https://read.readwise.io/";
       terminal = false;
       type = "Application";
-      icon = "readwise-reader";
+      # Absolute path to the staged PNG (deployed above at line ~403). The bare
+      # name "readwise-reader" resolved to nothing — no such themed icon exists,
+      # and the file is "Readwise Reader.png" (with a space) under applications/
+      # icons, not an icon-theme dir. Match the other web-apps (YouTube Music, etc).
+      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Readwise Reader.png";
       startupNotify = true;
     };
 
