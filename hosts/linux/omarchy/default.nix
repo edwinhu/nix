@@ -262,6 +262,149 @@ let
     Timer = { OnCalendar = r.onCalendar; Persistent = false; };
     Install.WantedBy = [ "timers.target" ];
   };
+
+  # superhuman-cli health fix (this Linux/omarchy extension deployment). The
+  # CLI's token-refresh/health path needs a CDP target of type "page" whose url
+  # contains BOTH "background_page.html" and "superhuman". The macOS
+  # Superhuman.app always spawns one; here Superhuman runs as the "Superhuman
+  # Mail" Chromium extension inside the browser-wide CDP endpoint (:9222) and
+  # that target never gets created — so `superhuman doctor` reports UNHEALTHY
+  # and silent token refresh fails. (Reads/search/send still work: they go via
+  # CDP + the extension's live local cache. `doctor --fix` is a macOS-only
+  # no-op — it shells out to osascript + /usr/bin/open Superhuman.app.)
+  #
+  # Fix: open a BACKGROUND tab at mail.superhuman.com/background_page.html — the
+  # SPA redirects it to .../<account>/label/background_page.html, which contains
+  # both "background_page.html" and "superhuman", flipping doctor to healthy.
+  # Must be created via CDP `Target.createTarget {background:true}` over the
+  # browser websocket — NOT the HTTP `PUT /json/new`, which foregrounds a tab
+  # and would steal the user's focus. (This does not fix `superhuman sync`,
+  # which needs the Mac app's multi-account background_page iframes — redundant
+  # here anyway since the extension keeps the cache live.) Driven by the
+  # superhuman-bgpage oneshot + timer below.
+  #
+  # Under Hyprland the created target opens as a plain top-level `chromium`
+  # window (not an --app window) on the active workspace — visible clutter. No
+  # static field distinguishes it from a normal browsing window (class and
+  # initialClass are both `chromium`), so a windowrule can't safely match it.
+  # Instead the script diffs `hyprctl clients` around the createTarget and moves
+  # the ONE new chromium window to a hidden special workspace
+  # (special:superhuman-bg) with movetoworkspacesilent. Stashed there it's fully
+  # off-screen but still a live, CDP-reachable page, so doctor stays healthy.
+  # (Verified: a window in a non-toggled special workspace keeps doctor green.)
+  superhumanBgpagePy = pkgs.writeText "superhuman-bgpage.py" ''
+    #!/usr/bin/env python3
+    """Ensure a Superhuman background_page CDP target exists (see default.nix)."""
+    import json
+    import os
+    import subprocess
+    import sys
+    import time
+    import urllib.request
+
+    PORT = os.environ.get("CDP_PORT", "9222")
+    BASE = f"http://127.0.0.1:{PORT}"
+    HYPRCTL = "/usr/bin/hyprctl"          # the running (system) compositor's client
+    STASH_WS = "special:superhuman-bg"    # hidden Hyprland workspace to park it in
+
+
+    def http_get_json(path):
+        with urllib.request.urlopen(BASE + path, timeout=5) as r:
+            return json.load(r)
+
+
+    def hypr_addrs():
+        """Set of current Hyprland window addresses, or None if unavailable."""
+        try:
+            out = subprocess.check_output([HYPRCTL, "clients", "-j"], timeout=5)
+            return {c["address"] for c in json.loads(out)}
+        except Exception:
+            return None
+
+
+    def stash_new_window(before):
+        """Park the newly-opened chromium window in the hidden special workspace."""
+        if before is None:
+            return
+        for _ in range(20):  # ~6s: the new window can take a moment to map
+            time.sleep(0.3)
+            try:
+                clients = json.loads(
+                    subprocess.check_output([HYPRCTL, "clients", "-j"], timeout=5))
+            except Exception:
+                return
+            new = [c for c in clients
+                   if c["address"] not in before and c.get("class") == "chromium"]
+            if new:
+                addr = new[0]["address"]
+                try:
+                    subprocess.run(
+                        [HYPRCTL, "dispatch", "movetoworkspacesilent",
+                         f"{STASH_WS},address:{addr}"],
+                        timeout=5, check=False)
+                except Exception:
+                    pass
+                return
+
+
+    # 1. If the browser / CDP endpoint is unreachable, there's nothing to do.
+    try:
+        targets = http_get_json("/json")
+    except Exception:
+        sys.exit(0)
+
+
+    def is_bgpage(t):
+        u = t.get("url", "")
+        return t.get("type") == "page" and "background_page.html" in u and "superhuman" in u
+
+
+    # 2. Idempotent: a matching target already exists -> done (no dupes).
+    if any(is_bgpage(t) for t in targets):
+        sys.exit(0)
+
+    # 3. Only proceed if Superhuman is actually running (a mail.superhuman.com
+    #    page target is present); otherwise don't spawn a stray tab.
+    if not any(
+        t.get("type") == "page" and "mail.superhuman.com" in t.get("url", "")
+        for t in targets
+    ):
+        sys.exit(0)
+
+    # 4. Snapshot Hyprland windows, open the background tab via the browser
+    #    websocket (Target.createTarget), then stash the new window off-screen.
+    before = hypr_addrs()
+    try:
+        ver = http_get_json("/json/version")
+        ws_url = ver["webSocketDebuggerUrl"]
+    except Exception:
+        sys.exit(0)
+
+    try:
+        import websocket  # websocket-client
+        ws = websocket.create_connection(ws_url, timeout=10)
+        ws.send(json.dumps({
+            "id": 1,
+            "method": "Target.createTarget",
+            "params": {
+                "url": "https://mail.superhuman.com/background_page.html",
+                "background": True,
+            },
+        }))
+        try:
+            ws.recv()
+        except Exception:
+            pass
+        ws.close()
+    except Exception:
+        sys.exit(0)
+
+    stash_new_window(before)
+    sys.exit(0)
+  '';
+  superhumanBgpage = pkgs.writeShellScript "superhuman-bgpage" ''
+    exec ${pkgs.python3.withPackages (ps: [ ps.websocket-client ])}/bin/python3 ${superhumanBgpagePy} "$@"
+  '';
 in
 {
   imports = [
@@ -690,6 +833,23 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
+    # superhuman-bgpage: keep a Superhuman background_page CDP target alive so
+    # `superhuman doctor` stays healthy and silent token refresh works (see the
+    # superhumanBgpage let-binding). Oneshot; the timer below reruns it. No-op
+    # when the browser is down or Superhuman isn't running.
+    { superhuman-bgpage = {
+      Unit = {
+        Description = "Ensure a Superhuman background_page CDP target exists";
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        Environment = [ "CDP_PORT=9222" ];
+        ExecStart = "${superhumanBgpage}";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
   ];
 
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
@@ -700,6 +860,16 @@ in
       Timer = {
         OnBootSec = "30s";
         OnUnitActiveSec = "5min";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
+    # Periodically re-ensure the Superhuman background_page CDP target (see
+    # superhuman-bgpage.service). ~2min after boot, then every ~3min.
+    { superhuman-bgpage = {
+      Unit.Description = "Periodically ensure a Superhuman background_page CDP target exists";
+      Timer = {
+        OnBootSec = "2min";
+        OnUnitActiveSec = "3min";
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
