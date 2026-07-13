@@ -581,6 +581,13 @@ in
   # belongs on omarchy where everything shares the one Chromium CDP port.
   home.sessionVariables.CDP_PORT = "9222";
 
+  # ydotool client -> ydotoold socket. The ydotoold user service (below) creates
+  # the socket at %t/.ydotool_socket (= $XDG_RUNTIME_DIR); point the client at it
+  # so `ydotool` works from any shell without a per-invocation --socket-path.
+  # Enables the native Wayland "computer use" loop (grim = see, hyprctl + ydotool
+  # = act) documented in the linux-computer-use skill.
+  home.sessionVariables.YDOTOOL_SOCKET = "\${XDG_RUNTIME_DIR}/.ydotool_socket";
+
   # hints (keyboard-driven GUI navigation). Config, accessibility toggle and the
   # hintsd daemon service mirror hosts/linux/alarm — see there for the rationale
   # behind the role/state allow-lists. hintsd needs the user in the `input` group
@@ -847,6 +854,27 @@ in
         Type = "oneshot";
         Environment = [ "CDP_PORT=9222" ];
         ExecStart = "${superhumanBgpage}";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # ydotoold: virtual uinput device daemon that `ydotool` talks to over
+    # %t/.ydotool_socket. Runs as the user (not root) — /dev/uinput is reachable
+    # because `eh` is in the `input` group (the same grant xremap relies on). This
+    # is the input-synthesis half of the native Wayland "computer use" loop (see
+    # the linux-computer-use skill): grim = screenshot (see), hyprctl = window /
+    # system control, ydotool = keyboard + mouse (act). Client socket path is
+    # exported via home.sessionVariables.YDOTOOL_SOCKET above.
+    { ydotoold = {
+      Unit = {
+        Description = "ydotoold — uinput virtual device daemon for ydotool";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${pkgs.ydotool}/bin/ydotoold --socket-path=%t/.ydotool_socket";
+        Restart = "on-failure";
+        RestartSec = 2;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
