@@ -3,19 +3,23 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.38.0";
+  version = "0.38.2";
 
   # Prebuilt Bun binaries per platform. The linux-x64 asset is a normal
   # dynamically-linked ELF; on FHS hosts (Omarchy/Arch) it runs against system
   # glibc unpatched, so dontFixup is fine (would need autoPatchelf on NixOS).
   platforms = {
     aarch64-darwin = {
-      asset = "superhuman";
-      hash = "sha256-MJ5uoHHs9bhvUopLlyGbQ67IJsnqoEKq5PZklUQylAM=";
+      # The release CI (.github/workflows/release.yml) publishes the darwin
+      # binary as superhuman-darwin-arm64. (v0.38.0 also had a bare `superhuman`
+      # asset added out-of-band; new tag-triggered releases do not, so track the
+      # CI name.)
+      asset = "superhuman-darwin-arm64";
+      hash = "sha256-nZwdzIeXOi5sBdSjIc7Nv71678jjHQzxos3e6QBgMWU=";
     };
     x86_64-linux = {
       asset = "superhuman-linux-x64";
-      hash = "sha256-KQTYSGte6UpW1suhmw03KD5yg5fzpgFsnLGAGqPwyCY=";
+      hash = "sha256-d993LuHdPtBlB/uu1BoGIEWAqy/YeOc9Oxe0fPzgJ10=";
     };
   };
 

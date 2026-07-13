@@ -263,147 +263,58 @@ let
     Install.WantedBy = [ "timers.target" ];
   };
 
-  # superhuman-cli health fix (this Linux/omarchy extension deployment). The
-  # CLI's token-refresh/health path needs a CDP target of type "page" whose url
-  # contains BOTH "background_page.html" and "superhuman". The macOS
-  # Superhuman.app always spawns one; here Superhuman runs as the "Superhuman
-  # Mail" Chromium extension inside the browser-wide CDP endpoint (:9222) and
-  # that target never gets created — so `superhuman doctor` reports UNHEALTHY
-  # and silent token refresh fails. (Reads/search/send still work: they go via
-  # CDP + the extension's live local cache. `doctor --fix` is a macOS-only
-  # no-op — it shells out to osascript + /usr/bin/open Superhuman.app.)
+  # superhuman-cli TOKEN REFRESH — the ONE mechanism that keeps this deployment
+  # working. Context: there is NO Superhuman Linux desktop app. Superhuman here
+  # runs as the "Superhuman Mail" Chromium extension on the browser-wide CDP
+  # endpoint (:9222); the CLI's native background_page token-refresh path (which
+  # the macOS app provides via per-account background_page IFRAMES) does not
+  # exist, so silent refresh is structurally impossible and `superhuman doctor`
+  # reports UNHEALTHY. That "unhealthy" is COSMETIC and expected here.
   #
-  # Fix: open a BACKGROUND tab at mail.superhuman.com/background_page.html — the
-  # SPA redirects it to .../<account>/label/background_page.html, which contains
-  # both "background_page.html" and "superhuman", flipping doctor to healthy.
-  # Must be created via CDP `Target.createTarget {background:true}` over the
-  # browser websocket — NOT the HTTP `PUT /json/new`, which foregrounds a tab
-  # and would steal the user's focus. (This does not fix `superhuman sync`,
-  # which needs the Mac app's multi-account background_page iframes — redundant
-  # here anyway since the extension keeps the cache live.) Driven by the
-  # superhuman-bgpage oneshot + timer below.
+  # Symptom if nothing refreshes: provider tokens in
+  # ~/.config/superhuman-cli/tokens.json expire (~hourly) and never refresh, so
+  # any WRITE op (star/archive/send/draft) fails with "Authentication failed
+  # (run 'superhuman account auth')". READS still work (they scrape the live
+  # extension/cache), which is why this hides until a write is attempted.
   #
-  # Under Hyprland the created target opens as a plain top-level `chromium`
-  # window (not an --app window) on the active workspace — visible clutter. No
-  # static field distinguishes it from a normal browsing window (class and
-  # initialClass are both `chromium`), so a windowrule can't safely match it.
-  # Instead the script diffs `hyprctl clients` around the createTarget and moves
-  # the ONE new chromium window to a hidden special workspace
-  # (special:superhuman-bg) with movetoworkspacesilent. Stashed there it's fully
-  # off-screen but still a live, CDP-reachable page, so doctor stays healthy.
-  # (Verified: a window in a non-toggled special workspace keeps doctor green.)
-  superhumanBgpagePy = pkgs.writeText "superhuman-bgpage.py" ''
-    #!/usr/bin/env python3
-    """Ensure a Superhuman background_page CDP target exists (see default.nix)."""
-    import json
-    import os
-    import subprocess
-    import sys
-    import time
-    import urllib.request
-
-    PORT = os.environ.get("CDP_PORT", "9222")
-    BASE = f"http://127.0.0.1:{PORT}"
-    HYPRCTL = "/usr/bin/hyprctl"          # the running (system) compositor's client
-    STASH_WS = "special:superhuman-bg"    # hidden Hyprland workspace to park it in
-
-
-    def http_get_json(path):
-        with urllib.request.urlopen(BASE + path, timeout=5) as r:
-            return json.load(r)
-
-
-    def hypr_addrs():
-        """Set of current Hyprland window addresses, or None if unavailable."""
-        try:
-            out = subprocess.check_output([HYPRCTL, "clients", "-j"], timeout=5)
-            return {c["address"] for c in json.loads(out)}
-        except Exception:
-            return None
-
-
-    def stash_new_window(before):
-        """Park the newly-opened chromium window in the hidden special workspace."""
-        if before is None:
-            return
-        for _ in range(20):  # ~6s: the new window can take a moment to map
-            time.sleep(0.3)
-            try:
-                clients = json.loads(
-                    subprocess.check_output([HYPRCTL, "clients", "-j"], timeout=5))
-            except Exception:
-                return
-            new = [c for c in clients
-                   if c["address"] not in before and c.get("class") == "chromium"]
-            if new:
-                addr = new[0]["address"]
-                try:
-                    subprocess.run(
-                        [HYPRCTL, "dispatch", "movetoworkspacesilent",
-                         f"{STASH_WS},address:{addr}"],
-                        timeout=5, check=False)
-                except Exception:
-                    pass
-                return
-
-
-    # 1. If the browser / CDP endpoint is unreachable, there's nothing to do.
-    try:
-        targets = http_get_json("/json")
-    except Exception:
-        sys.exit(0)
-
-
-    def is_bgpage(t):
-        u = t.get("url", "")
-        return t.get("type") == "page" and "background_page.html" in u and "superhuman" in u
-
-
-    # 2. Idempotent: a matching target already exists -> done (no dupes).
-    if any(is_bgpage(t) for t in targets):
-        sys.exit(0)
-
-    # 3. Only proceed if Superhuman is actually running (a mail.superhuman.com
-    #    page target is present); otherwise don't spawn a stray tab.
-    if not any(
-        t.get("type") == "page" and "mail.superhuman.com" in t.get("url", "")
-        for t in targets
-    ):
-        sys.exit(0)
-
-    # 4. Snapshot Hyprland windows, open the background tab via the browser
-    #    websocket (Target.createTarget), then stash the new window off-screen.
-    before = hypr_addrs()
-    try:
-        ver = http_get_json("/json/version")
-        ws_url = ver["webSocketDebuggerUrl"]
-    except Exception:
-        sys.exit(0)
-
-    try:
-        import websocket  # websocket-client
-        ws = websocket.create_connection(ws_url, timeout=10)
-        ws.send(json.dumps({
-            "id": 1,
-            "method": "Target.createTarget",
-            "params": {
-                "url": "https://mail.superhuman.com/background_page.html",
-                "background": True,
-            },
-        }))
-        try:
-            ws.recv()
-        except Exception:
-            pass
-        ws.close()
-    except Exception:
-        sys.exit(0)
-
-    stash_new_window(before)
-    sys.exit(0)
-  '';
-  superhumanBgpage = pkgs.writeShellScript "superhuman-bgpage" ''
-    exec ${pkgs.python3.withPackages (ps: [ ps.websocket-client ])}/bin/python3 ${superhumanBgpagePy} "$@"
+  # Fix: `superhuman account auth` refreshes NON-INTERACTIVELY. As of
+  # superhuman-cli v0.38.2 (see modules/shared/superhuman-cli.nix) it reads +
+  # refreshes both tokens directly from the extension service worker's in-memory
+  # Credential (credential.getAuthDataInBackgroundAsync({refresh:true}) — the
+  # extension's own sessions.getTokens flow): NO page navigation/reload, NO
+  # focus steal, NO hang. It exits cleanly in <1s. (Earlier versions took a
+  # focus-stealing path that reloaded the user's live Superhuman tab on every
+  # run and then hung — which is why this script used to `timeout`-wrap the call
+  # and swallow the exit code. v0.38.2 removed the need for both.) Guarded to
+  # only run when Superhuman is actually live (CDP up + a mail.superhuman.com
+  # page) so it never thrashes or clobbers creds when logged out. Driven by the
+  # superhuman-auth-refresh oneshot + ~45min timer below (tokens last ~1h).
+  #
+  # HISTORY: an earlier superhuman-bgpage helper (a background CDP tab at
+  # mail.superhuman.com/background_page.html, stashed in a hidden Hyprland
+  # special workspace) was added first, to flip `doctor` to "healthy". It was
+  # REMOVED as redundant once we proved — with every background_page target
+  # closed and the bgpage timer stopped — that `account auth` still refreshes
+  # BOTH accounts' tokens from expired→valid AND a full draft create/delete
+  # write round-trip succeeds. bgpage only satisfied doctor's cosmetic URL check
+  # and never sourced tokens; auth-refresh alone is sufficient. (If you ever
+  # want doctor to read "healthy" again for looks, re-add the tab — but it buys
+  # nothing functional.)
+  superhumanAuthRefresh = pkgs.writeShellScript "superhuman-auth-refresh" ''
+    set -uo pipefail
+    PORT="''${CDP_PORT:-9222}"
+    # Guard: only refresh when Superhuman is actually live. If the CDP endpoint
+    # is down or there's no mail.superhuman.com page target, exit 0 (logged out
+    # / browser closed) — never clobber creds or spin when there's no session.
+    targets=$(${pkgs.curl}/bin/curl -sf "http://127.0.0.1:$PORT/json" 2>/dev/null) || exit 0
+    printf '%s' "$targets" | ${pkgs.python3}/bin/python3 -c \
+      'import sys, json; sys.exit(0 if any(t.get("type") == "page" and "mail.superhuman.com" in t.get("url", "") for t in json.load(sys.stdin)) else 1)' \
+      || exit 0
+    # Refresh tokens non-interactively (v0.38.2 in-memory path — no reload, no
+    # hang, exits in <1s). No `timeout`/`|| true`: let real failures fail the
+    # unit so they surface in the journal (TimeoutStartSec on the unit is the
+    # only backstop). `exec` so the CLI's exit status propagates.
+    exec env CDP_PORT="$PORT" ${pkgs.superhuman-cli}/bin/superhuman account auth
   '';
 in
 {
@@ -840,20 +751,26 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # superhuman-bgpage: keep a Superhuman background_page CDP target alive so
-    # `superhuman doctor` stays healthy and silent token refresh works (see the
-    # superhumanBgpage let-binding). Oneshot; the timer below reruns it. No-op
-    # when the browser is down or Superhuman isn't running.
-    { superhuman-bgpage = {
+    # superhuman-auth-refresh: refresh superhuman-cli OAuth tokens so WRITE ops
+    # (star/archive/send/draft) keep working. This is the ONLY superhuman
+    # keep-alive — see the superhumanAuthRefresh let-binding (the earlier
+    # superhuman-bgpage helper was removed as redundant). Oneshot; ~45min timer
+    # below (tokens last ~1h). With v0.38.2 the refresh is in-memory, exits in
+    # <1s and never reloads a tab; TimeoutStartSec below is just a safety ceiling
+    # (if a future build ever hangs, the unit fails loudly instead of wedging).
+    # No-op when logged out.
+    { superhuman-auth-refresh = {
       Unit = {
-        Description = "Ensure a Superhuman background_page CDP target exists";
+        Description = "Refresh superhuman-cli OAuth tokens (keeps writes working)";
         After = [ "graphical-session.target" ];
         PartOf = [ "graphical-session.target" ];
       };
       Service = {
         Type = "oneshot";
         Environment = [ "CDP_PORT=9222" ];
-        ExecStart = "${superhumanBgpage}";
+        # Safety ceiling only — the v0.38.2 in-memory refresh exits in <1s.
+        TimeoutStartSec = 90;
+        ExecStart = "${superhumanAuthRefresh}";
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
@@ -891,13 +808,15 @@ in
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
-    # Periodically re-ensure the Superhuman background_page CDP target (see
-    # superhuman-bgpage.service). ~2min after boot, then every ~3min.
-    { superhuman-bgpage = {
-      Unit.Description = "Periodically ensure a Superhuman background_page CDP target exists";
+    # Periodically refresh superhuman-cli OAuth tokens (see
+    # superhuman-auth-refresh.service). Tokens last ~1h; refresh every ~45min
+    # with a small headroom so writes never hit an expired token. ~4min after
+    # boot.
+    { superhuman-auth-refresh = {
+      Unit.Description = "Periodically refresh superhuman-cli OAuth tokens";
       Timer = {
-        OnBootSec = "2min";
-        OnUnitActiveSec = "3min";
+        OnBootSec = "4min";
+        OnUnitActiveSec = "45min";
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
