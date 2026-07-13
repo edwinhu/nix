@@ -47,7 +47,17 @@ fi
 
 # --- build unattend ISO --------------------------------------------------
 stage="$(mktemp -d)"
-cp "$here/autounattend.xml" "$stage/autounattend.xml"
+# autounattend.xml is authored processorArchitecture="arm64" (the Mac guest).
+# Windows Setup SILENTLY IGNORES any component whose processorArchitecture != the
+# running arch — so on x86_64 the whole windowsPE pass is discarded and Setup
+# drops to the interactive product-key/disk wizard. Rewrite arch -> amd64 for the
+# x64 guest. (This was THE bug that made the x86 install non-unattended.)
+if [ "$arch" = "x86_64" ]; then
+  sed 's/processorArchitecture="arm64"/processorArchitecture="amd64"/g' \
+    "$here/autounattend.xml" > "$stage/autounattend.xml"
+else
+  cp "$here/autounattend.xml" "$stage/autounattend.xml"
+fi
 cp "$here/guest-setup.ps1"  "$stage/guest-setup.ps1"
 # render_docx.ps1 lives one dir up in the repo, or at the nix-deployed path.
 if   [ -f "$here/../render_docx.ps1" ]; then cp "$here/../render_docx.ps1" "$stage/render_docx.ps1"
