@@ -358,6 +358,25 @@ in
         ${pkgs.bash}/bin/bash "$HOME/dotfiles/scripts/setup-claude-symlinks.sh" || true
     '';
 
+    # swlinux dictation models (large, non-store) — fetch once to
+    # ~/.local/share/swlinux/models. Parakeet v3 STT + the open Qwen2.5-1.5B
+    # cleanup fallback. The tuned cleanup model (s1-mini.gguf, private) is placed
+    # out-of-band and pointed at by the daemon's SWLINUX_LOCAL_MODEL below.
+    activation.swlinuxModels = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      MODELS="$HOME/.local/share/swlinux/models"
+      $DRY_RUN_CMD mkdir -p "$MODELS"
+      if [ ! -d "$MODELS/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" ]; then
+        $DRY_RUN_CMD ${pkgs.curl}/bin/curl -fL --retry 3 -o "$MODELS/p.tar.bz2" \
+          https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 \
+          && $DRY_RUN_CMD ${pkgs.gnutar}/bin/tar -xjf "$MODELS/p.tar.bz2" -C "$MODELS" \
+          && $DRY_RUN_CMD rm -f "$MODELS/p.tar.bz2"
+      fi
+      if [ ! -f "$MODELS/qwen2.5-1.5b-instruct-q4.gguf" ]; then
+        $DRY_RUN_CMD ${pkgs.curl}/bin/curl -fL --retry 3 -o "$MODELS/qwen2.5-1.5b-instruct-q4.gguf" \
+          https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
+      fi
+    '';
+
     # Patched brscan5 model tables at a stable home path; /etc/opt/brother is
     # symlinked here by the one-time sudo step (see home.packages above). Stable
     # across brscan5 updates — the symlink target (home path) never changes.
@@ -643,6 +662,29 @@ in
       Service = {
         Type = "simple";
         ExecStart = "${xremapHypr}/bin/xremap --watch %h/.config/xremap/config.yml";
+        Restart = "on-failure";
+        RestartSec = 2;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # swlinux dictation daemon: Parakeet STT + s1-mini cleanup, capturing the
+    # OBSBOT mic via the system-default source (SWLINUX_MIC=default — the
+    # "builtin" auto-pick would grab the empty analog jack on this desktop).
+    # Keybinds (SUPER+;) live in dotfiles' hypr bindings.conf; models are fetched
+    # by activation.swlinuxModels. s1-mini.gguf is the private tuned cleanup model
+    # (placed out-of-band); if absent, cleanup is skipped (raw still works).
+    { swlinux = {
+      Unit = {
+        Description = "swlinux dictation daemon (Parakeet STT + s1-mini cleanup)";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${pkgs.swlinux}/bin/swlinux daemon";
+        Environment = [
+          "SWLINUX_MIC=default"
+          "SWLINUX_LOCAL_MODEL=${config.home.homeDirectory}/.local/share/swlinux/models/s1-mini.gguf"
+        ];
         Restart = "on-failure";
         RestartSec = 2;
       };
