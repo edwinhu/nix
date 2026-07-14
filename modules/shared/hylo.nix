@@ -20,10 +20,15 @@
 # there AND passed to curl explicitly. The returned bytes are identical to the
 # browser download, so the hash is stable.
 #
-# One-time host setup (needs root, not managed here):
-#   1. daemon netrc — add:  machine api.github.com login <PAT> password x-oauth-basic
-#   2. /etc/nix/nix.custom.conf — add:  extra-sandbox-paths = /nix/var/determinate/netrc
-#      (so the shell-curl builder can read the netrc inside the sandbox), then
+# One-time host setup (needs root, not managed here). NB: do NOT reuse
+# /nix/var/determinate/netrc — Determinate regenerates that file on every
+# `nix-daemon` restart and drops any hand-added lines. Use a dedicated file:
+#   1. /etc/nix/github-netrc (mode 644 so the in-sandbox build user can read the
+#      bind mount) containing:
+#        machine api.github.com login <PAT> password x-oauth-basic
+#   2. /etc/nix/nix.custom.conf — add:
+#        extra-sandbox-paths = /etc/nix/github-netrc
+#      (so the shell-curl builder can read it inside the FOD sandbox), then
 #      restart nix-daemon.
 #
 # Update flow: bump `version`, rebuild the AppImage (`bun run dist --linux` in
@@ -42,7 +47,7 @@ let
     url = "https://api.github.com/repos/edwinhu/hylo/releases/assets/${assetId}";
     curlOptsList = [
       "-H" "Accept: application/octet-stream"
-      "--netrc-file" "/nix/var/determinate/netrc"
+      "--netrc-file" "/etc/nix/github-netrc"
     ];
     hash = "sha256-jxj/HNYUTq+BsN5V9gwTfVyT/jzyDQNIp7IvjmtmcPk=";
   };
