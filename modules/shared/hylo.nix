@@ -14,10 +14,17 @@
 # edwinhu/hylo is PRIVATE, so the plain releases/download URL 404s for an
 # unauthenticated fetcher. Instead we hit the REST asset endpoint with
 # `Accept: application/octet-stream`; the Nix daemon authenticates via the
-# github.com/api.github.com entry in its netrc (netrc-file in nix.conf). The
-# returned bytes are identical to the browser download, so the hash is stable.
-# One-time host setup (needs root, not managed here): add to the daemon netrc
-#   machine api.github.com login <PAT-or-gh-token> password x-oauth-basic
+# api.github.com entry in its netrc. The custom Accept header forces
+# pkgs.fetchurl onto its shell-curl builder (Nix's builtin:fetchurl can't set
+# headers), which runs in the FOD sandbox — so the netrc must be reachable
+# there AND passed to curl explicitly. The returned bytes are identical to the
+# browser download, so the hash is stable.
+#
+# One-time host setup (needs root, not managed here):
+#   1. daemon netrc — add:  machine api.github.com login <PAT> password x-oauth-basic
+#   2. /etc/nix/nix.custom.conf — add:  extra-sandbox-paths = /nix/var/determinate/netrc
+#      (so the shell-curl builder can read the netrc inside the sandbox), then
+#      restart nix-daemon.
 #
 # Update flow: bump `version`, rebuild the AppImage (`bun run dist --linux` in
 # the hylo checkout), `gh release upload`, grab the new asset id
@@ -33,7 +40,10 @@ let
   src = fetchurl {
     name = "hylo-${version}.AppImage";
     url = "https://api.github.com/repos/edwinhu/hylo/releases/assets/${assetId}";
-    curlOptsList = [ "-H" "Accept: application/octet-stream" ];
+    curlOptsList = [
+      "-H" "Accept: application/octet-stream"
+      "--netrc-file" "/nix/var/determinate/netrc"
+    ];
     hash = "sha256-jxj/HNYUTq+BsN5V9gwTfVyT/jzyDQNIp7IvjmtmcPk=";
   };
 
