@@ -85,6 +85,12 @@ with pkgs; [
   poppler-utils   # pdftoppm etc. — PDF previews for yazi
   elio            # elio-fm file manager (gh:elio-fm/elio; see modules/shared/elio.nix)
 
+  # PDF reader with persistent highlights + Readwise sync (gh:edwinhu/hylo,
+  # release AppImage wrapped in nixGL; see modules/shared/hylo.nix). Registered
+  # as the default application/pdf handler via xdg.desktopEntries.hylo +
+  # `xdg-mime default hylo.desktop application/pdf`.
+  hylo
+
   # Typesetting
   tectonic
   typst

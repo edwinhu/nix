@@ -874,6 +874,28 @@ in
       mimeType = [ "x-scheme-handler/beeper" ];
     };
 
+    # hylo PDF reader (gh:edwinhu/hylo). Declared here rather than taken from
+    # the AppImage's bundled .desktop so Exec points at the nixGL-wrapped `hylo`
+    # on PATH and passes a local path with %f — the main process resolves the
+    # opened file from argv via existsSync, so a file:// URI from %U would miss.
+    # StartupWMClass=hylo matches the Electron window's app_id for Hyprland
+    # window association. Made the default application/pdf handler by the
+    # `xdg-mime default` line (mimeapps.list is a plain file here, not
+    # home-managed, so this only rewrites the one association).
+    hylo = {
+      name = "hylo";
+      genericName = "PDF Reader";
+      comment = "PDF reader with persistent highlights and Readwise sync";
+      exec = "hylo %f";
+      terminal = false;
+      type = "Application";
+      icon = "hylo";
+      categories = [ "Office" "Viewer" ];
+      mimeType = [ "application/pdf" ];
+      startupNotify = true;
+      settings.StartupWMClass = "hylo";
+    };
+
     # Superhuman as a Chromium app on the shared Default profile (where you're
     # already logged in). CDP is enabled browser-wide via chromium-flags.conf
     # below (one endpoint on :9222), so superhuman-cli attaches there — no

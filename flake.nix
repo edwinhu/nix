@@ -400,6 +400,27 @@
                   meta = base.meta or {};
                   passthru = { unwrapped = base; };
                 };
+                # hylo — Edwin's own Electron PDF reader (gh:edwinhu/hylo),
+                # fetched as the release AppImage (see modules/shared/hylo.nix).
+                # Same GL story as beeper/stremio/limux: wrap bin/hylo in
+                # nixGLIntel so Chromium/Mesa resolve against system GL on
+                # non-NixOS (Omarchy has no /run/opengl-driver; nixGLIntel drives
+                # AMD too), and force --no-sandbox — the store chrome-sandbox is
+                # not setuid. The wrapped `hylo` on PATH is what xdg-open (via
+                # xdg.desktopEntries.hylo) invokes as the default PDF handler.
+                hylo = let
+                  hyloPkg = prev.callPackage ./modules/shared/hylo.nix {};
+                in prev.symlinkJoin {
+                  name = "hylo-nixgl-${hyloPkg.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "hylo" ''
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${hyloPkg}/bin/hylo --no-sandbox "$@"
+                    '')
+                    hyloPkg
+                  ];
+                  meta = hyloPkg.meta or {};
+                  passthru = { unwrapped = hyloPkg; };
+                };
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
@@ -489,6 +510,14 @@ EOF
                     # first-path-wins semantics; share/{applications,icons} come
                     # unchanged from prev.beeper.
                     (prev.writeShellScriptBin "beeper" ''
+                      # Force TZ into the process that enters beeper's bwrap FHS sandbox.
+                      # Beeper's Chromium/ICU can't derive the zone name from the sandbox's
+                      # /etc/localtime (symlinked to /.host-etc/localtime, which doesn't match
+                      # ICU's .../zoneinfo/ZONE pattern), so it falls back to UTC and shows
+                      # timestamps in the wrong tz. Setting TZ makes ICU use its embedded zone
+                      # rules directly. Read from /etc/localtime so it tracks tz changes.
+                      # (Upstream: NixOS/nixpkgs#505374, dup of #499098.)
+                      export TZ="''${TZ:-$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')}"
                       exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${prev.beeper}/bin/beeper "$@"
                     '')
                     prev.beeper
