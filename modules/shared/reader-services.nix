@@ -264,11 +264,13 @@ in
     };
 
     systemd.user.timers.paperpile-readwise-sync = lib.mkIf cfg.enablePaperpile {
-      Unit.Description = "Paperpile → Readwise sync timer (every 3h + shortly after login)";
+      Unit.Description = "Paperpile → Readwise sync timer (once daily ~8am)";
       Timer = {
-        OnStartupSec = "3min";
-        OnUnitActiveSec = "3h";
-        Persistent = false;
+        # Highlights aren't time-sensitive and Edwin annotates occasionally, so
+        # once a day is plenty. Persistent=true runs a missed occurrence at the
+        # next boot (machine was off at 08:00).
+        OnCalendar = "*-*-* 08:00:00";
+        Persistent = true;
       };
       Install.WantedBy = [ "timers.target" ];
     };
@@ -394,7 +396,8 @@ in
         Label = "com.paperpile.readwise-sync";
         ProgramArguments = [ "${paperpileRunner}" ];
         WorkingDirectory = home;
-        StartInterval = sweepInterval;
+        # Once daily ~8am (matches the Linux OnCalendar); RunAtLoad covers login.
+        StartCalendarInterval = [ { Hour = 8; Minute = 0; } ];
         RunAtLoad = true;
         StandardOutPath = "/tmp/paperpile-readwise.log";
         StandardErrorPath = "/tmp/paperpile-readwise.log";
