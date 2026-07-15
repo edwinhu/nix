@@ -961,7 +961,7 @@ in
     calculator = {
       name = "Calculator (Numr)";
       comment = "Numr - vim-style calculator";
-      exec = "xdg-terminal-exec --app-id=TUI.tile -e ${pkgs.numr}/bin/numr";
+      exec = "xdg-terminal-exec --app-id=TUI.float -e ${pkgs.numr}/bin/numr";
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Calculator.svg";
