@@ -1,5 +1,5 @@
-# Hyper (F13) leader -> limux's default combos. Global (no app filter) for
-# reliability — the combos are limux-specific so they're inert elsewhere.
+# Hyper (F13) leader. Global (no app filter) for reliability — the limux combos
+# are limux-specific so they're inert elsewhere; F13-v runs vimium-toggle.
 virtual_modifiers:
   - F13
 keymap:
@@ -31,3 +31,7 @@ keymap:
       F13-RightBrace: Ctrl-Alt-Shift-Right
       F13-b: Ctrl-Alt-m
       F13-f: Ctrl-Alt-f
+      # Hyper+V: toggle Vimium ("vim mode") globally on/off. Not a limux combo —
+      # runs the nix vimium-toggle binary directly (absolute store path injected
+      # by the omarchy host's xdg.configFile). See vimiumToggle in default.nix.
+      F13-v: { launch: ["@VIMIUM_TOGGLE@"] }

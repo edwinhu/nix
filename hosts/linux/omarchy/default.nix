@@ -704,7 +704,11 @@ in
   # Hyper(F13) leader remaps for limux — consumed by the xremap service below.
   # F13+<key> emits limux's stock Ctrl+Alt(+Shift) combo (limux can't bind F13
   # itself). Hold F13 like Cmd/Shift while tapping the key.
-  xdg.configFile."xremap/config.yml".source = ./files/xremap.yml;
+  # Inject vimium-toggle's absolute store path so xremap's `launch` action
+  # resolves it without depending on the systemd user service's PATH.
+  xdg.configFile."xremap/config.yml".text =
+    builtins.replaceStrings [ "@VIMIUM_TOGGLE@" ] [ "${vimiumToggle}/bin/vimium-toggle" ]
+      (builtins.readFile ./files/xremap.yml);
 
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
