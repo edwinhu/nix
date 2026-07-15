@@ -349,11 +349,11 @@
     "joycon-pad-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1784144517,
-        "narHash": "sha256-OsuNqreIlidCfFYJ7jswye9rzlWttedexQCVW3bg6UA=",
+        "lastModified": 1784146990,
+        "narHash": "sha256-fObpTfCjy+kT1xYkCBFyCLGhkA+BfqdG81+4742Ywik=",
         "ref": "refs/heads/master",
-        "rev": "4577fff8a203f4799ed724805437065cf208082b",
-        "revCount": 5,
+        "rev": "c74c6e49707df9337e251c2e6e4e966b31551a80",
+        "revCount": 6,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/joycon-pad.git"
       },
