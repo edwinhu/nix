@@ -602,6 +602,16 @@ in
   # SECURITY: this leaves a CDP port open on localhost whenever Chromium runs;
   # any local process can drive the browser. Acceptable on a personal machine;
   # scoped to this host only (not in shared dotfiles).
+  #
+  # Extensions are ALSO force-installed via a root-owned managed policy (same
+  # /etc scope, so not declarative here) — Chromium sync is off, so this is the
+  # only way the profile's extensions come back on a fresh machine. They
+  # auto-install + auto-update from the Web Store and can't be removed by hand
+  # while the policy is present. IDs = 1Password, Paperpile, Vimium, Superhuman,
+  # Readwise (copy-url is separate — loaded unpacked via --load-extension below):
+  #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-extensions-policy.json \
+  #     /etc/chromium/policies/managed/extensions.json
+  # Verify: chrome://policy (Reload policies) shows ExtensionInstallForcelist.
   xdg.configFile."chromium-flags.conf" = {
     force = true;
     text = ''
@@ -613,6 +623,22 @@ in
       --remote-allow-origins=*
     '';
   };
+
+  # Seed the Vimium "open popup" shortcut (Alt+V) into Chromium's Preferences.
+  # Chromium keeps extension keyboard shortcuts in Default/Preferences ->
+  # extensions.commands (plain, non-HMAC JSON; no managed-policy or manifest
+  # path exists for it), so we merge the entry in on activation. Alt+V fires
+  # Vimium's `_execute_action` = the browser-action popup, i.e. the per-site
+  # enable/disable + excluded-keys UI — an opt-in "vim mode" toggle for any page.
+  # The script is idempotent and no-ops if Chromium is running (it would
+  # otherwise clobber our edit on exit) or if Vimium is already bound by hand.
+  home.activation.seedVimiumShortcut = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    if ${pkgs.procps}/bin/pgrep -x chromium >/dev/null 2>&1; then
+      echo "seed-vimium-shortcut: Chromium running; skipping (rerun a rebuild after quitting it)"
+    else
+      $DRY_RUN_CMD ${pkgs.python3}/bin/python3 ${./files/seed-vimium-shortcut.py} || true
+    fi
+  '';
 
   # Machine-specific Hyprland/audio config, managed here (not shared dotfiles)
   # because it's tied to THIS box's hardware — the DCN31 GPU + BenQ display and
