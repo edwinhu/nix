@@ -421,6 +421,41 @@
                   meta = hyloPkg.meta or {};
                   passthru = { unwrapped = hyloPkg; };
                 };
+                # Zoom (proprietary Qt/CEF app, bwrap-sandboxed in nixpkgs).
+                # Same GL story as beeper/stremio/hylo on non-NixOS: wrap
+                # bin/zoom in nixGLIntel so Mesa/EGL resolve against system GL
+                # (Omarchy has no /run/opengl-driver; nixGLIntel drives AMD too).
+                # The bwrap launcher doesn't --clearenv, so nixGL's GL env is
+                # inherited by the child that creates the GL context. Zoom.desktop
+                # uses a bare `Exec=zoom`, so the wrapped `zoom` on PATH is what
+                # the launcher and zoommtg:// join-links invoke — no desktop
+                # rewrite needed. Wayland screen-share works via the system
+                # xdg-desktop-portal-hyprland.
+                zoom-us = let
+                  base = prev.zoom-us;
+                in prev.symlinkJoin {
+                  name = "zoom-us-nixgl-${base.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "zoom" ''
+                      # Force Qt's xcb platform onto EGL. nixGLIntel provides a
+                      # working EGL, but Zoom's Qt defaults to GLX, which fails
+                      # under XWayland + nix GL ("Could not initialize GLX" ->
+                      # ANGLE glXQueryExtensionsString NULL -> SIGABRT). xcb_egl
+                      # routes GL context creation through EGL instead and Zoom
+                      # starts cleanly.
+                      export QT_XCB_GL_INTEGRATION="''${QT_XCB_GL_INTEGRATION:-xcb_egl}"
+                      # HiDPI: under XWayland the X screen reports 1x, so Zoom's
+                      # Qt UI renders tiny on Omarchy's scale-2 4K panel. Force a
+                      # 2x Qt scale to match the compositor (integer scale, so 2
+                      # is exact — no blur). Override-able via the env.
+                      export QT_SCALE_FACTOR="''${QT_SCALE_FACTOR:-2}"
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/zoom "$@"
+                    '')
+                    base
+                  ];
+                  meta = base.meta or {};
+                  passthru = { unwrapped = base; };
+                };
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
