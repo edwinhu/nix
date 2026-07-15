@@ -2,7 +2,7 @@
 """Toggle Vimium globally on/off by flipping a {pattern:'*', passKeys:''} exclusion
 rule in chrome.storage.sync, written through a Vimium content-script isolated world
 in any loaded tab (independent of the dormant MV3 service worker)."""
-import json, sys, urllib.request, websocket
+import json, subprocess, sys, urllib.request, websocket
 
 VIMIUM = "dbepggeogbaibhgnhhndojpepiihcmeb"
 PORT = 9222
@@ -138,7 +138,20 @@ def main():
         if state is not None:
             # Make it take effect live on every reachable tab (best-effort).
             nudged = sum(nudge(p["webSocketDebuggerUrl"]) for p in pages)
-            print(f"Vimium: {state}  ({nudged}/{len(pages)} tabs refreshed live)")
+            msg = f"Vimium: {state}  ({nudged}/{len(pages)} tabs refreshed live)"
+            print(msg)
+            # Visible feedback — a toggle via exclusion rules has no in-page
+            # indicator, so surface the new state via the notification daemon.
+            # The synchronous hint makes repeated toggles replace, not stack.
+            try:
+                subprocess.run(
+                    ["notify-send", "-a", "vimium", "-u", "low", "-t", "1200",
+                     "-h", "string:x-canonical-private-synchronous:vimium",
+                     f"Vimium {state}",
+                     f"vim mode {'enabled' if state == 'ON' else 'disabled'}"],
+                    timeout=3)
+            except Exception:
+                pass
             return 0
     print(f"vimium-toggle: could not reach a Vimium content script "
           f"(last error: {last_err})", file=sys.stderr)

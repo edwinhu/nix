@@ -142,7 +142,10 @@ let
   # pinned here so it never depends on system site-packages.
   vimiumToggle = pkgs.writeShellApplication {
     name = "vimium-toggle";
-    runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.websocket-client ])) ];
+    runtimeInputs = [
+      (pkgs.python3.withPackages (ps: [ ps.websocket-client ]))
+      pkgs.libnotify  # notify-send: visible ON/OFF feedback (toggle is otherwise silent)
+    ];
     text = ''exec python3 ${./files/vimium-toggle.py} "$@"'';
   };
 
