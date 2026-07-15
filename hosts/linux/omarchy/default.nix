@@ -277,18 +277,35 @@ let
   # (run 'superhuman account auth')". READS still work (they scrape the live
   # extension/cache), which is why this hides until a write is attempted.
   #
-  # Fix: `superhuman account auth` refreshes NON-INTERACTIVELY. As of
-  # superhuman-cli v0.38.2 (see modules/shared/superhuman-cli.nix) it reads +
+  # Fix: `superhuman account auth` refreshes NON-INTERACTIVELY. It reads +
   # refreshes both tokens directly from the extension service worker's in-memory
   # Credential (credential.getAuthDataInBackgroundAsync({refresh:true}) — the
   # extension's own sessions.getTokens flow): NO page navigation/reload, NO
-  # focus steal, NO hang. It exits cleanly in <1s. (Earlier versions took a
-  # focus-stealing path that reloaded the user's live Superhuman tab on every
-  # run and then hung — which is why this script used to `timeout`-wrap the call
-  # and swallow the exit code. v0.38.2 removed the need for both.) Guarded to
-  # only run when Superhuman is actually live (CDP up + a mail.superhuman.com
-  # page) so it never thrashes or clobbers creds when logged out. Driven by the
-  # superhuman-auth-refresh oneshot + ~45min timer below (tokens last ~1h).
+  # focus steal. When the extension service worker is live it exits in <1s.
+  # Guarded to only run when Superhuman is actually live (CDP up + a
+  # mail.superhuman.com page) so it never thrashes or clobbers creds when logged
+  # out. Driven by the superhuman-auth-refresh oneshot + ~45min timer below
+  # (tokens last ~1h).
+  #
+  # WHY THE CALL IS `timeout`-BOUNDED (do not remove): the in-memory path
+  # (cmdAuth -> connectToSuperhumanChrome -> listAccountsChrome) attaches to the
+  # Superhuman extension's MV3 service_worker and `Runtime.evaluate`s in it to
+  # read accounts. MV3 service workers idle out, and Chromium does NOT reliably
+  # start a dormant/wedged extension SW on a CDP attach — when it's down, both
+  # the CDP attach AND the evaluate block with NO internal timeout in the CLI
+  # (v0.38.3), so `account auth` hangs indefinitely. Unbounded, that runs to the
+  # unit's TimeoutStartSec and marks the unit FAILED — which surfaces as a
+  # `nix run .#build-switch` failure (home-manager restarts this oneshot on
+  # switch; if the SW happens to be dormant at that moment the switch reports a
+  # failed service). A hang is the SAME class as the logged-out no-op the guard
+  # above already skips ("no reachable sync target"), so we bound the call and
+  # treat a timeout as a clean skip (exit 0); the next timer fire retries when
+  # the SW is awake again (normal during active Superhuman use). A GENUINE auth
+  # failure exits non-zero FAST (not via the timeout) and still fails the unit
+  # loudly, so real breakage still surfaces in the journal. (An earlier revision
+  # used `exec ... account auth` with no bound on the theory that v0.38.2 always
+  # exited in <1s; 0.38.3's service_worker path can block, so the bound is back —
+  # but now it skips-on-hang instead of failing, and never reloads the tab.)
   #
   # HISTORY: an earlier superhuman-bgpage helper (a background CDP tab at
   # mail.superhuman.com/background_page.html, stashed in a hidden Hyprland
@@ -310,11 +327,21 @@ let
     printf '%s' "$targets" | ${pkgs.python3}/bin/python3 -c \
       'import sys, json; sys.exit(0 if any(t.get("type") == "page" and "mail.superhuman.com" in t.get("url", "") for t in json.load(sys.stdin)) else 1)' \
       || exit 0
-    # Refresh tokens non-interactively (v0.38.2 in-memory path — no reload, no
-    # hang, exits in <1s). No `timeout`/`|| true`: let real failures fail the
-    # unit so they surface in the journal (TimeoutStartSec on the unit is the
-    # only backstop). `exec` so the CLI's exit status propagates.
-    exec env CDP_PORT="$PORT" ${pkgs.superhuman-cli}/bin/superhuman account auth
+    # Refresh tokens non-interactively (in-memory extension path — no reload, no
+    # focus steal). Bounded by `timeout` (see the block comment above): a hang
+    # means the extension service worker is dormant/unreachable, so skip cleanly
+    # (exit 0) and let the next timer fire retry. `timeout` returns 124 on the
+    # deadline; a real auth error returns the CLI's own fast non-zero and is
+    # propagated so the unit fails loudly. 20s sits well under TimeoutStartSec=90.
+    timeout 20 env CDP_PORT="$PORT" ${pkgs.superhuman-cli}/bin/superhuman account auth
+    rc=$?
+    if [ "$rc" -eq 124 ]; then
+      echo "superhuman-auth-refresh: refresh timed out after 20s (extension" \
+           "service worker dormant / no reachable sync target); skipping this" \
+           "cycle — tokens will refresh on the next fire when Superhuman is live."
+      exit 0
+    fi
+    exit "$rc"
   '';
 in
 {
