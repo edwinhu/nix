@@ -130,15 +130,18 @@ let
     '';
   };
 
-  # vimium-toggle: one-key GLOBAL Vimium on/off, bound to Alt+V in dotfiles'
-  # hypr/bindings.conf (Chrome exposes no enable/disable shortcut and Vimium's
-  # only command is its popup, so a Hyprland bind drives this instead). It flips
-  # Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}` absolute-exclusion
-  # rule in chrome.storage.sync — exactly what the popup's "disable" writes —
-  # reached over CDP (:9222) through a Vimium content-script isolated world in
-  # any open tab. The MV3 service worker is usually dormant, so the script never
-  # relies on it; it also skips wedged tabs. Effect lands on each page's next
-  # load/navigation, same as Vimium's popup. python3 + websocket-client are
+  # vimium-toggle: toggle Vimium for the CURRENT (focused) tab's site, bound to
+  # Hyper(F13)+V via the xremap config below (Chrome exposes no enable/disable
+  # shortcut and Vimium's only command is its popup, so xremap drives this). It
+  # finds the focused tab via document.hasFocus(), then flips Vimium's OWN
+  # mechanism for that site: a `{pattern:"https?://host/*", passKeys:""}`
+  # absolute-exclusion rule in chrome.storage.sync — exactly what the popup's
+  # "disable" writes — reached over CDP (:9222) through a Vimium content-script
+  # isolated world (the MV3 service worker is usually dormant, so we never rely
+  # on it). A no-op history.replaceState then makes it take effect live (no
+  # reload) via Vimium's own onHistoryStateUpdated re-check path. Only the
+  # focused tab is touched and all probing is concurrent, so it stays fast
+  # regardless of how many tabs are open. python3 + websocket-client + libnotify
   # pinned here so it never depends on system site-packages.
   vimiumToggle = pkgs.writeShellApplication {
     name = "vimium-toggle";
