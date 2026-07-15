@@ -92,6 +92,30 @@ def toggle_via(tab):
     return state
 
 
+def nudge(ws_url):
+    """Fire a no-op history update in a tab's main world so Vimium re-checks its
+    enabled state live (no reload). replaceState(sameState, sameURL) changes
+    nothing the page can observe (it does not fire popstate) but triggers
+    chrome.webNavigation.onHistoryStateUpdated, which Vimium's background relays
+    to the content script as checkEnabledAfterURLChange — its normal SPA-nav
+    re-check path. Plain Runtime.evaluate (no Runtime.enable), so wedged tabs
+    just time out and are skipped."""
+    try:
+        w = websocket.create_connection(ws_url, timeout=CONNECT_TIMEOUT)
+        w.settimeout(CONNECT_TIMEOUT)
+        w.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {
+            "expression": "history.replaceState(history.state,'',location.href)",
+            "returnByValue": True}}))
+        while True:
+            r = json.loads(w.recv())
+            if r.get("id") == 1:
+                break
+        w.close()
+        return True
+    except Exception:
+        return False
+
+
 def main():
     pages = [t for t in http("/json")
              if t.get("type") == "page" and t.get("url", "").startswith(("http://", "https://"))
@@ -105,13 +129,17 @@ def main():
         try:
             tab = Tab(t["webSocketDebuggerUrl"])
             state = toggle_via(tab)
-            if state is not None:
-                print(f"Vimium: {state}")
-                return 0
         except Exception as e:
             last_err = e
+            state = None
         finally:
-            if tab: tab.close()
+            if tab:
+                tab.close()
+        if state is not None:
+            # Make it take effect live on every reachable tab (best-effort).
+            nudged = sum(nudge(p["webSocketDebuggerUrl"]) for p in pages)
+            print(f"Vimium: {state}  ({nudged}/{len(pages)} tabs refreshed live)")
+            return 0
     print(f"vimium-toggle: could not reach a Vimium content script "
           f"(last error: {last_err})", file=sys.stderr)
     return 3
