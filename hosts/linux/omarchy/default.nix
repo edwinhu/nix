@@ -130,6 +130,22 @@ let
     '';
   };
 
+  # vimium-toggle: one-key GLOBAL Vimium on/off, bound to Alt+V in dotfiles'
+  # hypr/bindings.conf (Chrome exposes no enable/disable shortcut and Vimium's
+  # only command is its popup, so a Hyprland bind drives this instead). It flips
+  # Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}` absolute-exclusion
+  # rule in chrome.storage.sync — exactly what the popup's "disable" writes —
+  # reached over CDP (:9222) through a Vimium content-script isolated world in
+  # any open tab. The MV3 service worker is usually dormant, so the script never
+  # relies on it; it also skips wedged tabs. Effect lands on each page's next
+  # load/navigation, same as Vimium's popup. python3 + websocket-client are
+  # pinned here so it never depends on system site-packages.
+  vimiumToggle = pkgs.writeShellApplication {
+    name = "vimium-toggle";
+    runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.websocket-client ])) ];
+    text = ''exec python3 ${./files/vimium-toggle.py} "$@"'';
+  };
+
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
   # Superhuman uses the committed iconDir Superhuman.png — a 512px raster rendered
@@ -407,7 +423,7 @@ in
       #   brscan-tui   # interactive gum TUI (mode/dpi/sides/format incl. PDF → scan)
       #   brscan …     # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
       # (brscanPdf is the TUI's internal PDF engine — see runtimeInputs, not on PATH.)
-      ++ [ brscan brscanTui ];
+      ++ [ brscan brscanTui vimiumToggle ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -651,21 +667,6 @@ in
     '';
   };
 
-  # Seed the Vimium "open popup" shortcut (Alt+V) into Chromium's Preferences.
-  # Chromium keeps extension keyboard shortcuts in Default/Preferences ->
-  # extensions.commands (plain, non-HMAC JSON; no managed-policy or manifest
-  # path exists for it), so we merge the entry in on activation. Alt+V fires
-  # Vimium's `_execute_action` = the browser-action popup, i.e. the per-site
-  # enable/disable + excluded-keys UI — an opt-in "vim mode" toggle for any page.
-  # The script is idempotent and no-ops if Chromium is running (it would
-  # otherwise clobber our edit on exit) or if Vimium is already bound by hand.
-  home.activation.seedVimiumShortcut = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if ${pkgs.procps}/bin/pgrep -x chromium >/dev/null 2>&1; then
-      echo "seed-vimium-shortcut: Chromium running; skipping (rerun a rebuild after quitting it)"
-    else
-      $DRY_RUN_CMD ${pkgs.python3}/bin/python3 ${./files/seed-vimium-shortcut.py} || true
-    fi
-  '';
 
   # Machine-specific Hyprland/audio config, managed here (not shared dotfiles)
   # because it's tied to THIS box's hardware — the DCN31 GPU + BenQ display and
@@ -846,6 +847,33 @@ in
         ExecStart = "${pkgs.ydotool}/bin/ydotoold --socket-path=%t/.ydotool_socket";
         Restart = "on-failure";
         RestartSec = 2;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # joycon-pad: Bluetooth Joy-Con (L) as a macro pad — stick→pointer,
+    # ZL→swlinux dictation, SL/SR→limux tabs, Capture-hold→Alt-Tab. Reads the
+    # hid-nintendo evdev node + drives ydotool/swlinux/limux; `input` group grants
+    # /dev/input + rumble. Config is stow-linked at ~/.config/joycon-pad/config.toml
+    # (dotfiles), which the daemon prefers over its packaged default. --wait lets
+    # the service start before the Joy-Con connects and bind it on (re)connect.
+    # One-time pairing fix (ClassicBondedOnly=false) is manual — see the repo.
+    { joycon-pad = {
+      Unit = {
+        Description = "joycon-pad — Joy-Con macro pad for swlinux + limux";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" "bluetooth.target" ];
+      };
+      Service = {
+        Type = "simple";
+        # swlinux + limux are shelled out to by bare name; ydotool is also on the
+        # wrapper's PATH but listed here too. YDOTOOL_SOCKET matches ydotoold.
+        Environment = [
+          "YDOTOOL_SOCKET=%t/.ydotool_socket"
+          "PATH=${lib.makeBinPath [ pkgs.ydotool pkgs.swlinux pkgs.limux ]}"
+        ];
+        ExecStart = "${pkgs.joycon-pad}/bin/joycon-pad --wait 3600";
+        Restart = "on-failure";
+        RestartSec = 3;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }

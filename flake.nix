@@ -63,9 +63,14 @@
       url = "git+ssh://git@github.com/edwinhu/superwhisper-linux.git";
       flake = false;
     };
+    # joycon-pad: Joy-Con macro pad daemon (private repo, SSH-fetched like swlinux)
+    joycon-pad-src = {
+      url = "git+ssh://git@github.com/edwinhu/joycon-pad.git";
+      flake = false;
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -463,6 +468,11 @@
                 # source via the swlinux-src flake input. See modules/shared/swlinux.nix.
                 swlinux = prev.callPackage ./modules/shared/swlinux.nix {
                   src = inputs.swlinux-src;
+                };
+                # Joy-Con macro pad daemon (gh:edwinhu/joycon-pad) — Linux only.
+                # See modules/linux/joycon-pad.nix + the omarchy user service.
+                joycon-pad = prev.callPackage ./modules/linux/joycon-pad.nix {
+                  src = inputs.joycon-pad-src;
                 };
 
                 # Double Commander Qt6 from official releases (aarch64 only; the

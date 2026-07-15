@@ -346,6 +346,22 @@
         "type": "github"
       }
     },
+    "joycon-pad-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784144517,
+        "narHash": "sha256-OsuNqreIlidCfFYJ7jswye9rzlWttedexQCVW3bg6UA=",
+        "ref": "refs/heads/master",
+        "rev": "4577fff8a203f4799ed724805437065cf208082b",
+        "revCount": 5,
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/joycon-pad.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/joycon-pad.git"
+      }
+    },
     "nix-homebrew": {
       "inputs": {
         "brew-src": "brew-src"
@@ -499,6 +515,7 @@
         "homebrew-bundle": "homebrew-bundle",
         "homebrew-cask": "homebrew-cask",
         "homebrew-core": "homebrew-core",
+        "joycon-pad-src": "joycon-pad-src",
         "nix-homebrew": "nix-homebrew",
         "nix-secrets": "nix-secrets",
         "nixGL": "nixGL",
