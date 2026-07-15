@@ -8,12 +8,21 @@ Vimium everywhere by default; the toggle removes it (ON) / re-adds it (OFF).
 Vimium is deny-list only (no allow-list), so per-page opt-in over a default-off
 isn't expressible — this is a whole-browser vim-mode switch.
 
-We flip the rule through a Vimium content-script isolated world (independent of
-the dormant MV3 service worker) and nudge the focused tab so it takes effect
-live (no reload). The focused tab is found via Hyprland's active window (Chrome
-on Wayland doesn't report document.hasFocus() reliably and every PWA window
-reads visibilityState 'visible', so the compositor is the ground truth), mapped
-to a CDP tab by PWA host (window class chrome-<host>__…) or by title."""
+Applying it live without a reload: Vimium re-reads its enabled state in
+checkIfEnabledForUrl(), which runs on the window `focus` event (onFocus). It does
+NOT re-run on a same-URL history change (checkEnabledAfterURLChange bails when the
+URL is unchanged), so a replaceState nudge does nothing — that was the original
+"just shows the toast, nothing changes until I refocus" bug. Instead we fire a
+genuine TRUSTED focus event via CDP Emulation.setFocusEmulationEnabled (on then
+off): it reaches Vimium's forTrusted onFocus handler and triggers the re-check —
+the same code path as the user manually refocusing the window, but without
+touching the URL or switching tabs.
+
+We target the focused tab, found via Hyprland's active window (Chrome on Wayland
+doesn't report document.hasFocus() reliably and every PWA window reads
+visibility 'visible', so the compositor is the ground truth), mapped to a CDP tab
+by PWA host (window class chrome-<host>__…) or by title. The MV3 service worker
+is usually dormant, so we never rely on it."""
 import json
 import os
 import re
@@ -83,14 +92,17 @@ class Tab:
                 continue
         return None
 
+    def focus_nudge(self):
+        # Fire a trusted window focus -> Vimium onFocus -> checkIfEnabledForUrl.
+        self.cmd("Emulation.setFocusEmulationEnabled", {"enabled": True})
+        self.cmd("Emulation.setFocusEmulationEnabled", {"enabled": False})
+
     def close(self):
         try: self.ws.close()
         except Exception: pass
 
 
 def hypr(cmd):
-    """Query Hyprland's IPC socket (no hyprctl binary needed). Returns parsed
-    JSON or None if unavailable."""
     sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
     xdg = os.environ.get("XDG_RUNTIME_DIR", "/run/user/1000")
     if not sig:
@@ -114,7 +126,7 @@ def hypr(cmd):
 
 def find_focused(tabs):
     """Map Hyprland's active window to a CDP tab: PWA host from the window class
-    (chrome-<host>__…), else exact/contains title match."""
+    (chrome-<host>__…), else exact/contains title match. Returns tab dict or None."""
     aw = hypr("activewindow")
     if not aw:
         return None
@@ -140,44 +152,24 @@ def find_focused(tabs):
     return None
 
 
-# Default state is OFF: a global absolute-exclusion rule disables Vimium
-# everywhere. The toggle removes it (ON) / re-adds it (OFF). Vimium has no
-# allow-list, so "off by default, on per-site" isn't expressible — this is a
-# global vim-mode switch whose resting state is off. Any narrower per-site
-# absolute-exclusion rules the user keeps (e.g. their mail apps) still win when
-# the global rule is absent, so those stay off even when vim mode is on.
-GLOBAL_RULE = {"pattern": "*", "passKeys": ""}
-
-
-def toggle_global(ws_url):
-    """Flip the global Vimium disable rule + nudge this tab live. Returns state."""
-    tab = Tab(ws_url)
-    try:
-        tab.enable_runtime()
-        ctx = tab.vimium_context()
-        if ctx is None:
-            return None
-        raw = tab.eval(
-            "chrome.storage.sync.get('exclusionRules').then(r=>JSON.stringify(r.exclusionRules||[]))",
-            ctx=ctx, await_promise=True)
-        rules = json.loads(raw)
-        off = any(r.get("pattern") == "*" and r.get("passKeys", "") == "" for r in rules)
-        if off:  # remove the global disable rule -> vim mode ON
-            rules = [r for r in rules if not (r.get("pattern") == "*" and r.get("passKeys", "") == "")]
-            state = "ON"
-        else:    # add the global disable rule -> vim mode OFF
-            rules = rules + [GLOBAL_RULE]
-            state = "OFF"
-        ok = tab.eval("chrome.storage.sync.set({exclusionRules:%s}).then(()=>'ok')" % json.dumps(rules),
-                      ctx=ctx, await_promise=True)
-        if ok != "ok":
-            raise RuntimeError("storage.set failed")
-        # Live re-check without reload: a no-op history update triggers Vimium's
-        # own onHistoryStateUpdated -> checkEnabledAfterURLChange path.
-        tab.eval("history.replaceState(history.state,'',location.href)")
-        return state
-    finally:
-        tab.close()
+def toggle_rule(tab, ctx):
+    """Flip the global disable rule in chrome.storage.sync. Returns state."""
+    raw = tab.eval(
+        "chrome.storage.sync.get('exclusionRules').then(r=>JSON.stringify(r.exclusionRules||[]))",
+        ctx=ctx, await_promise=True)
+    rules = json.loads(raw)
+    off = any(r.get("pattern") == "*" and r.get("passKeys", "") == "" for r in rules)
+    if off:  # remove the global disable rule -> vim mode ON
+        rules = [r for r in rules if not (r.get("pattern") == "*" and r.get("passKeys", "") == "")]
+        state = "ON"
+    else:    # add the global disable rule -> vim mode OFF
+        rules = rules + [{"pattern": "*", "passKeys": ""}]
+        state = "OFF"
+    ok = tab.eval("chrome.storage.sync.set({exclusionRules:%s}).then(()=>'ok')" % json.dumps(rules),
+                  ctx=ctx, await_promise=True)
+    if ok != "ok":
+        raise RuntimeError("storage.set failed")
+    return state
 
 
 def notify(state):
@@ -200,28 +192,37 @@ def main():
         print("vimium-toggle: no open web page", file=sys.stderr)
         return 2
 
-    # Write+nudge through the focused tab (so it goes live where the user is
-    # looking); if that tab is wedged, fall back to any other reachable tab so
-    # the global flip still happens (other tabs pick it up on next navigation).
+    # Prefer the focused tab (so it flips where the user is looking); fall back to
+    # any other reachable tab so the global rule still flips if the focused tab is
+    # wedged (other tabs then pick it up on their next focus/navigation).
     focused = find_focused(tabs)
     order = ([focused] if focused else []) + [t for t in tabs if t is not focused]
 
-    state = None
     for t in order:
+        tab = None
         try:
-            state = toggle_global(t["webSocketDebuggerUrl"])
-            if state is not None:
-                break
+            tab = Tab(t["webSocketDebuggerUrl"])
+            tab.enable_runtime()
+            ctx = tab.vimium_context()
+            if ctx is None:
+                continue
+            state = toggle_rule(tab, ctx)
+            try:
+                tab.focus_nudge()  # live re-check on this tab, no reload
+            except Exception:
+                pass
+            print(f"Vimium {state}")
+            notify(state)
+            return 0
         except Exception:
             continue
-    if state is None:
-        print("vimium-toggle: could not reach a Vimium content script", file=sys.stderr)
-        notify("—")  # noqa — shows "Vimium —"
-        return 3
+        finally:
+            if tab:
+                tab.close()
 
-    print(f"Vimium {state}")
-    notify(state)
-    return 0
+    print("vimium-toggle: could not reach a Vimium content script", file=sys.stderr)
+    notify("—")
+    return 3
 
 
 if __name__ == "__main__":
