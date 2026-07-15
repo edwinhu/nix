@@ -72,6 +72,24 @@ let
   darwinPath = "${home}/.nix-profile/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
   pixiBin = "${home}/.nix-profile/bin/pixi";
+
+  # ---- paperpile → readwise highlight sync (vendored single-file uv script) ----
+  # Pull-based: rclone copies only PDFs modified since last run, PyMuPDF extracts
+  # embedded highlights, POST to Readwise (dedup on their end). sync.py is vendored
+  # under ./paperpile-readwise/ so nix is the source of truth (no Drive-hosted code).
+  paperpileSync = ./paperpile-readwise/sync.py;
+  # Shared runner: ensure a Readwise token is resolved, then `uv run` the store-path
+  # script. Linux sets READWISE_TOKEN_FILE explicitly (agenix runtime dir); macOS
+  # falls back to locating the agenix-decrypted token under /var/folders. uv + rclone
+  # come from the service's PATH (linuxPath/darwinPath).
+  paperpileRunner = pkgs.writeShellScript "paperpile-readwise-run" ''
+    set -eu
+    if [ -z "''${READWISE_TOKEN:-}" ] && [ ! -r "''${READWISE_TOKEN_FILE:-/nonexistent}" ]; then
+      tf=$(find /run/user /var/folders -maxdepth 6 -name readwise-token -type f 2>/dev/null | head -1)
+      [ -n "$tf" ] && export READWISE_TOKEN_FILE="$tf"
+    fi
+    exec uv run ${paperpileSync} "$@"
+  '';
   # webhook server: uvicorn under pixi, bound to all interfaces on :8000.
   uvicornArgs = [ "run" "uvicorn" "src.webhook:app" "--host" "0.0.0.0" "--port" webhookPort ];
 
@@ -104,6 +122,8 @@ in
       "the chrome-cdp authenticated headless browser daemon (CDP on :9250)";
     enableReadwise = lib.mkEnableOption
       "the readwise-reader-tools webhook + sweep (enable on exactly ONE always-on host — a second sweep double-saves)";
+    enablePaperpile = lib.mkEnableOption
+      "the Paperpile → Readwise highlight sync (enable on exactly ONE always-on host — both machines syncing is redundant)";
   };
 
   config = lib.mkMerge [
@@ -225,6 +245,34 @@ in
       Install.WantedBy = [ "timers.target" ];
     };
 
+    systemd.user.services.paperpile-readwise-sync = lib.mkIf cfg.enablePaperpile {
+      Unit = {
+        Description = "Paperpile → Readwise highlight sync (incremental, rclone + PyMuPDF)";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        WorkingDirectory = "%h";
+        # %t = XDG_RUNTIME_DIR; agenix drops the decrypted token at %t/agenix/.
+        Environment = [ "PATH=${linuxPath}" "HOME=${home}" "READWISE_TOKEN_FILE=%t/agenix/readwise-token" ];
+        ExecStart = "${paperpileRunner}";
+        Nice = 10;
+        StandardOutput = "append:${logDir}/paperpile-readwise.log";
+        StandardError = "append:${logDir}/paperpile-readwise.log";
+      };
+    };
+
+    systemd.user.timers.paperpile-readwise-sync = lib.mkIf cfg.enablePaperpile {
+      Unit.Description = "Paperpile → Readwise sync timer (every 3h + shortly after login)";
+      Timer = {
+        OnStartupSec = "3min";
+        OnUnitActiveSec = "3h";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+
     # cloudflared CLI (management + the version the service runs), from nixpkgs
     # rather than the pacman /usr/bin/cloudflared — shadows it via PATH order.
     home.packages = lib.mkIf cfg.enableReadwise [ pkgs.cloudflared ];
@@ -332,6 +380,27 @@ in
           HOME = home;
           CDP_PORT = cdpPort;
           CDP_URL = cdpUrl;
+        };
+        Nice = 10;
+      };
+    };
+
+    # Paperpile → Readwise sync (paperpileRunner locates the agenix token itself).
+    # Inert unless a host sets readerServices.enablePaperpile — omarchy is primary,
+    # so on the Mac this stays off (both machines syncing is redundant).
+    launchd.agents.paperpile-readwise-sync = lib.mkIf cfg.enablePaperpile {
+      enable = true;
+      config = {
+        Label = "com.paperpile.readwise-sync";
+        ProgramArguments = [ "${paperpileRunner}" ];
+        WorkingDirectory = home;
+        StartInterval = sweepInterval;
+        RunAtLoad = true;
+        StandardOutPath = "/tmp/paperpile-readwise.log";
+        StandardErrorPath = "/tmp/paperpile-readwise.log";
+        EnvironmentVariables = {
+          PATH = darwinPath;
+          HOME = home;
         };
         Nice = 10;
       };

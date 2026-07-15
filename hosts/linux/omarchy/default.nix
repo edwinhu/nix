@@ -338,6 +338,7 @@ in
   readerServices = {
     enableChromeCdp = true;
     enableReadwise = true;
+    enablePaperpile = true;
   };
 
   # Basic home-manager configuration
