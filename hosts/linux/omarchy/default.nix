@@ -130,19 +130,19 @@ let
     '';
   };
 
-  # vimium-toggle: toggle Vimium for the CURRENT (focused) tab's site, bound to
-  # Hyper(F13)+V via the xremap config below (Chrome exposes no enable/disable
-  # shortcut and Vimium's only command is its popup, so xremap drives this). It
-  # finds the focused tab via document.hasFocus(), then flips Vimium's OWN
-  # mechanism for that site: a `{pattern:"https?://host/*", passKeys:""}`
-  # absolute-exclusion rule in chrome.storage.sync — exactly what the popup's
-  # "disable" writes — reached over CDP (:9222) through a Vimium content-script
-  # isolated world (the MV3 service worker is usually dormant, so we never rely
-  # on it). A no-op history.replaceState then makes it take effect live (no
-  # reload) via Vimium's own onHistoryStateUpdated re-check path. Only the
-  # focused tab is touched and all probing is concurrent, so it stays fast
-  # regardless of how many tabs are open. python3 + websocket-client + libnotify
-  # pinned here so it never depends on system site-packages.
+  # vimium-toggle: GLOBAL Vimium on/off, resting state OFF (opt-in "vim mode"),
+  # bound to Hyper(F13)+V via the xremap config below (Chrome exposes no
+  # enable/disable shortcut and Vimium's only command is its popup, so xremap
+  # drives this). It flips Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}`
+  # global absolute-exclusion rule in chrome.storage.sync (Vimium is deny-list
+  # only, so per-page opt-in over a default-off isn't expressible) — reached over
+  # CDP (:9222) through a Vimium content-script isolated world (the MV3 service
+  # worker is usually dormant, so we never rely on it). It nudges the focused tab
+  # (found via Hyprland's active window — Chrome on Wayland doesn't report
+  # document.hasFocus() reliably) with a no-op history.replaceState so the change
+  # is live (no reload) via Vimium's onHistoryStateUpdated re-check path. Only one
+  # tab is touched, so it's fast regardless of tab count. python3 +
+  # websocket-client + libnotify pinned here so it never needs system packages.
   vimiumToggle = pkgs.writeShellApplication {
     name = "vimium-toggle";
     runtimeInputs = [

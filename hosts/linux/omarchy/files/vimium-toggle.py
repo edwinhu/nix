@@ -1,30 +1,33 @@
 #!/usr/bin/env python3
-"""Toggle Vimium for the CURRENT (focused) tab's site.
+"""Global Vimium on/off toggle, resting state OFF (opt-in "vim mode").
 
 Chrome exposes no extension enable/disable shortcut and Vimium's only command is
-its popup, so this drives Vimium's own mechanism directly: a per-site absolute
-exclusion rule ({pattern:"https?://host/*", passKeys:""}) in chrome.storage.sync
-— exactly what the popup's "disable" writes. We find the focused tab via
-document.hasFocus(), flip that site's rule through a Vimium content-script
-isolated world (independent of the dormant MV3 service worker), and nudge just
-that tab so it takes effect live (no reload).
+its popup, so this drives Vimium's own mechanism directly: a global absolute
+exclusion rule ({pattern:"*", passKeys:""}) in chrome.storage.sync disables
+Vimium everywhere by default; the toggle removes it (ON) / re-adds it (OFF).
+Vimium is deny-list only (no allow-list), so per-page opt-in over a default-off
+isn't expressible — this is a whole-browser vim-mode switch.
 
-Only the focused tab is touched, so it stays fast no matter how many tabs are
-open, and idle/wedged tabs never block it."""
+We flip the rule through a Vimium content-script isolated world (independent of
+the dormant MV3 service worker) and nudge the focused tab so it takes effect
+live (no reload). The focused tab is found via Hyprland's active window (Chrome
+on Wayland doesn't report document.hasFocus() reliably and every PWA window
+reads visibilityState 'visible', so the compositor is the ground truth), mapped
+to a CDP tab by PWA host (window class chrome-<host>__…) or by title."""
 import json
+import os
+import re
+import socket
 import subprocess
 import sys
-import threading
-import time
 import urllib.request
 from urllib.parse import urlparse
 import websocket
 
 VIMIUM = "dbepggeogbaibhgnhhndojpepiihcmeb"
 PORT = 9222
-TIMEOUT = 1.2
+TIMEOUT = 1.5
 DRAIN = 0.2
-FIND_BUDGET = 0.8  # max wait to identify the focused tab
 
 
 def http(path):
@@ -85,31 +88,85 @@ class Tab:
         except Exception: pass
 
 
-def site_pattern(url):
-    # Same shape Vimium's popup generates: whole-domain, both schemes.
-    return f"https?://{urlparse(url).netloc}/*"
+def hypr(cmd):
+    """Query Hyprland's IPC socket (no hyprctl binary needed). Returns parsed
+    JSON or None if unavailable."""
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")
+    xdg = os.environ.get("XDG_RUNTIME_DIR", "/run/user/1000")
+    if not sig:
+        return None
+    try:
+        s = socket.socket(socket.AF_UNIX)
+        s.settimeout(1)
+        s.connect(f"{xdg}/hypr/{sig}/.socket.sock")
+        s.sendall(("j/" + cmd).encode())
+        buf = b""
+        while True:
+            d = s.recv(65536)
+            if not d:
+                break
+            buf += d
+        s.close()
+        return json.loads(buf)
+    except Exception:
+        return None
 
 
-def toggle_site(ws_url, url):
-    """Flip the current site's Vimium exclusion + nudge this tab live. Returns
-    (state, host)."""
+def find_focused(tabs):
+    """Map Hyprland's active window to a CDP tab: PWA host from the window class
+    (chrome-<host>__…), else exact/contains title match."""
+    aw = hypr("activewindow")
+    if not aw:
+        return None
+    cls = aw.get("class", "") or ""
+    wtitle = aw.get("title", "") or ""
+    m = re.match(r"chrome-(.+?)__", cls)
+    if m:
+        host = m.group(1)
+        for t in tabs:
+            if urlparse(t["url"]).netloc == host:
+                return t
+    title = wtitle
+    for suf in (" - Chromium", " — Chromium"):
+        if title.endswith(suf):
+            title = title[:-len(suf)]
+            break
+    for t in tabs:
+        if t.get("title", "") == title:
+            return t
+    for t in tabs:
+        if t.get("title") and t["title"] in wtitle:
+            return t
+    return None
+
+
+# Default state is OFF: a global absolute-exclusion rule disables Vimium
+# everywhere. The toggle removes it (ON) / re-adds it (OFF). Vimium has no
+# allow-list, so "off by default, on per-site" isn't expressible — this is a
+# global vim-mode switch whose resting state is off. Any narrower per-site
+# absolute-exclusion rules the user keeps (e.g. their mail apps) still win when
+# the global rule is absent, so those stay off even when vim mode is on.
+GLOBAL_RULE = {"pattern": "*", "passKeys": ""}
+
+
+def toggle_global(ws_url):
+    """Flip the global Vimium disable rule + nudge this tab live. Returns state."""
     tab = Tab(ws_url)
     try:
         tab.enable_runtime()
         ctx = tab.vimium_context()
         if ctx is None:
             return None
-        pat = site_pattern(url)
         raw = tab.eval(
             "chrome.storage.sync.get('exclusionRules').then(r=>JSON.stringify(r.exclusionRules||[]))",
             ctx=ctx, await_promise=True)
         rules = json.loads(raw)
-        disabled = any(r.get("pattern") == pat and r.get("passKeys", "") == "" for r in rules)
-        if disabled:  # remove this site's disable rule -> Vimium ON here
-            rules = [r for r in rules if not (r.get("pattern") == pat and r.get("passKeys", "") == "")]
+        off = any(r.get("pattern") == "*" and r.get("passKeys", "") == "" for r in rules)
+        if off:  # remove the global disable rule -> vim mode ON
+            rules = [r for r in rules if not (r.get("pattern") == "*" and r.get("passKeys", "") == "")]
             state = "ON"
-        else:         # add a disable rule for this site -> Vimium OFF here
-            rules = rules + [{"pattern": pat, "passKeys": ""}]
+        else:    # add the global disable rule -> vim mode OFF
+            rules = rules + [GLOBAL_RULE]
             state = "OFF"
         ok = tab.eval("chrome.storage.sync.set({exclusionRules:%s}).then(()=>'ok')" % json.dumps(rules),
                       ctx=ctx, await_promise=True)
@@ -118,78 +175,52 @@ def toggle_site(ws_url, url):
         # Live re-check without reload: a no-op history update triggers Vimium's
         # own onHistoryStateUpdated -> checkEnabledAfterURLChange path.
         tab.eval("history.replaceState(history.state,'',location.href)")
-        return state, urlparse(url).netloc
+        return state
     finally:
         tab.close()
 
 
-def find_focused(tabs):
-    """Return (url, ws_url) of the focused, visible tab, else None. Probes all
-    tabs concurrently (daemon threads) so wedged/idle tabs never block."""
-    hit = {}
-    lock = threading.Lock()
-
-    def probe(url, ws_url):
-        try:
-            w = websocket.create_connection(ws_url, timeout=TIMEOUT); w.settimeout(TIMEOUT)
-            w.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {
-                "expression": "document.hasFocus() && document.visibilityState==='visible'",
-                "returnByValue": True}}))
-            val = None
-            while True:
-                r = json.loads(w.recv())
-                if r.get("id") == 1:
-                    val = r.get("result", {}).get("result", {}).get("value")
-                    break
-            w.close()
-            if val:
-                with lock:
-                    hit.setdefault("tab", (url, ws_url))
-        except Exception:
-            pass
-
-    threads = [threading.Thread(target=probe, args=(u, w), daemon=True) for u, w in tabs]
-    for t in threads:
-        t.start()
-    deadline = time.monotonic() + FIND_BUDGET
-    while "tab" not in hit and time.monotonic() < deadline and any(t.is_alive() for t in threads):
-        time.sleep(0.02)
-    return hit.get("tab")
-
-
-def notify(state, host):
+def notify(state):
+    label = {"ON": ("Vimium ON", "vim mode enabled"),
+             "OFF": ("Vimium OFF", "vim mode disabled")}.get(state, ("Vimium", state))
     try:
         subprocess.run(
             ["notify-send", "-a", "vimium", "-u", "low", "-t", "1200",
-             "-h", "string:x-canonical-private-synchronous:vimium",
-             f"Vimium {state}", f"vim mode {'enabled' if state == 'ON' else 'disabled'} · {host}"],
+             "-h", "string:x-canonical-private-synchronous:vimium", *label],
             timeout=3)
     except Exception:
         pass
 
 
 def main():
-    tabs = [(t["url"], t["webSocketDebuggerUrl"]) for t in http("/json")
+    tabs = [t for t in http("/json")
             if t.get("type") == "page" and t.get("url", "").startswith(("http://", "https://"))
             and t.get("webSocketDebuggerUrl")]
     if not tabs:
         print("vimium-toggle: no open web page", file=sys.stderr)
         return 2
 
+    # Write+nudge through the focused tab (so it goes live where the user is
+    # looking); if that tab is wedged, fall back to any other reachable tab so
+    # the global flip still happens (other tabs pick it up on next navigation).
     focused = find_focused(tabs)
-    if focused is None:
-        print("vimium-toggle: no focused web page (is a browser tab active?)", file=sys.stderr)
-        notify("—", "no active tab")
-        return 0
-    url, ws_url = focused
+    order = ([focused] if focused else []) + [t for t in tabs if t is not focused]
 
-    res = toggle_site(ws_url, url)
-    if res is None:
-        print("vimium-toggle: focused tab has no Vimium content script", file=sys.stderr)
+    state = None
+    for t in order:
+        try:
+            state = toggle_global(t["webSocketDebuggerUrl"])
+            if state is not None:
+                break
+        except Exception:
+            continue
+    if state is None:
+        print("vimium-toggle: could not reach a Vimium content script", file=sys.stderr)
+        notify("—")  # noqa — shows "Vimium —"
         return 3
-    state, host = res
-    print(f"Vimium {state} · {host}")
-    notify(state, host)
+
+    print(f"Vimium {state}")
+    notify(state)
     return 0
 
 

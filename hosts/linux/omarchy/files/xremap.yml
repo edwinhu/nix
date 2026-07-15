@@ -31,7 +31,7 @@ keymap:
       F13-RightBrace: Ctrl-Alt-Shift-Right
       F13-b: Ctrl-Alt-m
       F13-f: Ctrl-Alt-f
-      # Hyper+V: toggle Vimium ("vim mode") for the current tab's site. Not a
+      # Hyper+V: toggle "vim mode" (Vimium) globally on/off, default OFF. Not a
       # limux combo — runs the nix vimium-toggle binary directly (absolute store
       # path injected by the omarchy host's xdg.configFile). See default.nix.
       F13-v: { launch: ["@VIMIUM_TOGGLE@"] }
