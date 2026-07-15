@@ -26,7 +26,7 @@ for arg in "$@"; do
       sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|gemini|agy|qmd) TOOLS+=("$arg") ;;
+    claude|codex|opencode|gemini|agy|qmd|readwise) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -34,7 +34,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode agy qmd)
+  TOOLS=(claude codex opencode agy qmd readwise)
 fi
 
 # Remove stale nix-era wrappers at ~/.local/bin/<tool> that exec into /nix/store.
@@ -128,6 +128,63 @@ install_qmd() {
   fi
 }
 
+# Readwise — TWO separate CLIs the `readwise`/librarian skill depends on:
+#   readwise         official @readwise/cli (bun global). Provides semantic /
+#                    vector highlight search:
+#                      readwise readwise-search-highlights --vector-search-term …
+#                    Its absence is what silently degrades the librarian to
+#                    keyword-only raw-API calls (no semantic ranking).
+#   readwise-custom  our own edwinhu/readwise-cli — a bun `--compile` single-file
+#                    binary (RAG chat, keyword search, upload, prune, ghostreader).
+# Auth needs no new secret: both resolve the token from the agenix-provided
+# $READWISE_TOKEN env var. The official CLI also caches a login, which we set
+# idempotently whenever a token is present. Mirrors the mbp layout
+# (~/.bun/bin/readwise + ~/.local/bin/readwise-custom -> ~/projects/readwise-cli).
+install_readwise() {
+  purge_nix_wrapper readwise
+  purge_nix_wrapper readwise-custom
+  local bun
+  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
+
+  # 1) Official @readwise/cli (bun global) -> `readwise`.
+  if want "readwise (@readwise/cli)" readwise; then
+    echo "${YELLOW}→ Installing Readwise CLI (bun global)...${NC}"
+    "$bun" install -g @readwise/cli@latest
+    echo "${GREEN}✓ readwise installed — update with: nix run ~/nix#update-ai-tools${NC}"
+  fi
+  # Idempotent login so semantic search works in headless/background shells.
+  if [ -n "${READWISE_TOKEN:-}" ] && command -v readwise >/dev/null 2>&1; then
+    if readwise login-with-token "$READWISE_TOKEN" >/dev/null 2>&1; then
+      echo "${GREEN}✓ readwise authenticated from \$READWISE_TOKEN${NC}"
+    else
+      echo "${YELLOW}⚠ readwise login-with-token failed — check \$READWISE_TOKEN${NC}"
+    fi
+  fi
+
+  # 2) Custom edwinhu/readwise-cli (bun --compile) -> `readwise-custom`.
+  local repo="$HOME/projects/readwise-cli"
+  if want "readwise-custom" readwise-custom; then
+    if [ ! -d "$repo/.git" ]; then
+      echo "${YELLOW}→ Cloning edwinhu/readwise-cli...${NC}"
+      mkdir -p "$HOME/projects"
+      git clone git@github.com:edwinhu/readwise-cli.git "$repo" \
+        || { echo "${RED}clone failed (SSH auth to GitHub?).${NC}" >&2; return 1; }
+    fi
+    echo "${YELLOW}→ Building readwise-custom (bun --compile)...${NC}"
+    ( cd "$repo" && "$bun" install && "$bun" run build ) \
+      || { echo "${RED}readwise-custom build failed.${NC}" >&2; return 1; }
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$repo/readwise" "$HOME/.local/bin/readwise-custom"
+    echo "${GREEN}✓ readwise-custom → $repo/readwise${NC}"
+  elif [ "$FORCE" = "1" ] && [ -d "$repo/.git" ]; then
+    echo "${YELLOW}→ Updating + rebuilding readwise-custom...${NC}"
+    git -C "$repo" pull --ff-only 2>/dev/null || true
+    ( cd "$repo" && "$bun" install && "$bun" run build ) \
+      && ln -sf "$repo/readwise" "$HOME/.local/bin/readwise-custom" \
+      || echo "${YELLOW}⚠ readwise-custom rebuild failed — keeping existing binary.${NC}"
+  fi
+}
+
 # Gemini CLI was renamed to Antigravity CLI at I/O 2026; consumer access to the
 # old `gemini` binary stops 2026-06-18. Binary is `agy`; config still lives
 # under ~/.gemini/antigravity-cli/, and `agy plugin import gemini` migrates
@@ -152,6 +209,7 @@ for t in "${TOOLS[@]}"; do
     gemini)       install_gemini ;;
     agy)          install_agy ;;
     qmd)          install_qmd ;;
+    readwise)     install_readwise ;;
   esac
 done
 
