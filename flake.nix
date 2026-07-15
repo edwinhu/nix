@@ -538,7 +538,22 @@ EOF
                 # The AppImage below is arm64; on x86_64 wrap stock nixpkgs beeper
                 # with nixGLIntel so Mesa resolves against system GL on non-NixOS
                 # (Omarchy has no /run/opengl-driver). nixGLIntel drives AMD too.
-                beeper = if !prev.stdenv.hostPlatform.isAarch64 then prev.symlinkJoin {
+                beeper = if !prev.stdenv.hostPlatform.isAarch64 then (let
+                  # Beeper runs in a bwrap FHS sandbox with no xdg-open and no
+                  # host /usr/bin/chromium, so clicking a link was a silent no-op.
+                  # Shim xdg-open onto Beeper's PATH: hand the URI to the host's
+                  # xdg-desktop-portal OpenURI (reachable via the /run bind +
+                  # session bus that bwrap passes through — it does not clearenv),
+                  # which opens it in the host default browser. gdbus and the shim
+                  # are /nix/store paths, visible inside the sandbox (--bind /nix).
+                  xdgOpenShim = prev.writeShellScriptBin "xdg-open" ''
+                    exec ${prev.glib}/bin/gdbus call --session \
+                      --dest org.freedesktop.portal.Desktop \
+                      --object-path /org/freedesktop/portal/desktop \
+                      --method org.freedesktop.portal.OpenURI.OpenURI \
+                      "" "$1" {}
+                  '';
+                in prev.symlinkJoin {
                   name = "beeper-nixgl-${prev.beeper.version or "unknown"}";
                   paths = [
                     # Shell wrapper wins over prev.beeper/bin/beeper via symlinkJoin
@@ -553,13 +568,16 @@ EOF
                       # rules directly. Read from /etc/localtime so it tracks tz changes.
                       # (Upstream: NixOS/nixpkgs#505374, dup of #499098.)
                       export TZ="''${TZ:-$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')}"
+                      # Prepend the xdg-open shim so Beeper's Electron finds it
+                      # when opening links (portal -> host default browser).
+                      export PATH="${xdgOpenShim}/bin:$PATH"
                       exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${prev.beeper}/bin/beeper "$@"
                     '')
                     prev.beeper
                   ];
                   meta = prev.beeper.meta or {};
                   passthru = { unwrapped = prev.beeper; };
-                } else (let
+                }) else (let
                   pname = "beeper";
                   version = "4.2.455";
                   src = prev.fetchurl {
