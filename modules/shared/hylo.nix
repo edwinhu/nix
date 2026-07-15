@@ -39,8 +39,8 @@
 
 let
   pname = "hylo";
-  version = "0.1.0";
-  assetId = "477183655";
+  version = "0.1.1";
+  assetId = "477379403";
 
   src = fetchurl {
     name = "hylo-${version}.AppImage";
@@ -49,7 +49,7 @@ let
       "-H" "Accept: application/octet-stream"
       "--netrc-file" "/etc/nix/github-netrc"
     ];
-    hash = "sha256-jxj/HNYUTq+BsN5V9gwTfVyT/jzyDQNIp7IvjmtmcPk=";
+    hash = "sha256-etl4KQRbsaUfN3kTMd7mpNwyJpcQxo35GcPrUxNdl+I=";
   };
 
   # Recover the 512px icon electron-builder baked into the AppImage.
