@@ -546,7 +546,7 @@ EOF
                   # session bus that bwrap passes through — it does not clearenv),
                   # which opens it in the host default browser. gdbus and the shim
                   # are /nix/store paths, visible inside the sandbox (--bind /nix).
-                  xdgOpenShim = prev.writeShellScriptBin "xdg-open" ''
+                  xdgOpenShim = prev.writeShellScriptBin "beeper-url-open" ''
                     exec ${prev.glib}/bin/gdbus call --session \
                       --dest org.freedesktop.portal.Desktop \
                       --object-path /org/freedesktop/portal/desktop \
@@ -568,9 +568,14 @@ EOF
                       # rules directly. Read from /etc/localtime so it tracks tz changes.
                       # (Upstream: NixOS/nixpkgs#505374, dup of #499098.)
                       export TZ="''${TZ:-$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')}"
-                      # Prepend the xdg-open shim so Beeper's Electron finds it
-                      # when opening links (portal -> host default browser).
-                      export PATH="${xdgOpenShim}/bin:$PATH"
+                      # Beeper's Electron shells out to xdg-open; the FHS ships
+                      # its own /usr/bin/xdg-open, which resolves the default
+                      # handler to /usr/bin/chromium — absent inside the sandbox —
+                      # and fails. For URLs, xdg-open (DE=generic under Hyprland)
+                      # falls through to $BROWSER, so point it at a portal shim
+                      # that hands the URI to the host xdg-desktop-portal (opens
+                      # in the host default browser). Scoped to Beeper's process.
+                      export BROWSER="${xdgOpenShim}/bin/beeper-url-open"
                       exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${prev.beeper}/bin/beeper "$@"
                     '')
                     prev.beeper
