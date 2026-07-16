@@ -670,6 +670,18 @@ in
       --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url
       --remote-debugging-port=9222
       --remote-allow-origins=*
+      # Keep tabs of the UNFOCUSED browser window alive. In a tiling WM the
+      # browser is often visible but not focused (another app holds focus), and
+      # Chromium then treats its window as occluded/backgrounded and FREEZES its
+      # tabs after ~5s — a frozen tab rejects new CDP connections, so
+      # vimium-toggle (Hyper+V) can't reach the tab you're looking at and the
+      # toggle silently no-ops until you refocus the window. These disable that
+      # freezing/backgrounding so the CDP-driven toggle works on the visible tab
+      # regardless of window focus (also keeps :9222 tooling responsive).
+      --disable-backgrounding-occluded-windows
+      --disable-renderer-backgrounding
+      --disable-background-timer-throttling
+      --disable-features=IntensiveWakeUpThrottling,FreezingOnEnergySaver
     '';
   };
 
