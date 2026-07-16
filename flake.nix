@@ -274,6 +274,7 @@
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
+                  paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
@@ -346,6 +347,7 @@
                 gws = prev.callPackage ./modules/shared/gws.nix {};
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
+                paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.

@@ -55,6 +55,7 @@ let
     zoom-us
     superhuman-cli
     morgen-cli
+    paperpile-cli
     stremio-linux-shell
 
     # Terminal workspace / tailscale TUI (source builds)
