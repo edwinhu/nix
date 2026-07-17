@@ -80,6 +80,7 @@ with pkgs; [
   haskellPackages.pandoc-crossref
   ripgrep
   ripgrep-all
+  rmux  # tmux-compatible multiplexer; rc-recover drives it to toggle Remote Control
   starship
   tabiew
   tailspin
