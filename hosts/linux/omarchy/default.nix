@@ -174,14 +174,16 @@ let
   # (journalctl --user -u claude-<name>). See ~/nix/CLAUDE.md.
   claudeRoutineEnv = [
     # systemd user services get a bare env — no shell rc, no home.sessionVariables.
-    # Include the bun/pixi global-bin dirs (qmd etc.) and CDP_PORT so the routines'
-    # morgen/superhuman calls hit the browser-wide CDP endpoint on :9222 (both the
-    # web apps are pages there — see chromium-flags.conf). BUN_INSTALL keeps bun's
+    # Include the bun/pixi global-bin dirs (qmd etc.). BUN_INSTALL keeps bun's
     # global dir on-PATH despite XDG_CACHE_HOME (see dotfiles/.shell_path).
+    #
+    # No CDP_PORT: the CLIs discover their endpoint themselves (the Electron
+    # desktop app's port, then Chrome/Chromium), so the routines' morgen/
+    # superhuman calls find the browser-wide :9222 without being told — and stay
+    # correct if a desktop app ever lands on this host.
     "PATH=%h/.local/bin:%h/.bun/bin:%h/.pixi/bin:%h/.nix-profile/bin:/usr/bin:/bin"
     "CLAUDE_CONFIG_DIR=%h/.claude"
     "BUN_INSTALL=%h/.bun"
-    "CDP_PORT=9222"
   ];
   claudeRoutines = {
     # Daily 08:00. Weekday: spawn the day's long-lived "🦞 assistant" session
@@ -355,7 +357,12 @@ let
     # (exit 0) and let the next timer fire retry. `timeout` returns 124 on the
     # deadline; a real auth error returns the CLI's own fast non-zero and is
     # propagated so the unit fails loudly. 20s sits well under TimeoutStartSec=90.
-    timeout 20 env CDP_PORT="$PORT" ${pkgs.superhuman-cli}/bin/superhuman account auth
+    #
+    # Deliberately NOT `env CDP_PORT="$PORT"`: $PORT is the guard's probe port,
+    # not an instruction about where the CLI should look. Passing it would pin the
+    # candidate list to one port and skip the Electron probe. The CLI discovers
+    # its own endpoint (Electron port, then Chrome/Chromium).
+    timeout 20 ${pkgs.superhuman-cli}/bin/superhuman account auth
     rc=$?
     if [ "$rc" -eq 124 ]; then
       echo "superhuman-auth-refresh: refresh timed out after 20s (extension" \
@@ -536,11 +543,18 @@ in
   # Enable home-manager
   programs.home-manager.enable = true;
 
-  # Both CDP CLIs target the browser-wide endpoint (chromium-flags.conf, :9222).
-  # superhuman-cli auto-probes 9222, but morgen-cli defaults to 9253 — point it
-  # here. Host-scoped: the Mac uses native apps on 9252/9253, so this only
-  # belongs on omarchy where everything shares the one Chromium CDP port.
-  home.sessionVariables.CDP_PORT = "9222";
+  # No CDP_PORT on purpose. Both CLIs now discover their endpoint themselves —
+  # the Electron desktop app's port first, then Chrome/Chromium — so pinning the
+  # browser-wide :9222 globally is unnecessary here, and would be actively wrong
+  # on a machine that has the desktop apps: an explicit CDP_PORT pins the
+  # candidate list to one port, so the Electron probe never runs.
+  #
+  # Was: home.sessionVariables.CDP_PORT = "9222", whose own comment named the
+  # bug — "morgen-cli defaults to 9253" — it was working around. Fixed properly
+  # in morgen-cli v0.10.2 / superhuman-cli v0.38.5.
+  #
+  # Per-invocation overrides remain: CDP_PORT pins one port and skips probing;
+  # ELECTRON_CDP_PORT and CHROME_CDP_PORT move the candidates.
 
   # ydotool client -> ydotoold socket. The ydotoold user service (below) creates
   # the socket at %t/.ydotool_socket (= $XDG_RUNTIME_DIR); point the client at it
@@ -636,8 +650,9 @@ in
   # Reproduces the Omarchy defaults and adds browser-wide CDP: the main Default
   # profile (already logged in) owns the debug endpoint on :9222, and every
   # app window (Superhuman, Morgen, etc. launched via omarchy-launch-webapp)
-  # is a page on that one endpoint — so superhuman-cli (probes 9222) and
-  # morgen-cli (CDP_PORT=9222) read tokens from the live session, no per-app
+  # is a page on that one endpoint — so superhuman-cli and morgen-cli, both of
+  # which probe here after finding no Electron app, read tokens from the live
+  # session (this host has no desktop apps, so Chromium is the only route), no per-app
   # profile or manual re-login. force = it seeds a real file at install time.
   #
   # REQUIRES a managed policy: Chromium 136+ silently IGNORES
@@ -841,8 +856,10 @@ in
       };
       Service = {
         Type = "oneshot";
-        Environment = [ "CDP_PORT=9222" ];
-        # Safety ceiling only — the v0.38.2 in-memory refresh exits in <1s.
+        # No CDP_PORT: the CLI discovers its endpoint. The script's liveness
+        # guard keeps its own ${CDP_PORT:-9222} default for the curl probe, which
+        # is a different job from telling the CLI where to look.
+        # Safety ceiling only — the in-memory refresh exits in <1s.
         TimeoutStartSec = 90;
         ExecStart = "${superhumanAuthRefresh}";
       };
