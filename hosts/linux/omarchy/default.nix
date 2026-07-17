@@ -983,6 +983,22 @@ in
       mimeType = [ "x-scheme-handler/beeper" ];
     };
 
+    # OpenWhispr dictation / meeting notes. Declared here rather than taken from
+    # the AppImage's bundled .desktop, whose `Exec=AppRun --no-sandbox` bypasses
+    # the nixGL wrapper; a bare `openwhispr` resolves to the wrapped binary on
+    # PATH. StartupWMClass matches the Electron window's app_id for Hyprland.
+    openwhispr = {
+      name = "OpenWhispr";
+      comment = "Local dictation and AI meeting notes";
+      exec = "openwhispr %U";
+      terminal = false;
+      type = "Application";
+      icon = "openwhispr";
+      categories = [ "Utility" "AudioVideo" ];
+      mimeType = [ "x-scheme-handler/openwhispr" ];
+      settings.StartupWMClass = "OpenWhispr";
+    };
+
     # hylo PDF reader (gh:edwinhu/hylo). Declared here rather than taken from
     # the AppImage's bundled .desktop so Exec points at the nixGL-wrapped `hylo`
     # on PATH and passes a local path with %f — the main process resolves the

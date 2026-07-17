@@ -428,6 +428,27 @@
                   meta = hyloPkg.meta or {};
                   passthru = { unwrapped = hyloPkg; };
                 };
+                # openwhispr — local dictation + AI meeting notes, the Linux
+                # stand-in for the macOS-only granola cask. Fetched as the
+                # upstream release AppImage (see modules/shared/openwhispr.nix).
+                # Same GL story as hylo/beeper: wrap bin/openwhispr in nixGLIntel
+                # so Chromium/Mesa resolve against system GL on non-NixOS, and
+                # force --no-sandbox (the store chrome-sandbox is not setuid).
+                # The wrapped `openwhispr` on PATH is what the launcher invokes
+                # via xdg.desktopEntries.openwhispr.
+                openwhispr = let
+                  owPkg = prev.callPackage ./modules/shared/openwhispr.nix {};
+                in prev.symlinkJoin {
+                  name = "openwhispr-nixgl-${owPkg.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "openwhispr" ''
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${owPkg}/bin/openwhispr --no-sandbox "$@"
+                    '')
+                    owPkg
+                  ];
+                  meta = owPkg.meta or {};
+                  passthru = { unwrapped = owPkg; };
+                };
                 # Zoom (proprietary Qt/CEF app, bwrap-sandboxed in nixpkgs).
                 # Same GL story as beeper/stremio/hylo on non-NixOS: wrap
                 # bin/zoom in nixGLIntel so Mesa/EGL resolve against system GL

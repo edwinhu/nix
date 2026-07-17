@@ -25,6 +25,7 @@ _:
 
   # Communication Tools
   "beeper"
+  # macOS-only; the Linux stand-in is openwhispr (modules/linux/omarchy-packages.nix)
   "granola"
   "macwhisper"
   "superhuman"
