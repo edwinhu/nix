@@ -517,6 +517,29 @@ in
       StartupNotify=true
     '';
 
+    # OpenWhispr launcher entry. MUST live here under ~/.local/share/applications
+    # (XDG_DATA_HOME), NOT via xdg.desktopEntries: like the scanner above,
+    # omarchy's walker only indexes this dir, not the nix-profile share where
+    # xdg.desktopEntries would place it. Exec is a bare `openwhispr` so it
+    # resolves to the nixGL-wrapped binary on PATH (the AppImage's bundled
+    # `Exec=AppRun --no-sandbox` would bypass the wrapper). Icon is an absolute
+    # store path to the PNG recovered from the AppImage, so it resolves without
+    # depending on icon-theme indexing of the nix profile. StartupWMClass matches
+    # the Electron window's app_id for Hyprland window association.
+    file.".local/share/applications/openwhispr.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=OpenWhispr
+      Comment=Local dictation and AI meeting notes
+      Exec=openwhispr %U
+      Icon=${pkgs.openwhispr}/share/icons/hicolor/256x256/apps/openwhispr.png
+      Terminal=false
+      Categories=Utility;AudioVideo;
+      MimeType=x-scheme-handler/openwhispr;
+      StartupWMClass=OpenWhispr
+      StartupNotify=true
+    '';
+
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
     file.".local/share/icons/Papirus-Dark".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark";

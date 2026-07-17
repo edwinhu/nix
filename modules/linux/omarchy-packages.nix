@@ -71,6 +71,10 @@ let
     # Local Wayland dictation (gh:edwinhu/superwhisper-linux)
     swlinux
 
+    # Dictation + AI meeting notes; the Linux stand-in for the macOS-only
+    # granola cask (nixGL-wrapped in flake.nix).
+    openwhispr
+
     # File managers / PDF reader
     doublecmd
     hylo
