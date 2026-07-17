@@ -116,7 +116,11 @@
             '    curl -s --max-time 1 "http://localhost:$PORT/json/version" >/dev/null 2>&1 && break' \
             '  done' \
             'fi' \
-            'export CDP_PORT=$PORT' \
+            '# No `export CDP_PORT`: the CLI discovers its endpoint (Electron' \
+            '# port, then Chrome/Chromium). Pinning it here would skip that probe,' \
+            '# so if the desktop app failed to come up above, the CLI could no' \
+            '# longer fall back to a browser session. $PORT above is only for the' \
+            '# is-it-up check and the kickstart — not an instruction to the CLI.' \
             'exec "$HOME/projects/superhuman-cli/dist/superhuman-darwin" "$@"' \
             > "$HOME/.local/bin/superhuman"
           $DRY_RUN_CMD chmod +x "$HOME/.local/bin/superhuman"
