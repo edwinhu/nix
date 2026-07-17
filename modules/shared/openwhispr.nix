@@ -15,7 +15,7 @@
 #   gh release view --repo OpenWhispr/openwhispr --json assets \
 #     --jq '.assets[] | select(.name | endswith("x86_64.AppImage")) | .digest'
 # and convert it: `nix hash convert --hash-algo sha256 --to sri <sha256>`.
-{ lib, fetchurl, appimageTools, pulseaudio, procps }:
+{ lib, fetchurl, appimageTools, pulseaudio, procps, coreutils }:
 
 let
   pname = "openwhispr";
@@ -40,7 +40,12 @@ appimageTools.wrapType2 {
   # the conferencing app. Neither is in the AppImage's FHS runtime, so without
   # these the app still dictates but silently logs `spawn pactl ENOENT` /
   # `spawn ps ENOENT` and never auto-detects a meeting.
-  extraPkgs = pkgs: [ pulseaudio procps ];
+  #
+  # coreutils: the Wayland-paste setup checklist probes input-group membership
+  # with `spawnSync("groups")`; without `groups` on the FHS PATH the probe
+  # errors and the app falsely warns "User must be in the input group" even when
+  # the user is (paste itself goes through the host ydotoold either way).
+  extraPkgs = pkgs: [ pulseaudio procps coreutils ];
 
   extraInstallCommands = ''
     install -Dm444 ${contents}/usr/share/icons/hicolor/256x256/apps/open-whispr.png \
