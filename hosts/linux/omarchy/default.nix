@@ -891,7 +891,15 @@ in
           "PATH=${lib.makeBinPath [ pkgs.ydotool pkgs.swlinux pkgs.limux ]}"
         ];
         ExecStart = "${pkgs.joycon-pad}/bin/joycon-pad --wait 3600";
-        Restart = "on-failure";
+        # Restart=always, NOT on-failure: on device loss (Joy-Con powers off or
+        # drops) the daemon's read loop logs "device read error (ENODEV)" and
+        # exits 0 — a clean exit, which on-failure ignores, leaving the pad dead
+        # until a manual restart. --wait is a startup-only acquire loop, so the
+        # restart is what re-enters it: systemd respawns after 3s and the daemon
+        # polls once a second for up to an hour, binding the new event node when
+        # the Joy-Con comes back. No busy-loop risk — --wait 3600 blocks for an
+        # hour before giving up, so a dead device costs ~1 respawn/hour.
+        Restart = "always";
         RestartSec = 3;
       };
       Install.WantedBy = [ "graphical-session.target" ];
