@@ -15,7 +15,8 @@
 #   gh release view --repo OpenWhispr/openwhispr --json assets \
 #     --jq '.assets[] | select(.name | endswith("x86_64.AppImage")) | .digest'
 # and convert it: `nix hash convert --hash-algo sha256 --to sri <sha256>`.
-{ lib, fetchurl, appimageTools, pulseaudio, procps, coreutils }:
+{ lib, fetchurl, appimageTools, pulseaudio, procps, coreutils
+, hyprland, wtype, ydotool, wl-clipboard, xdotool }:
 
 let
   pname = "openwhispr";
@@ -45,7 +46,22 @@ appimageTools.wrapType2 {
   # with `spawnSync("groups")`; without `groups` on the FHS PATH the probe
   # errors and the app falsely warns "User must be in the input group" even when
   # the user is (paste itself goes through the host ydotoold either way).
-  extraPkgs = pkgs: [ pulseaudio procps coreutils ];
+  #
+  # Wayland paste path: OpenWhispr probes a set of system tools by bare name via
+  # commandExists() and shells out to them — none are bundled in the AppImage.
+  # Without them on the FHS PATH, paste-back fails, most visibly in TERMINALS:
+  #   - hyprland (hyprctl): `hyprctl activewindow -j` reads the focused window's
+  #     class. Missing → windowSignals empty → the app can't tell it's a terminal
+  #     → it sends Ctrl+V instead of Ctrl+Shift+V, which terminals ignore, so
+  #     dictated text never lands in kitty/alacritty/foot/ghostty/etc.
+  #   - wtype / ydotool: the actual keystroke injectors on wlroots (ydotool talks
+  #     to the host ydotoold via the inherited YDOTOOL_SOCKET).
+  #   - wl-clipboard (wl-copy/wl-paste): clipboard read/write for paste + restore.
+  #   - xdotool: XWayland fallback path.
+  extraPkgs = pkgs: [
+    pulseaudio procps coreutils
+    hyprland wtype ydotool wl-clipboard xdotool
+  ];
 
   extraInstallCommands = ''
     install -Dm444 ${contents}/usr/share/icons/hicolor/256x256/apps/open-whispr.png \
