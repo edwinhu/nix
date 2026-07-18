@@ -62,6 +62,14 @@ let
     limux
     tsui
 
+    # Bluetooth CLI. The Omarchy/Arch base ships only the bluez *daemon*
+    # (bluetoothd); bluetoothctl lives in the separate bluez-utils package,
+    # which isn't installed — so provide the full bluez here for the CLI.
+    # Used by ~/projects/joycon-pad/pair-joycon.sh and ad-hoc pairing. The
+    # systemd bluetooth.service still runs the distro daemon (absolute path),
+    # so this adds only the client tools to PATH; no second daemon.
+    bluez
+
     # GUI automation / input simulation (Wayland + X11)
     dotool
     xdotool
