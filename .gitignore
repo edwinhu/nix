@@ -5,3 +5,7 @@ secrets.yaml
 *.age
 id_ed25519_agenix*
 result
+
+# Python bytecode cache (e.g. hosts/linux/omarchy/files/*.py)
+__pycache__/
+*.pyc
