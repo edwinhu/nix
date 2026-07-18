@@ -657,6 +657,22 @@ in
           states = [ 24 25 11 ];
           states_match_type = 1;
         };
+        # Stremio: web UI in a GTK4/WebKit shell. Its controls (back button,
+        # nav, player controls, cards) are non-semantic focusable `section`
+        # divs (role 85, empty accessible name), so the default allow-list
+        # skips them — only its genre/cast links (88), search box (79) and one
+        # real button (43) were hinted. Add 85 and gate on FOCUSABLE (11) +
+        # SENSITIVE (24) + SHOWING (25), states_match_type 1 = ALL, so only the
+        # tabbable controls tag, not every layout div. Same pattern as Beeper;
+        # re-list 88/79/43 because roles replaces (not extends) the default.
+        # scale_factor inherits 1 from default (measured logical coords). Keyed
+        # on the Hyprland window class (hyprctl activewindow .class).
+        "com.stremio.Stremio" = {
+          roles = [ 85 88 79 43 ];
+          roles_match_type = 2;
+          states = [ 24 25 11 ];
+          states_match_type = 1;
+        };
       };
     };
   };
