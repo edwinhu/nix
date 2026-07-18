@@ -25,7 +25,7 @@ in
     file.".local/share/icons/Papirus-Dark".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark";
 
     # Install desktop entry icons
-    file.".local/share/applications/icons/OpenCode.svg".source = "${iconDir}/Docker.svg";  # Placeholder until we have OpenCode icon
+    file.".local/share/applications/icons/OpenCode.svg".source = "${iconDir}/OpenCode.svg";
     file.".local/share/applications/icons/Docker.svg".source = "${iconDir}/Docker.svg";
     file.".local/share/applications/icons/Morgen.svg".source = "${iconDir}/Superhuman.svg";  # Using similar icon
     file.".local/share/applications/icons/Beeper.svg".source = "${iconDir}/Superhuman.svg";  # Using similar icon  
