@@ -540,6 +540,30 @@ in
       StartupNotify=true
     '';
 
+    # Obsidian launcher override. MUST live here under ~/.local/share/applications
+    # (XDG_DATA_HOME), NOT via xdg.desktopEntries: the Arch obsidian package ships
+    # /usr/share/applications/obsidian.desktop, and on this host /usr/share
+    # precedes the nix-profile share in XDG_DATA_DIRS — so a profile entry loses.
+    # Also, omarchy's walker only indexes this dir. Adds
+    # --force-renderer-accessibility so the Electron renderer publishes its
+    # web-content AT-SPI tree; without it `hints` sees only the top-level frame
+    # (2 nodes) and can't hint anything (the org.a11y toolkit-accessibility
+    # toggle alone is not enough for this Electron build). Native Wayland is kept
+    # (no --ozone-platform=x11) so GDK_SCALE=2 coords stay consistent with the
+    # hints "obsidian" scale_factor=0.5 rule.
+    file.".local/share/applications/obsidian.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Obsidian
+      Comment=Obsidian
+      Exec=/usr/bin/obsidian --force-renderer-accessibility %U
+      Icon=obsidian
+      Terminal=false
+      Categories=Office;
+      MimeType=x-scheme-handler/obsidian;
+      StartupWMClass=obsidian
+    '';
+
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
     file.".local/share/icons/Papirus-Dark".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus-Dark";
@@ -648,6 +672,29 @@ in
         "dev.limux.linux".scale_factor = 1;
         "doublecmd".scale_factor = 1;
         "org.gnome.Nautilus".scale_factor = 1;
+        # Obsidian (Electron): unlike this host's GTK apps, Chromium WEB CONTENT
+        # reports PHYSICAL 2x AT-SPI extents even with GDK_SCALE=2 (measured:
+        # links at window-relative x up to ~2100 in a 1258-logical-wide window;
+        # sizes/gaps exactly 2x). So it needs the halving that alarm's default
+        # applies globally — the "PHYSICAL-reporting app" case the default-rule
+        # comment above anticipated. Keyed on the Hyprland window class
+        # ("obsidian"); roles inherit from default. Requires the app to publish
+        # its a11y tree at all, which the obsidian desktop entry forces via
+        # --force-renderer-accessibility (the org.a11y toggle alone is not
+        # enough for this Electron build).
+        #
+        # States: the default gate (SENSITIVE 24 + SHOWING 25) tags ALL rendered
+        # markdown — every in-content link and task line — so a normal note
+        # produces dozens of hints. Add FOCUSABLE (11) so only genuinely tabbable
+        # targets hint: real nav links, file-tree items, ribbon buttons, tab
+        # headers, task checkboxes; non-focusable content spans / list bullets
+        # drop out. Measured on a task-heavy note: 36 -> 15 hints. Same
+        # SENSITIVE+SHOWING+FOCUSABLE / match-ALL pattern as Beeper and Stremio.
+        "obsidian" = {
+          scale_factor = 0.5;
+          states = [ 24 25 11 ];
+          states_match_type = 1;
+        };
         # Beeper: hint only conversation threads (FOCUSABLE `section` role 85)
         # plus the composer (entry role 79); require FOCUSABLE (11) + SENSITIVE
         # (24) + SHOWING (25), states_match_type 1 = ALL. See alarm for details.
