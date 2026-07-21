@@ -6,7 +6,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Get current username
-USERNAME=$(whoami)
+USERNAME=$(whoami 2>/dev/null || echo "$USER")  # whoami needs Directory Services, which some non-login shells lack; $USER survives
 
 # Detect if we're on NixOS
 if [ -f /etc/nixos/configuration.nix ] || [ -d /run/current-system ] || command -v nixos-rebuild >/dev/null 2>&1; then

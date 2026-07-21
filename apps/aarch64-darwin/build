@@ -6,7 +6,7 @@ RED='\033[1;31m'
 NC='\033[0m'
 
 # Get current username
-USERNAME=$(whoami)
+USERNAME=$(whoami 2>/dev/null || echo "$USER")  # whoami needs Directory Services, which some non-login shells lack; $USER survives
 FLAKE_SYSTEM="darwinConfigurations.${USERNAME}.system"
 
 export NIXPKGS_ALLOW_UNFREE=1

@@ -203,7 +203,7 @@
           # Homebrew-installed casks have root ownership; need sudo to replace
           sudo rm -rf /Applications/Claude.app
           sudo mv "''$TMPDIR/Claude.app" /Applications/
-          sudo chown -R "$(whoami)" /Applications/Claude.app
+          sudo chown -R "$(whoami 2>/dev/null || echo "$USER")" /Applications/Claude.app
 
           echo -e "''${GREEN}Updated Claude Desktop to ''$LATEST''${NC}"
           echo "Opening Claude Desktop..."
