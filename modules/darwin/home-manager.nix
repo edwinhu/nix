@@ -84,6 +84,39 @@
       launchd.agents.activate-agenix.config.KeepAlive.Crashed =
         lib.mkForce true;
 
+      # Bring Dia up on CDP 9222 at login, through the wrapper bundle built by
+      # activation.installDiaCdpApp below.
+      #
+      # Deliberately RunAtLoad-only, NO KeepAlive. The previous hand-written
+      # ~/Library/LaunchAgents/com.dia.cdp.plist ran Dia's binary directly under
+      # KeepAlive { SuccessfulExit = false; } + ThrottleInterval 30. Once a
+      # flagless Dia (Dock/Spotlight) held the profile SingletonLock, every
+      # respawn handed off to it and exited non-zero, so launchd started a new
+      # Dia every 30s and 9222 never came up. `open` on the wrapper is
+      # idempotent — the wrapper activates an existing Dia instead of spawning
+      # one — and `open` exits 0, so there is nothing for KeepAlive to chase.
+      #
+      # Plain `open -a`, NOT `open -gja`. -g (background) and -j (hidden) make
+      # Dia bounce: it comes up correctly, logs "DevTools listening on
+      # ws://127.0.0.1:9222/...", fails task_policy_set TASK_CATEGORY_POLICY /
+      # TASK_SUPPRESSION_POLICY, then relaunches itself seconds later as a
+      # normal foreground app — WITHOUT the argv, so 9222 dies with the first
+      # process. A plain foreground launch is the one path Dia does not fight.
+      launchd.agents.dia-cdp = {
+        enable = true;
+        config = {
+          Label = "com.dia.cdp";
+          ProgramArguments = [
+            "/usr/bin/open"
+            "-a"
+            "${config.home.homeDirectory}/Applications/Dia (CDP).app"
+          ];
+          RunAtLoad = true;
+          StandardOutPath = "/tmp/dia-cdp.out.log";
+          StandardErrorPath = "/tmp/dia-cdp.err.log";
+        };
+      };
+
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527
         enableNixpkgsReleaseCheck = false;
@@ -124,6 +157,73 @@
             'exec "$HOME/projects/superhuman-cli/dist/superhuman-darwin" "$@"' \
             > "$HOME/.local/bin/superhuman"
           $DRY_RUN_CMD chmod +x "$HOME/.local/bin/superhuman"
+        '';
+
+        # "Dia (CDP).app" — wrapper bundle that owns Dia's launch so CDP 9222 is
+        # always on. Sibling of the hand-made "Superhuman (CDP).app" (9252).
+        #
+        # --remote-debugging-port only applies at launch and cannot be injected
+        # into a running app. A flagless Dia started from the Dock therefore
+        # takes the profile SingletonLock, and every later CDP launch hands its
+        # command line to that instance and exits — 9222 stays down. Under the
+        # old com.dia.cdp (KeepAlive SuccessfulExit=false, ThrottleInterval 30)
+        # each of those handoffs read as a failure, so launchd started a fresh
+        # Dia every 30s forever. Point the Dock/Login Item at this bundle and
+        # the flagless launch never happens; the agent below is RunAtLoad-only.
+        activation.installDiaCdpApp = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          APP="$HOME/Applications/Dia (CDP).app"
+          $DRY_RUN_CMD mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          if [ -f /Applications/Dia.app/Contents/Resources/AppIcon.icns ]; then
+            $DRY_RUN_CMD cp -f /Applications/Dia.app/Contents/Resources/AppIcon.icns \
+              "$APP/Contents/Resources/Icon.icns"
+          fi
+          $DRY_RUN_CMD printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0">' \
+            '<dict>' \
+            '    <key>CFBundleExecutable</key><string>launcher</string>' \
+            '    <key>CFBundleIdentifier</key><string>com.user.dia-cdp</string>' \
+            '    <key>CFBundleName</key><string>Dia</string>' \
+            '    <key>CFBundleDisplayName</key><string>Dia</string>' \
+            '    <key>CFBundleIconFile</key><string>Icon</string>' \
+            '    <key>CFBundlePackageType</key><string>APPL</string>' \
+            '    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>' \
+            '    <key>CFBundleShortVersionString</key><string>1.0</string>' \
+            '    <key>NSHighResolutionCapable</key><true/>' \
+            '</dict>' \
+            '</plist>' \
+            > "$APP/Contents/Info.plist"
+          $DRY_RUN_CMD printf '%s\n' \
+            '#!/bin/bash' \
+            '# Launch Dia.app with CDP enabled on 9222. Managed by nix —' \
+            '# edit modules/darwin/home-manager.nix, not this file.' \
+            'PORT=9222' \
+            'DIA_BIN="/Applications/Dia.app/Contents/MacOS/Dia"' \
+            '# Already running? Activate and exit — never spawn a duplicate. A' \
+            '# second instance cannot take the profile SingletonLock; it aborts' \
+            '# (SIGABRT), which under a KeepAlive agent becomes a relaunch loop.' \
+            '#' \
+            '# ps, not pgrep: pgrep needs sysmond and returns "Cannot get process' \
+            '# list" in sandboxed/non-GUI contexts, where it would fail OPEN and' \
+            '# fall through to the exec below. `comm=` prints the full executable' \
+            '# path, so -x is an exact match and this script cannot self-match.' \
+            '# open -a (not osascript) to activate: Dia is not AppleScript-' \
+            '# scriptable (-1728) and osascript would need Automation TCC.' \
+            'if ps -axo comm= | grep -qx "$DIA_BIN"; then' \
+            '    open -a /Applications/Dia.app 2>/dev/null || true' \
+            '    exit 0' \
+            'fi' \
+            '# exec, so this process BECOMES Dia and the Dock running indicator' \
+            '# stays on this bundle instead of lighting up a second icon.' \
+            '# _CFBundleIdentifier is unset so CoreFoundation resolves Dia'"'"'s main' \
+            '# bundle from the executable path rather than inheriting this' \
+            '# wrapper'"'"'s id — keeps Dia'"'"'s TCC/keychain identity intact.' \
+            'unset _CFBundleIdentifier' \
+            "exec \"\$DIA_BIN\" --remote-debugging-port=\"\$PORT\" --remote-allow-origins='*'" \
+            > "$APP/Contents/MacOS/launcher"
+          $DRY_RUN_CMD chmod +x "$APP/Contents/MacOS/launcher"
+          $DRY_RUN_CMD touch "$APP"
         '';
 
         # Idempotent bootstrap for AI CLIs (claude, codex, opencode).
