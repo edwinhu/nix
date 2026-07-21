@@ -837,6 +837,32 @@ in
   # shrink it here only — macOS/alarm keep their own size.
   xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
 
+  # Default terminal: Ghostty, not Omarchy's stock Alacritty. Everything that
+  # opens a terminal here (SUPER+RETURN, SUPER ALT+RETURN, $TERMINAL, any app
+  # spawning a terminal) goes through `xdg-terminal-exec`, which picks the first
+  # valid entry in this list — so this one file is the whole switch.
+  #
+  # Ghostty itself comes from pacman (`sudo pacman -S ghostty`), not nix: it's a
+  # GL app, and the distro build links the system Mesa directly instead of
+  # needing the nixGL wrap the nixpkgs build would (see CLAUDE.md). That matches
+  # the repo's pacman-over-nix rule for anything Omarchy already packages.
+  #
+  # No custom .desktop entry needed: Ghostty's shipped
+  # com.mitchellh.ghostty.desktop has no X-TerminalArg* keys, so
+  # xdg-terminal-exec honors omarchy's `--dir=` by chdir'ing before exec instead.
+  #
+  # force = true because `omarchy install terminal <x>` writes this file too;
+  # nix owns it, so a rebuild restores Ghostty if that command ever rewrites it.
+  xdg.configFile."xdg-terminals.list" = {
+    force = true;
+    text = ''
+      # Terminal emulator preference order for xdg-terminal-exec
+      # The first found and valid terminal will be used
+      com.mitchellh.ghostty.desktop
+      Alacritty.desktop
+    '';
+  };
+
   # Hyper(F13) leader remaps for limux — consumed by the xremap service below.
   # F13+<key> emits limux's stock Ctrl+Alt(+Shift) combo (limux can't bind F13
   # itself). Hold F13 like Cmd/Shift while tapping the key.
