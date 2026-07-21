@@ -30,6 +30,7 @@
   autoPatchelfHook,
   ghostty,
   glib,
+  glib-networking,
   gsettings-desktop-schemas,
   gtk4,
   libadwaita,
@@ -131,6 +132,12 @@ rustPlatform.buildRustPackage {
 
   buildInputs = [
     glib
+    # WebKit/libsoup get their TLS from a GIO module, not from glib itself.
+    # Without this, GIO falls back to GDummyTlsBackend and every https:// load
+    # in a browser pane fails with "TLS support is not available".
+    # wrapGAppsHook4 picks up lib/gio/modules from buildInputs into
+    # GIO_EXTRA_MODULES, so being a buildInput is the whole wiring.
+    glib-networking
     gsettings-desktop-schemas
     gtk4
     libadwaita
