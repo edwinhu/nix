@@ -762,6 +762,26 @@ in
   #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-extensions-policy.json \
   #     /etc/chromium/policies/managed/extensions.json
   # Verify: chrome://policy (Reload policies) shows ExtensionInstallForcelist.
+  #
+  # Force-installing extensions has a NON-OBVIOUS side effect that needs a THIRD
+  # policy. DeveloperToolsAvailability defaults to
+  # DisallowedForForceInstalledExtensions, so the moment an extension arrives via
+  # the forcelist above, ALL CDP attach to that extension's service worker is
+  # refused — including our own tooling. Concretely: readwise-reader-tools could
+  # still *find* the Readwise extension SW target but every message round-trip
+  # timed out ("Timeout communicating with extension service worker"), 14/14
+  # saves silently falling back to the weaker manual-extraction path. It broke on
+  # 2026-07-15, the day the Readwise ID was added to the forcelist, and looked
+  # exactly like the extension auth drift we'd seen before — hence the long
+  # misdiagnosis. Root cause + probe: readwise-reader-tools
+  # docs/investigations/2026-07-21_extension-save-blocked-by-forcelist-policy.md
+  #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-devtools-policy.json \
+  #     /etc/chromium/policies/managed/devtools-availability.json
+  # Then: systemctl --user restart chrome-cdp
+  # Verify: chrome://policy shows DeveloperToolsAvailability=1 (Allowed for all),
+  # and CDP can attach to a force-installed extension's SW target.
+  # NOTE the ordering dependency — adding ANY new extension to the forcelist
+  # without this policy present re-breaks CDP access to it.
   xdg.configFile."chromium-flags.conf" = {
     force = true;
     text = ''
