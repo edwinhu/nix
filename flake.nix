@@ -361,7 +361,15 @@
                 # (the wrapper's GL env is inherited by the limux-host child that
                 # actually creates the GL context). x86_64/aarch64 both need it.
                 limux = let
-                  limuxPkg = prev.callPackage ./modules/shared/limux.nix {};
+                  # Pin ghostty to the UNWRAPPED package: the overlay's `ghostty`
+                  # is a nixGL symlinkJoin, which flattens the multi-output derivation
+                  # and so drops the `terminfo` output limux.nix copies from. limux
+                  # only wants ghostty's share/ resources + terminfo — it never runs
+                  # the binary, and carries its own nixGL wrapper — so the wrap is
+                  # both unnecessary and lossy here.
+                  limuxPkg = prev.callPackage ./modules/shared/limux.nix {
+                    ghostty = prev.ghostty;
+                  };
                 in prev.symlinkJoin {
                   name = "limux-nixgl-${limuxPkg.version or "unknown"}";
                   paths = [
@@ -388,6 +396,42 @@
                   '';
                   meta = limuxPkg.meta or {};
                   passthru = { unwrapped = limuxPkg; };
+                };
+                # ghostty is the default terminal on Omarchy (xdg-terminals.list,
+                # host module). Same GPU/GL story as limux — it's the same GTK4 +
+                # libghostty renderer — so unwrapped it dies with "failed to make
+                # GL context current: Failed to create EGL display" on this
+                # non-NixOS host. Verified: bare binary fails, nixGLIntel-wrapped
+                # renders a surface and exits 0.
+                ghostty = let
+                  ghosttyPkg = prev.ghostty;
+                in prev.symlinkJoin {
+                  name = "ghostty-nixgl-${ghosttyPkg.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "ghostty" ''
+                      # Unset GDK_SCALE (Omarchy sets =2 globally in monitors.conf):
+                      # ghostty already scales from the compositor's 2x wl_output,
+                      # so GDK_SCALE=2 double-scales -> huge terminal. Same fix as
+                      # limux, which embeds the same renderer.
+                      exec env -u GDK_SCALE ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${ghosttyPkg}/bin/ghostty "$@"
+                    '')
+                    ghosttyPkg
+                  ];
+                  # com.mitchellh.ghostty.desktop hard-codes Exec/TryExec to the
+                  # UNWRAPPED ${ghosttyPkg}/bin/ghostty, so every launcher path —
+                  # including xdg-terminal-exec, i.e. SUPER+RETURN — would bypass
+                  # the nixGL wrap and hit the EGL error. Repoint both at the
+                  # wrapped $out/bin/ghostty.
+                  postBuild = ''
+                    d=$out/share/applications/com.mitchellh.ghostty.desktop
+                    if [ -e "$d" ]; then
+                      rm -f "$d"
+                      sed "s|${ghosttyPkg}/bin/ghostty|$out/bin/ghostty|g" \
+                        ${ghosttyPkg}/share/applications/com.mitchellh.ghostty.desktop > "$d"
+                    fi
+                  '';
+                  meta = ghosttyPkg.meta or {};
+                  passthru = (ghosttyPkg.passthru or {}) // { unwrapped = ghosttyPkg; };
                 };
                 # stremio-linux-shell uses mpv (GL) — same as beeper/limux, wrap
                 # bin/stremio in nixGLIntel so it finds system Mesa/EGL on non-NixOS

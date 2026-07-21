@@ -436,7 +436,11 @@ in
       #   brscan-tui   # interactive gum TUI (mode/dpi/sides/format incl. PDF → scan)
       #   brscan …     # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
       # (brscanPdf is the TUI's internal PDF engine — see runtimeInputs, not on PATH.)
-      ++ [ brscan brscanTui vimiumToggle ];
+      # ghostty: the default terminal here (see xdg-terminals.list below). Comes
+      # from the Linux overlay's nixGLIntel-wrapped override, not pacman — the
+      # wrapper is also where GDK_SCALE gets unset, which the distro build would
+      # need a hand-maintained desktop-entry override to do.
+      ++ [ brscan brscanTui vimiumToggle pkgs.ghostty ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -467,6 +471,26 @@ in
     activation.setupClaudeSymlinks = lib.hm.dag.entryAfter [ "installAITools" ] ''
       $DRY_RUN_CMD env PATH="${pkgs.coreutils}/bin:/usr/bin:/bin" \
         ${pkgs.bash}/bin/bash "$HOME/dotfiles/scripts/setup-claude-symlinks.sh" || true
+    '';
+
+    # Reindex the app launcher after a switch, so newly installed nix GUI apps
+    # actually appear in Walker.
+    #
+    # elephant (Walker's data provider) indexes desktop entries at startup and
+    # then watches for changes. Two properties of the nix profile defeat that:
+    # every store file has mtime 1969-12-31, so an mtime comparison never looks
+    # stale; and a switch REPLACES ~/.nix-profile/share/applications with a new
+    # store path rather than writing into the old one, so an inotify watch on
+    # the previous directory never fires. Net effect: a nix-installed app is
+    # present on disk and resolvable by desktop ID, but invisible in the
+    # launcher until elephant is restarted by hand — which is exactly what kept
+    # happening (ghostty, and every GUI app added before it).
+    #
+    # try-restart is a no-op when the units aren't running (e.g. switching from
+    # a TTY with no graphical session), so this is safe outside Hyprland.
+    activation.reindexWalker = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${pkgs.systemd}/bin/systemctl --user try-restart \
+        elephant.service app-walker@autostart.service || true
     '';
 
     # swlinux dictation models (large, non-store) — fetch once to
@@ -836,6 +860,34 @@ in
   # big on this 32" 4K @ scale-2 panel (and in limux's embedded libghostty), so
   # shrink it here only — macOS/alarm keep their own size.
   xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
+
+  # Default terminal: Ghostty, not Omarchy's stock Alacritty. Everything that
+  # opens a terminal here (SUPER+RETURN, SUPER ALT+RETURN, $TERMINAL, any app
+  # spawning a terminal) goes through `xdg-terminal-exec`, which picks the first
+  # valid entry in this list — so this one file is the whole switch.
+  #
+  # Ghostty comes from nix (home.packages above), nixGLIntel-wrapped in the Linux
+  # overlay — unwrapped it dies with "Failed to create EGL display" on this
+  # non-NixOS host. The overlay also repoints the desktop entry's Exec/TryExec at
+  # the wrapper, which is what makes this list entry resolve to a working binary.
+  # ~/.nix-profile/share is on the session XDG_DATA_DIRS, so the entry is found.
+  #
+  # No custom .desktop entry needed: Ghostty's com.mitchellh.ghostty.desktop has
+  # no X-TerminalArg* keys, so xdg-terminal-exec honors omarchy's `--dir=` by
+  # chdir'ing before exec instead of passing a flag (only alacritty/foot need the
+  # custom entries Omarchy ships).
+  #
+  # force = true because `omarchy install terminal <x>` writes this file too;
+  # nix owns it, so a rebuild restores Ghostty if that command ever rewrites it.
+  xdg.configFile."xdg-terminals.list" = {
+    force = true;
+    text = ''
+      # Terminal emulator preference order for xdg-terminal-exec
+      # The first found and valid terminal will be used
+      com.mitchellh.ghostty.desktop
+      Alacritty.desktop
+    '';
+  };
 
   # Hyper(F13) leader remaps for limux — consumed by the xremap service below.
   # F13+<key> emits limux's stock Ctrl+Alt(+Shift) combo (limux can't bind F13

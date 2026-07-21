@@ -93,4 +93,40 @@ nix flake update nix-secrets  # Update only secrets
   - **GDK_SCALE double-scaling:** Omarchy sets `GDK_SCALE=2` globally
     (monitors.conf) for the 2x display. Apps that already honor the Wayland
     wl_output scale (e.g. limux/libghostty) then double-scale → huge UI. Fix per
-    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.
+    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.- **Nix GUI apps missing from Walker — no entry, or an entry with no icon
+  (Omarchy):** after adding a GUI app to `home.packages`, it commonly either
+  does not appear in Walker at all, or appears with a blank/generic icon. Both
+  symptoms are the SAME root cause, and neither means the app is installed
+  wrong: the files are present and correct (binary in `~/.nix-profile/bin`,
+  `.desktop` in `~/.nix-profile/share/applications`, icons in
+  `~/.nix-profile/share/icons/hicolor/*/apps/`). What is stale is the
+  long-running launcher process — `elephant` indexes desktop entries at
+  startup, and Walker's GTK icon theme is likewise loaded once at startup. Two
+  properties of the nix profile keep both from ever noticing an update: every
+  store file has mtime `1969-12-31`, so nothing looks stale by mtime; and a
+  switch REPLACES `~/.nix-profile/share/{applications,icons}` with a new store
+  path instead of writing into the old one, so an inotify watch on the previous
+  directory never fires. Restarting elephant + Walker fixes both at once.
+  Handled automatically by the `reindexWalker` home-manager activation in
+  `hosts/linux/omarchy/default.nix` (`systemctl --user try-restart
+  elephant.service app-walker@autostart.service`; `try-restart` is a no-op with
+  no graphical session). By hand: `omarchy restart walker`.
+  - **Diagnose from data, not the launcher UI.** Entry indexed:
+    `elephant query "desktopapplications;<name>;5"`. Icon actually resolvable
+    by GTK (this is the check that distinguishes a real packaging problem from
+    a stale cache):
+    ```
+    python3 -c 'import gi;gi.require_version("Gtk","4.0")
+    from gi.repository import Gtk,Gdk;Gtk.init()
+    t=Gtk.IconTheme.get_for_display(Gdk.Display.get_default())
+    print(t.has_icon("<icon-name>"))'
+    ```
+    Take `<icon-name>` from the entry's `Icon=` key. Note `find` does NOT
+    descend into symlinked directories and nix profiles are full of them — use
+    `find -L` or you will conclude icons are missing when they are present.
+  - **A live-system check can be invalidated mid-diagnosis.** If the config is
+    applied from a worktree branch, any `build-switch` run from `main` (another
+    session, a parallel job) reverts it — the app vanishes from the profile
+    while Walker still shows a cached entry, which looks exactly like "installed
+    but no icon". Confirm what is actually live before diagnosing:
+    `ls -l ~/.nix-profile/bin/<app>` and `ls -lat ~/.local/state/nix/profiles/`.
