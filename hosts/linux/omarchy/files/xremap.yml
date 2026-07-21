@@ -1,36 +1,88 @@
-# Hyper (F13) leader. Global (no app filter) for reliability — the limux combos
-# are limux-specific so they're inert elsewhere; F13-v runs vimium-toggle.
+# Hyper (F13) ≡ Cmd.
+#
+# Design rule: every bind below mirrors cmux's macOS Cmd shortcut, translated to
+# whichever limux (the Linux port) accelerator implements the same action. Learn
+# cmux's keymap once and it works on both machines; xremap absorbs the fact that
+# limux's native accels are ugly Ctrl+Alt(+Shift) chords, and that limux can't
+# bind F13 itself (its keybind editor only accepts Ctrl/Alt/Cmd combos).
+#
+# Comments give the cmux equivalent. Reference: https://cmux.com/docs/keyboard-shortcuts
+#
+# Collision escape hatch: where a cmux Cmd bind would clash with a bind we want
+# to keep (vim pane focus, vimium-toggle), the cmux meaning moves to Hyper+Alt.
+#
+# Global (no app filter) for reliability — the limux combos are limux-specific
+# so they're inert elsewhere; F13-v runs vimium-toggle.
 virtual_modifiers:
   - F13
 keymap:
   - name: limux-hyper
     remap:
-      F13-h: Ctrl-Alt-Left
-      F13-j: Ctrl-Alt-Down
-      F13-k: Ctrl-Alt-Up
-      F13-l: Ctrl-Alt-Right
-      F13-Backslash: Ctrl-Alt-d
-      F13-Minus: Ctrl-Alt-Shift-d
-      F13-Enter: Ctrl-Shift-t
-      F13-w: Ctrl-Shift-w
-      F13-z: Ctrl-Shift-z
-      F13-1: Ctrl-Alt-1
-      F13-2: Ctrl-Alt-2
-      F13-3: Ctrl-Alt-3
-      F13-4: Ctrl-Alt-4
-      F13-5: Ctrl-Alt-5
-      F13-6: Ctrl-Alt-6
-      F13-7: Ctrl-Alt-7
-      F13-8: Ctrl-Alt-8
-      F13-9: Ctrl-Alt-9
-      F13-n: Ctrl-Alt-Shift-n
-      F13-Tab: Ctrl-Alt-PageDown
-      F13-Shift-Tab: Ctrl-Alt-PageUp
-      F13-Shift-w: Ctrl-Alt-w
-      F13-LeftBrace: Ctrl-Alt-Shift-Left
-      F13-RightBrace: Ctrl-Alt-Shift-Right
-      F13-b: Ctrl-Alt-m
-      F13-f: Ctrl-Alt-f
+      # ---- Tabs (cmux calls these "surfaces") ----
+      F13-t: Ctrl-Shift-t                         # Cmd+T          new tab
+      F13-Enter: Ctrl-Shift-t                     #                (legacy alias, pre-Cmd-parity)
+      F13-w: Ctrl-Shift-w                         # Cmd+W          close tab
+      F13-Shift-RightBrace: Ctrl-Alt-Shift-Right  # Cmd+Shift+]    next tab
+      F13-Shift-LeftBrace: Ctrl-Alt-Shift-Left    # Cmd+Shift+[    prev tab
+      F13-Tab: Ctrl-Alt-Shift-Right               #                next tab (no cmux equivalent; Tab is free)
+      F13-Shift-Tab: Ctrl-Alt-Shift-Left          #                prev tab
+      # NOTE: limux has no "activate tab N" action (cmux's Ctrl+1..9), so
+      # tab-by-number is unbindable until upstream adds it.
+
+      # ---- Workspaces ----
+      F13-1: Ctrl-Alt-1                           # Cmd+1          workspace 1
+      F13-2: Ctrl-Alt-2                           # Cmd+2
+      F13-3: Ctrl-Alt-3                           # Cmd+3
+      F13-4: Ctrl-Alt-4                           # Cmd+4
+      F13-5: Ctrl-Alt-5                           # Cmd+5
+      F13-6: Ctrl-Alt-6                           # Cmd+6
+      F13-7: Ctrl-Alt-7                           # Cmd+7
+      F13-8: Ctrl-Alt-8                           # Cmd+8
+      F13-9: Ctrl-Alt-9                           # Cmd+9          last workspace
+      F13-n: Ctrl-Alt-Shift-n                     # Cmd+N          new workspace
+      F13-Shift-w: Ctrl-Alt-Shift-w               # Cmd+Shift+W    close workspace (was: close pane — wrong)
+      F13-Shift-n: Ctrl-Alt-n                     # Cmd+Shift+N    new limux instance
+      F13-Ctrl-RightBrace: Ctrl-Alt-PageDown      # Ctrl+Cmd+]     next workspace
+      F13-Ctrl-LeftBrace: Ctrl-Alt-PageUp         # Ctrl+Cmd+[     prev workspace
+
+      # ---- Panes ----
+      F13-d: Ctrl-Alt-d                           # Cmd+D          split right
+      F13-Shift-d: Ctrl-Alt-Shift-d               # Cmd+Shift+D    split down
+      F13-Shift-Enter: Ctrl-Shift-z               # Cmd+Shift+Ret  toggle pane zoom
+      F13-Alt-w: Ctrl-Alt-w                       #                close focused pane
+      F13-h: Ctrl-Alt-Left                        # Opt+Cmd+Left   focus left  (vim)
+      F13-j: Ctrl-Alt-Down                        # Opt+Cmd+Down   focus down  (vim)
+      F13-k: Ctrl-Alt-Up                          # Opt+Cmd+Up     focus up    (vim)
+      F13-l: Ctrl-Alt-Right                       # Opt+Cmd+Right  focus right (vim)
+      F13-Left: Ctrl-Alt-Left                     # Opt+Cmd+Left   focus left  (arrows)
+      F13-Down: Ctrl-Alt-Down                     # Opt+Cmd+Down
+      F13-Up: Ctrl-Alt-Up                         # Opt+Cmd+Up
+      F13-Right: Ctrl-Alt-Right                   # Opt+Cmd+Right
+
+      # ---- Browser ----
+      F13-Shift-l: Ctrl-Shift-l                   # Cmd+Shift+L    open browser in split
+      F13-Alt-l: Ctrl-l                           # Cmd+L          focus address bar (Hyper+L is vim focus-right)
+      F13-LeftBrace: Ctrl-LeftBrace               # Cmd+[          browser back
+      F13-RightBrace: Ctrl-RightBrace             # Cmd+]          browser forward
+      F13-r: Ctrl-r                               # Cmd+R          browser reload
+      F13-Shift-i: Ctrl-Alt-i                     # Opt+Cmd+I      dev tools
+      F13-Shift-c: Ctrl-Alt-c                     # Opt+Cmd+C      JavaScript console
+
+      # ---- Find ----
+      F13-f: Ctrl-Alt-f                           # Cmd+F          find
+      F13-g: Ctrl-Alt-g                           # Cmd+G          find next
+      F13-Shift-g: Ctrl-Alt-Shift-g               # Opt+Cmd+G      find previous
+      F13-Shift-f: Ctrl-Alt-Shift-f               # Opt+Cmd+Shift+F hide find bar
+      F13-e: Ctrl-Alt-e                           # Cmd+E          use selection for find
+
+      # ---- App / terminal ----
+      F13-b: Ctrl-Alt-m                           # Cmd+B          toggle sidebar
+      F13-Shift-b: Ctrl-Alt-Shift-m               # Cmd+Opt+B      toggle top bar
+      F13-Shift-k: Ctrl-Alt-k                     # Cmd+Shift+K    clear scrollback
+      F13-c: Ctrl-Shift-c                         # Cmd+C          copy
+      F13-Alt-v: Ctrl-Shift-v                     # Cmd+V          paste (Hyper+V is vimium-toggle)
+      F13-0: Ctrl-Alt-Shift-0                     # Cmd+0          reset font size
+
       # Hyper+V: toggle "vim mode" (Vimium) globally on/off, default OFF. Not a
       # limux combo — runs the nix vimium-toggle binary directly (absolute store
       # path injected by the omarchy host's xdg.configFile). See default.nix.
