@@ -42,30 +42,14 @@ in
     };
   };
 
-  ssh = {
-    enable = true;
-    enableDefaultConfig = false;
-    includes = [
-      "${homeDir}/.ssh/config_external"
-    ];
-    matchBlocks = {
-      "github.com" = {
-        identitiesOnly = true;
-        identityFile = [
-          "${homeDir}/.ssh/id_nano_sk"
-          "${homeDir}/.ssh/id_nfc_sk"
-          "${homeDir}/.ssh/id_github"
-        ];
-      };
-      "*" = {
-        serverAliveInterval = 180;
-        addKeysToAgent = "yes";
-        identityFile = [
-          "${homeDir}/.ssh/id_ed25519_agenix"
-        ];
-      };
-    };
-  };
+  # ~/.ssh/config managed by dotfiles/.ssh/config (stow), not home-manager.
+  # Both wanted to own the path, which made `stow .` abort on a conflict. The
+  # dotfiles copy is a superset of what this block generated (same github.com
+  # keys, same Host *, plus the `Host winvm` alias word-render.nix asks for) and
+  # uses ~/ paths, so it is portable across darwin and linux without homeDir
+  # interpolation. agenix-provisioned keys (~/.ssh/mbp, ~/.ssh/omarchy, ...) are
+  # separate paths and are still managed by home-secrets.nix.
+  # ssh = { enable = true; ... };
 
   # Starship config managed by dotfiles/.config/starship.toml
   # starship = { enable = true; };
