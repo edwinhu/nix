@@ -86,6 +86,49 @@ Read the screen between steps with
 `printf 'screendump %s/screen.ppm\n' "$VMDIR" | nc -U -w1 "$VMDIR/monitor.sock"`
 then convert (`sips -s format png screen.ppm --out screen.png`).
 
+## Fonts in the guest (required for Latin Modern documents)
+
+A document whose theme asks for **Latin Modern Roman** — e.g. anything from the
+`law-econ-docx` skill — renders in **Cambria/Calibri** out of a fresh guest.
+Installing stock `lmodern` does *not* fix it. Two independent things are wrong:
+
+1. **Word will not render CFF-flavoured OpenType here.** It lists the family in
+   `Application.FontNames` and `Font.Name` reads back correctly, but
+   `ExportAsFixedFormat` substitutes Calibri. Proven with a control: the same
+   install procedure applied to a *renamed TTF* embeds correctly, while the OTF
+   does not. `fsType`, the font cache, and a guest reboot were all ruled out.
+2. **Word matches families on name ID 1.** Latin Modern puts the optical size
+   there (`LM Roman 10`) and only sets the typographic family (`Latin Modern
+   Roman`) in ID 16, which Word does not match on.
+
+`mk_winfonts.py` fixes both — converts the outlines to `glyf` (via
+`fontTools` + cu2qu, no extra dependency) and rewrites the name table — and Nix
+builds the result into `~/.local/share/word-render/fonts`. Push it into a
+running guest with:
+
+```bash
+word-render-install-fonts          # honours WINVM_SSH
+```
+
+Idempotent: it purges any previous Latin Modern registration (including failed
+OTF attempts) before installing. Re-run it after `nix run .#build-switch`
+changes the font build, and once on any newly provisioned guest.
+
+Verify:
+
+```bash
+word-render some-le-paper.docx out.pdf && pdffonts out.pdf
+# expect LMRoman10-{Regular,Bold,Italic} + LatinModernMath-Regular
+# and NO Cambria / Calibri
+```
+
+**Math needs one more thing, on the producing side.** Word takes the math
+typeface from `w:settings/m:mathPr/m:mathFont`, not from run properties. Pandoc
+regenerates `settings.xml` and drops it, so a built docx renders math in Cambria
+Math even with the fonts installed — the builder must re-inject `m:mathPr`
+after pandoc. That fix lives in the `law-econ-docx` skill's `build_le_docx.py`,
+not here.
+
 ## Things we learned (the non-obvious bits)
 
 - **Unactivated Word still renders.** Word in reduced-functionality (unlicensed)
