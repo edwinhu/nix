@@ -436,7 +436,11 @@ in
       #   brscan-tui   # interactive gum TUI (mode/dpi/sides/format incl. PDF → scan)
       #   brscan …     # raw scanimage (e.g. `brscan -L`, `--format=png -o x.png`)
       # (brscanPdf is the TUI's internal PDF engine — see runtimeInputs, not on PATH.)
-      ++ [ brscan brscanTui vimiumToggle ];
+      # ghostty: the default terminal here (see xdg-terminals.list below). Comes
+      # from the Linux overlay's nixGLIntel-wrapped override, not pacman — the
+      # wrapper is also where GDK_SCALE gets unset, which the distro build would
+      # need a hand-maintained desktop-entry override to do.
+      ++ [ brscan brscanTui vimiumToggle pkgs.ghostty ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -842,14 +846,16 @@ in
   # spawning a terminal) goes through `xdg-terminal-exec`, which picks the first
   # valid entry in this list — so this one file is the whole switch.
   #
-  # Ghostty itself comes from pacman (`sudo pacman -S ghostty`), not nix: it's a
-  # GL app, and the distro build links the system Mesa directly instead of
-  # needing the nixGL wrap the nixpkgs build would (see CLAUDE.md). That matches
-  # the repo's pacman-over-nix rule for anything Omarchy already packages.
+  # Ghostty comes from nix (home.packages above), nixGLIntel-wrapped in the Linux
+  # overlay — unwrapped it dies with "Failed to create EGL display" on this
+  # non-NixOS host. The overlay also repoints the desktop entry's Exec/TryExec at
+  # the wrapper, which is what makes this list entry resolve to a working binary.
+  # ~/.nix-profile/share is on the session XDG_DATA_DIRS, so the entry is found.
   #
-  # No custom .desktop entry needed: Ghostty's shipped
-  # com.mitchellh.ghostty.desktop has no X-TerminalArg* keys, so
-  # xdg-terminal-exec honors omarchy's `--dir=` by chdir'ing before exec instead.
+  # No custom .desktop entry needed: Ghostty's com.mitchellh.ghostty.desktop has
+  # no X-TerminalArg* keys, so xdg-terminal-exec honors omarchy's `--dir=` by
+  # chdir'ing before exec instead of passing a flag (only alacritty/foot need the
+  # custom entries Omarchy ships).
   #
   # force = true because `omarchy install terminal <x>` writes this file too;
   # nix owns it, so a rebuild restores Ghostty if that command ever rewrites it.
