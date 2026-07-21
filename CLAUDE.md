@@ -93,4 +93,18 @@ nix flake update nix-secrets  # Update only secrets
   - **GDK_SCALE double-scaling:** Omarchy sets `GDK_SCALE=2` globally
     (monitors.conf) for the 2x display. Apps that already honor the Wayland
     wl_output scale (e.g. limux/libghostty) then double-scale → huge UI. Fix per
-    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.
+    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.- **Nix GUI apps missing from the Walker launcher (Omarchy):** a newly installed
+  nix GUI app can be fully present — binary in `~/.nix-profile/bin`, valid
+  `.desktop` in `~/.nix-profile/share/applications`, resolvable by desktop ID —
+  and still not appear in Walker. The cause is `elephant` (Walker's data
+  provider), which indexes desktop entries at startup and then watches for
+  changes. Two properties of the nix profile defeat that watch: every store file
+  has mtime `1969-12-31`, so nothing ever looks stale by mtime; and a switch
+  REPLACES `~/.nix-profile/share/applications` with a new store path instead of
+  writing into the old one, so an inotify watch on the previous directory never
+  fires. Handled automatically by the `reindexWalker` home-manager activation in
+  `hosts/linux/omarchy/default.nix` (`systemctl --user try-restart
+  elephant.service app-walker@autostart.service`; `try-restart` is a no-op with
+  no graphical session). To fix by hand: `omarchy restart walker`. To confirm an
+  entry is indexed rather than eyeballing the launcher:
+  `elephant query "desktopapplications;<name>;5"`.

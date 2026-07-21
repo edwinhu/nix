@@ -473,6 +473,26 @@ in
         ${pkgs.bash}/bin/bash "$HOME/dotfiles/scripts/setup-claude-symlinks.sh" || true
     '';
 
+    # Reindex the app launcher after a switch, so newly installed nix GUI apps
+    # actually appear in Walker.
+    #
+    # elephant (Walker's data provider) indexes desktop entries at startup and
+    # then watches for changes. Two properties of the nix profile defeat that:
+    # every store file has mtime 1969-12-31, so an mtime comparison never looks
+    # stale; and a switch REPLACES ~/.nix-profile/share/applications with a new
+    # store path rather than writing into the old one, so an inotify watch on
+    # the previous directory never fires. Net effect: a nix-installed app is
+    # present on disk and resolvable by desktop ID, but invisible in the
+    # launcher until elephant is restarted by hand — which is exactly what kept
+    # happening (ghostty, and every GUI app added before it).
+    #
+    # try-restart is a no-op when the units aren't running (e.g. switching from
+    # a TTY with no graphical session), so this is safe outside Hyprland.
+    activation.reindexWalker = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${pkgs.systemd}/bin/systemctl --user try-restart \
+        elephant.service app-walker@autostart.service || true
+    '';
+
     # swlinux dictation models (large, non-store) — fetch once to
     # ~/.local/share/swlinux/models. Parakeet v3 STT + the open Qwen2.5-1.5B
     # cleanup fallback. The tuned cleanup model (s1-mini.gguf, private) is placed
