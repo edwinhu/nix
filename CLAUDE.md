@@ -93,7 +93,8 @@ nix flake update nix-secrets  # Update only secrets
   - **GDK_SCALE double-scaling:** Omarchy sets `GDK_SCALE=2` globally
     (monitors.conf) for the 2x display. Apps that already honor the Wayland
     wl_output scale (e.g. limux/libghostty) then double-scale → huge UI. Fix per
-    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.- **Nix GUI apps missing from Walker — no entry, or an entry with no icon
+    app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.
+- **Nix GUI apps missing from Walker — no entry, or an entry with no icon
   (Omarchy):** after adding a GUI app to `home.packages`, it commonly either
   does not appear in Walker at all, or appears with a blank/generic icon. Both
   symptoms are the SAME root cause, and neither means the app is installed
