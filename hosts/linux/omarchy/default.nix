@@ -884,6 +884,17 @@ in
   #     av1_vaapi. Pinning skips the futile nvenc/vulkan probes at startup;
   #     Sunshine still falls back to auto-detection if vaapi ever stops working.
   #
+  #   csrf_allowed_origins = <tailnet origins>
+  #     Sunshine's CSRF defaults only trust localhost (https://localhost,
+  #     https://127.0.0.1, https://[::1]). The whole point here is to reach the
+  #     web UI from the Mac ACROSS the tailnet, and any such origin is rejected
+  #     with "The request was blocked by CSRF protection" -- so pairing (a
+  #     state-changing POST) is impossible until the origin is listed. Covers
+  #     the Tailscale IP, the MagicDNS FQDN, and the bare hostname, since which
+  #     one you land on depends on how you typed the URL. Format is a bare
+  #     comma-separated list -- NOT a JSON/TOML array; brackets or quotes are
+  #     rejected as "Invalid 'csrf_allowed_origins' entry". Ports optional.
+  #
   # This file is a read-only /nix/store symlink, so the web UI's Configuration
   # page cannot save over it — change settings HERE and rebuild. The rest of
   # ~/.config/sunshine (certs, credentials.json, apps.json, sunshine_state.json)
@@ -898,6 +909,7 @@ in
       capture = wlr
       encoder = vaapi
       min_log_level = 2
+      csrf_allowed_origins = https://100.122.125.84,https://omarchy.tailc143b.ts.net,https://omarchy
     '';
   };
 
