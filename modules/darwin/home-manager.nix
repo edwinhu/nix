@@ -59,7 +59,71 @@
   home-manager = {
     useGlobalPkgs = true;
     backupFileExtension = "backup";
-    users.${user} = { pkgs, lib, config, ... }: {
+    users.${user} = { pkgs, lib, config, ... }: let
+      # Keeps Dia's CDP port alive without ever spawning a duplicate.
+      # com.dia.cdp only fires RunAtLoad, so it loses to anything that launches
+      # Dia flagless first (session restore, a URL open, another app) — the
+      # flagless instance then holds the profile SingletonLock and 9222 never
+      # comes up. The flag cannot be injected into a running app, so healing
+      # that means restarting Dia, which this does deliberately narrowly.
+      diaCdpWatchdog = pkgs.writeShellScript "dia-cdp-watchdog" ''
+        set -u
+
+        PORT=9222
+        DIA_BIN="/Applications/Dia.app/Contents/MacOS/Dia"
+        WRAPPER="$HOME/Applications/Dia (CDP).app"
+        STAMP="$HOME/.cache/dia-cdp-watchdog.stamp"
+        COOLDOWN=600   # never restart more than once per 10 min
+        MAX_AGE=900    # only auto-restart a flagless Dia younger than 15 min
+
+        log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) dia-cdp-watchdog: $*" >&2; }
+
+        # Healthy — silent exit, so the log stays free of no-op entries.
+        curl -sf --max-time 5 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1 && exit 0
+
+        # Not running at all: just launch it. Nothing to lose.
+        if ! ps -axo comm= | grep -qx "$DIA_BIN"; then
+            log "Dia not running; launching via wrapper"
+            open -a "$WRAPPER"
+            exit 0
+        fi
+
+        # Running but the port is down => a flagless Dia holds the SingletonLock.
+        pid=$(ps -axo pid=,comm= | awk -v b="$DIA_BIN" '$2 == b { print $1; exit }')
+        [ -n "$pid" ] || exit 0
+
+        # macOS ps has no etimes, so parse etime ([[dd-]hh:]mm:ss).
+        age=$(ps -p "$pid" -o etime= | tr -d ' ' | awk -F'[-:]' '
+            NF==2 { print $1*60 + $2 }
+            NF==3 { print $1*3600 + $2*60 + $3 }
+            NF==4 { print $1*86400 + $2*3600 + $3*60 + $4 }')
+        [ -n "$age" ] || age=0
+
+        # Deliberately conservative: only restart a YOUNG Dia. That fixes the
+        # launch race at login without ever killing a browser the user has been
+        # working in for hours. An old Dia on a dead port is logged, not touched.
+        if [ "$age" -gt "$MAX_AGE" ]; then
+            log "9222 down, but Dia (pid $pid) is $age s old — leaving it alone"
+            exit 0
+        fi
+
+        now=$(date +%s)
+        last=$(cat "$STAMP" 2>/dev/null || echo 0)
+        if [ $((now - last)) -lt $COOLDOWN ]; then
+            log "9222 down; already restarted $((now - last)) s ago, within cooldown"
+            exit 0
+        fi
+        mkdir -p "$(dirname "$STAMP")" && echo "$now" > "$STAMP"
+
+        log "Dia (pid $pid, $age s old) is running without CDP; restarting via wrapper"
+        kill -TERM "$pid"   # SIGTERM = clean Chromium shutdown; tabs are restored
+        for i in $(seq 1 20); do
+            ps -axo comm= | grep -qx "$DIA_BIN" || break
+            sleep 1
+        done
+        open -a "$WRAPPER"
+      '';
+    in {
       imports = [
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
@@ -114,6 +178,27 @@
           RunAtLoad = true;
           StandardOutPath = "/tmp/dia-cdp.out.log";
           StandardErrorPath = "/tmp/dia-cdp.err.log";
+        };
+      };
+
+      # Probe 9222 every 2 min and heal it. Mirrors com.chrome-cdp-watchdog
+      # (which covers 9250) — launchd can only see process exit, not "process
+      # is alive but the CDP socket never opened", which is exactly Dia's
+      # failure mode. RunAtLoad so the first probe also closes the login race.
+      launchd.agents.dia-cdp-watchdog = {
+        enable = true;
+        config = {
+          Label = "com.dia.cdp-watchdog";
+          ProgramArguments = [ "${diaCdpWatchdog}" ];
+          RunAtLoad = true;
+          StartInterval = 120;
+          StandardOutPath = "${config.home.homeDirectory}/.local/log/dia-cdp-watchdog.log";
+          StandardErrorPath = "${config.home.homeDirectory}/.local/log/dia-cdp-watchdog.log";
+          EnvironmentVariables = {
+            PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+            HOME = config.home.homeDirectory;
+          };
+          Nice = 10;
         };
       };
 
