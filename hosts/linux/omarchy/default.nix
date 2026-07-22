@@ -440,7 +440,12 @@ in
       # from the Linux overlay's nixGLIntel-wrapped override, not pacman — the
       # wrapper is also where GDK_SCALE gets unset, which the distro build would
       # need a hand-maintained desktop-entry override to do.
-      ++ [ brscan brscanTui vimiumToggle pkgs.ghostty ];
+      # sunshine: Moonlight streaming host (see the sunshine user service and
+      # xdg.configFile."sunshine/sunshine.conf" below). nixGLIntel-wrapped in
+      # the Linux overlay — the stock binary can't reach Mesa on non-NixOS.
+      # Only listed for this host: `alarm` shares omarchy-packages.nix but is
+      # a headless aarch64 box with nothing to stream.
+      ++ [ brscan brscanTui vimiumToggle pkgs.ghostty pkgs.sunshine ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -861,6 +866,41 @@ in
   # shrink it here only — macOS/alarm keep their own size.
   xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
 
+  # Sunshine (Moonlight streaming host). Two settings here are load-bearing on
+  # Hyprland; both were found the hard way, so do not "simplify" them away:
+  #
+  #   capture = wlr
+  #     MANDATORY. Left on auto, Sunshine probes the xdg-desktop-portal
+  #     RemoteDesktop interface first. xdg-desktop-portal-hyprland (1.4.0 here)
+  #     does not implement RemoteDesktop, and instead of failing over, Sunshine
+  #     HANGS FOREVER: it logs "[portalgrab] Could not create RemoteDesktop
+  #     session ... No such interface" and then never finishes startup — no web
+  #     UI, nothing listening on 47984/47989/47990, main loop never reached.
+  #     Pinning wlr skips the portal path entirely and it uses
+  #     zwlr_screencopy_manager_v1, which Hyprland does export.
+  #
+  #   encoder = vaapi
+  #     The AMD Strix Halo iGPU. Verified to yield h264_vaapi + hevc_vaapi +
+  #     av1_vaapi. Pinning skips the futile nvenc/vulkan probes at startup;
+  #     Sunshine still falls back to auto-detection if vaapi ever stops working.
+  #
+  # This file is a read-only /nix/store symlink, so the web UI's Configuration
+  # page cannot save over it — change settings HERE and rebuild. The rest of
+  # ~/.config/sunshine (certs, credentials.json, apps.json, sunshine_state.json)
+  # is a normal writable dir, so pairing and app edits persist as usual.
+  # force: Sunshine writes a default sunshine.conf itself on first run, which
+  # would make activation fail with "Existing file ... would be clobbered". This
+  # file is declaratively owned, so overwrite it (same reason hypridle.conf and
+  # monitors.conf above set force).
+  xdg.configFile."sunshine/sunshine.conf" = {
+    force = true;
+    text = ''
+      capture = wlr
+      encoder = vaapi
+      min_log_level = 2
+    '';
+  };
+
   # Default terminal: Ghostty, not Omarchy's stock Alacritty. Everything that
   # opens a terminal here (SUPER+RETURN, SUPER ALT+RETURN, $TERMINAL, any app
   # spawning a terminal) goes through `xdg-terminal-exec`, which picks the first
@@ -981,6 +1021,33 @@ in
     # Keybinds (SUPER+;) live in dotfiles' hypr bindings.conf; models are fetched
     # by activation.swlinuxModels. s1-mini.gguf is the private tuned cleanup model
     # (placed out-of-band); if absent, cleanup is skipped (raw still works).
+    # sunshine: Moonlight streaming host, so the Mac can drive this desktop
+    # remotely over Tailscale (connect Moonlight to 100.122.125.84 and pair with
+    # the PIN from https://localhost:47990). Must run INSIDE the graphical
+    # session — it captures via zwlr_screencopy_manager_v1 and injects input via
+    # zwlr_virtual_pointer_manager_v1 / zwp_virtual_keyboard_manager_v1, all of
+    # which need WAYLAND_DISPLAY (uwsm exports it into the user manager).
+    # /dev/uinput for gamepad emulation works because `eh` is in the `input`
+    # group (same reason xremap works). The binary is the nixGLIntel-wrapped
+    # override; `capture = wlr` comes from xdg.configFile above — see both for
+    # the startup-hang and GBM/EGL traps.
+    { sunshine = {
+      Unit = {
+        Description = "Sunshine — Moonlight game/desktop streaming host";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${pkgs.sunshine}/bin/sunshine %h/.config/sunshine/sunshine.conf";
+        Restart = "on-failure";
+        RestartSec = 5;
+        # Sunshine's own shutdown path gives itself 10s before it force-aborts
+        # (and dumps core). Allow a little more than that so a normal `systemctl
+        # --user stop` records a clean exit rather than a spurious failure.
+        TimeoutStopSec = 20;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
     { swlinux = {
       Unit = {
         Description = "swlinux dictation daemon (Parakeet STT + s1-mini cleanup)";
