@@ -899,6 +899,35 @@ in
   # page cannot save over it — change settings HERE and rebuild. The rest of
   # ~/.config/sunshine (certs, credentials.json, apps.json, sunshine_state.json)
   # is a normal writable dir, so pairing and app edits persist as usual.
+  # Sunshine's app list. Sunshine seeds this with sample entries that are all
+  # wrong for this box, and they surface in Moonlight as extra tiles that fail:
+  #
+  #   "Low Res Desktop"  a SECOND "Desktop"-looking tile whose prep-cmd is
+  #                      `xrandr --output HDMI-1 --mode 1920x1080`. xrandr is
+  #                      X11 (this is Wayland), and the output is DP-1, not
+  #                      HDMI-1. The prep-cmd fails, so Sunshine refuses the
+  #                      launch and Moonlight reports the useless "failed to
+  #                      start the specified application (desktop)".
+  #   "Steam Big Picture" there is no steam binary here.
+  #
+  # So: just Desktop. Note this is the app LIST only — the streamed resolution
+  # is negotiated by the CLIENT (set it in Moonlight's settings); Sunshine
+  # captures DP-1 at its native 3840x2160 regardless.
+  #
+  # Trade-off of declaring this: the file becomes a read-only store symlink, so
+  # the web UI's Applications editor can no longer save. Add apps HERE instead.
+  # (Pairing, certs and sunshine_state.json are separate writable files, so
+  # those still work normally.)
+  xdg.configFile."sunshine/apps.json" = {
+    force = true;
+    text = builtins.toJSON {
+      env = { PATH = "$(PATH):$(HOME)/.local/bin"; };
+      apps = [
+        { name = "Desktop"; image-path = "desktop.png"; }
+      ];
+    };
+  };
+
   # force: Sunshine writes a default sunshine.conf itself on first run, which
   # would make activation fail with "Existing file ... would be clobbered". This
   # file is declaratively owned, so overwrite it (same reason hypridle.conf and
