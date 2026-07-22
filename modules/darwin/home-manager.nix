@@ -299,13 +299,21 @@
             '    open -a /Applications/Dia.app 2>/dev/null || true' \
             '    exit 0' \
             'fi' \
-            '# exec, so this process BECOMES Dia and the Dock running indicator' \
-            '# stays on this bundle instead of lighting up a second icon.' \
-            '# _CFBundleIdentifier is unset so CoreFoundation resolves Dia'"'"'s main' \
-            '# bundle from the executable path rather than inheriting this' \
-            '# wrapper'"'"'s id — keeps Dia'"'"'s TCC/keychain identity intact.' \
-            'unset _CFBundleIdentifier' \
-            "exec \"\$DIA_BIN\" --remote-debugging-port=\"\$PORT\" --remote-allow-origins='*'" \
+            '# Launch through LaunchServices (open --args), NOT by exec-ing the' \
+            '# binary. exec-ing it directly does start Dia with CDP -- 9222 comes' \
+            '# up and /json/list answers -- but the browser process can then never' \
+            '# spawn a single RENDERER: `ps | grep -c -- --type=renderer` is 0, so' \
+            '# every tab stays blank, page titles never populate, and CDP itself' \
+            '# wedges ("Network.enable timed out"). It also generated a stream of' \
+            '# Browser Helper SIGTRAP crash reports (27 in one afternoon).' \
+            '# Launching the SAME binary with the SAME flags via LaunchServices' \
+            '# yields 21 renderers and pages load normally, so the flags were' \
+            '# never the problem -- the out-of-LaunchServices exec was.' \
+            '#' \
+            '# Cost of the fix: this script no longer BECOMES Dia, so the Dock' \
+            '# running-indicator lights Dia.app rather than this wrapper. That is' \
+            '# a cosmetic regression traded for a browser that actually renders.' \
+            "exec /usr/bin/open -a /Applications/Dia.app --args --remote-debugging-port=\"\$PORT\" --remote-allow-origins='*'" \
             > "$APP/Contents/MacOS/launcher"
           $DRY_RUN_CMD chmod +x "$APP/Contents/MacOS/launcher"
           $DRY_RUN_CMD touch "$APP"
