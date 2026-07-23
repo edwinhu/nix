@@ -65,16 +65,25 @@ let
   # blob (`(true, { forward: true })` -> `(false                  )`), so every
   # file offset in the asar header stays valid and the archive needs no
   # repacking — the native unpacked modules alongside it are left untouched.
-  # The builder asserts the target call appears the expected number of times, so
-  # a future version that reworks it fails the build instead of silently
-  # regressing. The tradeoff is that the small (392x92) toast captures clicks
-  # over its whole rectangle while visible — strictly better than an unclickable
-  # button.
+  #
+  # Editing the blob does invalidate the per-file `integrity` hashes
+  # electron-builder embeds in the asar header — but those are only enforced when
+  # Electron's `EnableEmbeddedAsarIntegrityValidation` fuse is on (index 4 of the
+  # FuseV1Options wire), and even then not on Linux today. It is DISABLED in this
+  # bundle, so the edited archive loads. The patch script asserts that fuse is
+  # off before touching the asar, so a future version that flips it on fails the
+  # build here rather than shipping an app that rejects its own asar at startup.
+  #
+  # The builder also asserts the target call appears the expected number of
+  # times, so a future version that reworks it fails the build instead of
+  # silently regressing. The tradeoff is that the small (392x92) toast captures
+  # clicks over its whole rectangle while visible — strictly better than an
+  # unclickable button.
   patchedApp = runCommand "openwhispr-${version}-patched"
     { nativeBuildInputs = [ python3 ]; } ''
     cp -r ${contents} $out
     chmod -R u+w $out
-    python3 ${./openwhispr-meeting-toast.patch.py} $out/resources/app.asar
+    python3 ${./openwhispr-meeting-toast.patch.py} $out
   '';
 in
 appimageTools.wrapAppImage {
