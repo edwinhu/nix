@@ -469,6 +469,37 @@
                   meta = hyloPkg.meta or {};
                   passthru = { unwrapped = hyloPkg; };
                 };
+                # obsidian — nix-managed, replacing the Arch `obsidian` package
+                # (pacman) that runs Obsidian's app.asar on the DISTRO
+                # `electron39`. That build breaks the in-app PDF preview: PDF.js
+                # fetches the vault file over Obsidian's internal `app://` scheme
+                # (served from a per-vault host, `app://<hash>/…`, while the app
+                # runs on `app://obsidian.md`), and Arch's electron39 blocks that
+                # cross-origin fetch with a CORS error ("Unexpected server
+                # response (0)"), so every PDF renders blank (0 page canvases).
+                # It is NOT a GPU/nixGL problem — measured: Obsidian's OFFICIAL
+                # tarball on electron 39.8.3 (same Chromium 142 as Arch's 39.8.10)
+                # renders fine, and so does this nixpkgs build on electron 41
+                # (Chromium 146). Only Arch's patched electron39 mishandles the
+                # scheme. Fix = run on nixpkgs' electron. Wrapped in nixGLIntel
+                # for the usual non-NixOS GL story (hylo/beeper); nixGL is a no-op
+                # where system GL already resolves, and the app's own sandbox
+                # works via unprivileged user namespaces (no --no-sandbox needed —
+                # verified it launches). The launcher/`obsidian://` handler is
+                # repointed at this wrapped binary in hosts/linux/omarchy.
+                obsidian = let
+                  base = prev.obsidian;
+                in prev.symlinkJoin {
+                  name = "obsidian-nixgl-${base.version or "unknown"}";
+                  paths = [
+                    (prev.writeShellScriptBin "obsidian" ''
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/obsidian "$@"
+                    '')
+                    base
+                  ];
+                  meta = base.meta or {};
+                  passthru = { unwrapped = base; };
+                };
                 # openwhispr — local dictation + AI meeting notes, the Linux
                 # stand-in for the macOS-only granola cask. Fetched as the
                 # upstream release AppImage (see modules/shared/openwhispr.nix).
