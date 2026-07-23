@@ -88,6 +88,11 @@ let
     hylo
     ueberzugpp
 
+    # Note-taking. nix-managed (nixGL-wrapped in flake.nix) instead of the Arch
+    # `obsidian` package: the distro's electron39 breaks in-app PDF preview
+    # (app:// CORS block). See the flake overlay comment for the full diagnosis.
+    obsidian
+
     # Fonts / math typesetting extras
     lmmath
     maple-mono.NF

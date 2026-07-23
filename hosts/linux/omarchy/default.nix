@@ -570,22 +570,33 @@ in
     '';
 
     # Obsidian launcher override. MUST live here under ~/.local/share/applications
-    # (XDG_DATA_HOME), NOT via xdg.desktopEntries: the Arch obsidian package ships
-    # /usr/share/applications/obsidian.desktop, and on this host /usr/share
-    # precedes the nix-profile share in XDG_DATA_DIRS — so a profile entry loses.
-    # Also, omarchy's walker only indexes this dir. Adds
-    # --force-renderer-accessibility so the Electron renderer publishes its
-    # web-content AT-SPI tree; without it `hints` sees only the top-level frame
-    # (2 nodes) and can't hint anything (the org.a11y toolkit-accessibility
-    # toggle alone is not enough for this Electron build). Native Wayland is kept
-    # (no --ozone-platform=x11) so GDK_SCALE=2 coords stay consistent with the
-    # hints "obsidian" scale_factor=0.5 rule.
+    # (XDG_DATA_HOME), NOT via xdg.desktopEntries: if the Arch obsidian package is
+    # ever present it ships /usr/share/applications/obsidian.desktop, and on this
+    # host /usr/share precedes the nix-profile share in XDG_DATA_DIRS — so a
+    # profile entry loses. Also, omarchy's walker only indexes this dir.
+    #
+    # Exec is the nix-managed, nixGL-wrapped `obsidian` (flake overlay), NOT the
+    # Arch `/usr/bin/obsidian`: the distro's electron39 blocks Obsidian's `app://`
+    # PDF fetch with a CORS error, so in-app PDF preview renders blank. nixpkgs'
+    # electron renders PDFs correctly. See the flake overlay comment for the full
+    # diagnosis. (After switching, remove the pacman package: `sudo pacman -Rns
+    # obsidian` — otherwise its /usr/bin/obsidian and /usr/share desktop entry
+    # linger; harmless but stale.)
+    #
+    # --ozone-platform=wayland + --enable-wayland-ime keep NATIVE Wayland (the
+    # nixpkgs wrapper only adds these when NIXOS_OZONE_WL is set, which this host
+    # does not export), so GDK_SCALE=2 coords stay consistent with the hints
+    # "obsidian" scale_factor=0.5 rule. --force-renderer-accessibility makes the
+    # Electron renderer publish its web-content AT-SPI tree; without it `hints`
+    # sees only the top-level frame (2 nodes) and can't hint anything (the
+    # org.a11y toolkit-accessibility toggle alone is not enough for this Electron
+    # build).
     file.".local/share/applications/obsidian.desktop".text = ''
       [Desktop Entry]
       Type=Application
       Name=Obsidian
       Comment=Obsidian
-      Exec=/usr/bin/obsidian --force-renderer-accessibility %U
+      Exec=obsidian --ozone-platform=wayland --enable-wayland-ime --force-renderer-accessibility %U
       Icon=obsidian
       Terminal=false
       Categories=Office;
