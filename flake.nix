@@ -249,7 +249,6 @@
         # elio via newer nixpkgs: the main lock's cargo vendor fetcher sends
         # no User-Agent and crates.io now 403s it (affects all platforms).
         elio = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/elio.nix {};
-        revdiff = (import nixpkgs { inherit system; }).callPackage ./modules/shared/revdiff.nix {};
         onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
         onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
       });
@@ -279,7 +278,6 @@
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
                   elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
-                  revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                   onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                   onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                     # ast-grep 0.41.0 test_scan_invalid_rule_id fails with "Illegal byte sequence"
@@ -352,7 +350,6 @@
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
-                revdiff = prev.callPackage ./modules/shared/revdiff.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                 # limux is a GPU/GL app (libghostty + GTK4). Like beeper, on a

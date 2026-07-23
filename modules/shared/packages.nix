@@ -73,7 +73,6 @@ with pkgs; [
   hunspell
   elio
   (import ./leaf { inherit pkgs; })  # terminal Markdown previewer (LaTeX/Mermaid/watch); not in nixpkgs
-  revdiff
   onlyoffice-x2t  # lightweight OOXML converter; keep source-built docbuilder out of the base system
   jq
   pandoc
@@ -86,6 +85,7 @@ with pkgs; [
   tailspin
   tectonic
   tree
+  tuicr  # code-review TUI (in nixpkgs); replaces revdiff, driven by the tuicr Claude skill
   tv
   typst
   tinymist
