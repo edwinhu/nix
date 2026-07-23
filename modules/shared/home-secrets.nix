@@ -25,6 +25,12 @@ in
       file = "${nix-secrets}/readwise-token.age";
       mode = "400";
     };
+    # Beeper Desktop API token for the `beeper` MCP server (~/areas/assistant).
+    # Non-expiring: minted with expiresInSeconds=0, so there is nothing to renew.
+    beeper-access-token = {
+      file = "${nix-secrets}/beeper-access-token.age";
+      mode = "400";
+    };
     raindrop-token = {
       file = "${nix-secrets}/raindrop-token.age";
       mode = "400";
@@ -125,6 +131,7 @@ in
     GEMINI_API_KEY_FILE = "${tempDir}/gemini-api-key";
     CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
+    BEEPER_ACCESS_TOKEN_FILE = "${tempDir}/beeper-access-token";
     RAINDROP_TOKEN_FILE = "${tempDir}/raindrop-token";
     WEBHOOK_SECRET_FILE = "${tempDir}/webhook-secret";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
@@ -140,6 +147,7 @@ in
     get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
     get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
+    get-beeper-access-token = "cat $BEEPER_ACCESS_TOKEN_FILE";
     get-raindrop-token = "cat $RAINDROP_TOKEN_FILE";
     get-webhook-secret = "cat $WEBHOOK_SECRET_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
