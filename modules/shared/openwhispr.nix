@@ -21,7 +21,7 @@
 # After a bump, re-verify the meeting-toast patch below still applies (the
 # builder asserts the target text exists, so a moved/renamed block fails the
 # build loudly rather than silently shipping an unpatched app).
-{ lib, fetchurl, appimageTools, runCommand, python3, pulseaudio, procps, noto-fonts-color-emoji
+{ lib, fetchurl, appimageTools, runCommand, python3, pulseaudio, procps, noto-fonts-color-emoji, flatpak-xdg-utils
 , coreutils, hyprland, wtype, ydotool, wl-clipboard, xdotool }:
 
 let
@@ -121,10 +121,23 @@ appimageTools.wrapAppImage {
   # Settings, whose flags are PAIRS of Regional Indicator Symbols (🇺🇸 = U+1F1FA +
   # U+1F1F8), so each flag shows as two empty boxes. Adding the font here puts it
   # at the FHS's /usr/share/fonts, which the host fontconfig already searches.
+  #
+  # flatpak-xdg-utils: "Connect to Google Calendar" (Settings > Integrations)
+  # silently did nothing. The app calls Electron's shell.openExternal, which shells
+  # out to `xdg-open`. Stock xdg-open resolves the default browser from the desktop
+  # database and then execs its binary — but the FHS has its OWN /usr, so neither
+  # /usr/share/applications/chromium.desktop nor /usr/bin/chromium exists inside the
+  # sandbox, and the call dies with nothing to launch. Bundling a browser would be
+  # heavy AND wrong (it would open a second browser without the user's session).
+  # flatpak-xdg-utils ships an xdg-open that instead calls the host's
+  # org.freedesktop.portal.OpenURI over D-Bus (the session bus socket at
+  # /run/user/$UID/bus is already visible, since /run is bind-mounted), so the URL
+  # opens in the user's real default browser — the same trick Flatpak apps use.
   extraPkgs = pkgs: [
     pulseaudio procps coreutils
     hyprland wtype ydotool wl-clipboard xdotool
     noto-fonts-color-emoji
+    (lib.setPrio 1 flatpak-xdg-utils)   # must beat stock xdg-utils in the FHS collision
   ];
 
   extraInstallCommands = ''
