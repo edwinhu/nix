@@ -61,6 +61,10 @@ with pkgs; [
   # Text and terminal utilities
   ast-grep
   atuin
+  # atuin's bash integration registers precmd/preexec hooks that only run if
+  # bash-preexec is sourced first; without it atuin records nothing in bash.
+  # Sourced from ~/.nix-profile/share/bash/bash-preexec.sh in dotfiles/.shell_common.
+  bash-preexec
   bat
   btop
   numr
