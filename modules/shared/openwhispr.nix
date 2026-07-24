@@ -21,7 +21,7 @@
 # After a bump, re-verify the meeting-toast patch below still applies (the
 # builder asserts the target text exists, so a moved/renamed block fails the
 # build loudly rather than silently shipping an unpatched app).
-{ lib, fetchurl, appimageTools, runCommand, python3, pulseaudio, procps
+{ lib, fetchurl, appimageTools, runCommand, python3, pulseaudio, procps, noto-fonts-color-emoji
 , coreutils, hyprland, wtype, ydotool, wl-clipboard, xdotool }:
 
 let
@@ -112,9 +112,19 @@ appimageTools.wrapAppImage {
   #     to the host ydotoold via the inherited YDOTOOL_SOCKET).
   #   - wl-clipboard (wl-copy/wl-paste): clipboard read/write for paste + restore.
   #   - xdotool: XWayland fallback path.
+  #
+  # noto-fonts-color-emoji: the FHS gets its OWN /usr, so the host's
+  # /usr/share/fonts (where Arch keeps NotoColorEmoji.ttf) is invisible inside the
+  # sandbox — the FHS had no /usr/share/fonts directory at all, and the only font
+  # reachable via the bind-mounted /home was omarchy.ttf. With no emoji font in
+  # the search path, emoji render as tofu; most visibly the language pickers in
+  # Settings, whose flags are PAIRS of Regional Indicator Symbols (🇺🇸 = U+1F1FA +
+  # U+1F1F8), so each flag shows as two empty boxes. Adding the font here puts it
+  # at the FHS's /usr/share/fonts, which the host fontconfig already searches.
   extraPkgs = pkgs: [
     pulseaudio procps coreutils
     hyprland wtype ydotool wl-clipboard xdotool
+    noto-fonts-color-emoji
   ];
 
   extraInstallCommands = ''
