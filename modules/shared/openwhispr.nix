@@ -21,7 +21,7 @@
 # After a bump, re-verify the meeting-toast patch below still applies (the
 # builder asserts the target text exists, so a moved/renamed block fails the
 # build loudly rather than silently shipping an unpatched app).
-{ lib, fetchurl, appimageTools, runCommand, python3, pulseaudio, procps, noto-fonts-color-emoji, flatpak-xdg-utils
+{ lib, fetchurl, appimageTools, runCommand, python3, pulseaudio, procps, noto-fonts-color-emoji, flatpak-xdg-utils, tzdata
 , coreutils, hyprland, wtype, ydotool, wl-clipboard, xdotool }:
 
 let
@@ -122,6 +122,14 @@ appimageTools.wrapAppImage {
   # U+1F1F8), so each flag shows as two empty boxes. Adding the font here puts it
   # at the FHS's /usr/share/fonts, which the host fontconfig already searches.
   #
+  # tzdata: every timestamp in the app (meeting dates, note created/updated) was
+  # rendered 4 hours late — i.e. in UTC. Same shape as the font bug: the host's
+  # /etc/localtime IS bound into the sandbox, but it is a symlink to
+  # /usr/share/zoneinfo/America/New_York, and the FHS has its OWN /usr with no
+  # zoneinfo directory at all. The symlink dangles, glibc finds no zone (TZ is
+  # unset too) and falls back to UTC. Adding tzdata puts /usr/share/zoneinfo in
+  # the FHS so the bound /etc/localtime resolves and local time is correct.
+  #
   # flatpak-xdg-utils: "Connect to Google Calendar" (Settings > Integrations)
   # silently did nothing. The app calls Electron's shell.openExternal, which shells
   # out to `xdg-open`. Stock xdg-open resolves the default browser from the desktop
@@ -138,6 +146,7 @@ appimageTools.wrapAppImage {
     hyprland wtype ydotool wl-clipboard xdotool
     noto-fonts-color-emoji
     (lib.setPrio 1 flatpak-xdg-utils)   # must beat stock xdg-utils in the FHS collision
+    tzdata
   ];
 
   extraInstallCommands = ''
