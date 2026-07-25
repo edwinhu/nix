@@ -244,15 +244,17 @@ let
         printf %s "/vault-compile" | claude --rc --bg --effort medium -n vault-compile
       '';
     };
-    # Hourly at :15 — snapshot the vault into its LOCAL-ONLY git repo. ~/notes is
-    # Obsidian-synced (so edits from any device land here) and has no remote by
-    # design: consulting work product stays off third-party hosts. The point is
-    # history — an undo button for the nightly compile and for skill-driven edits
-    # to notes — not backup. Plain script, no Claude session, so spawner = false.
+    # Daily 03:30 — headless BACKSTOP snapshot of the vault's LOCAL-ONLY git repo
+    # (no remote by design: consulting work product stays off third-party hosts).
+    # Primary autosave is the Obsidian Git plugin (30-min commit-and-sync, push
+    # disabled), but that only runs while Obsidian is open — this catches stretches
+    # where it's closed while the 03:00 compile and other skills rewrite notes.
+    # Runs after the compile so it sweeps up whatever that step didn't commit.
+    # Plain script, no Claude session, so spawner = false.
     "vault-autocommit" = {
-      desc = "Vault autocommit — hourly snapshot of ~/notes";
+      desc = "Vault autocommit — daily backstop snapshot of ~/notes";
       cwd = "%h/notes";
-      onCalendar = "*-*-* *:15:00";
+      onCalendar = "*-*-* 03:30:00";
       spawner = false;
       script = pkgs.writeShellScript "vault-autocommit" ''
         set -uo pipefail
@@ -265,7 +267,7 @@ let
           echo "no changes"
           exit 0
         fi
-        git commit -qm "vault: autosave $(date '+%Y-%m-%d %H:%M')"
+        git commit -qm "vault: backstop autosave $(date '+%Y-%m-%d %H:%M')"
         git --no-pager diff --shortstat HEAD~1 HEAD
       '';
     };
