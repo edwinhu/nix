@@ -244,6 +244,33 @@ let
         printf %s "/vault-compile" | claude --rc --bg --effort medium -n vault-compile
       '';
     };
+    # Daily 03:30 — headless BACKSTOP snapshot of the vault's LOCAL-ONLY git repo
+    # (no remote by design: consulting work product stays off third-party hosts).
+    # Primary autosave is the Obsidian Git plugin (30-min commit-and-sync, push
+    # disabled), but that only runs while Obsidian is open — this catches stretches
+    # where it's closed while the 03:00 compile and other skills rewrite notes.
+    # Runs after the compile so it sweeps up whatever that step didn't commit.
+    # Plain script, no Claude session, so spawner = false.
+    "vault-autocommit" = {
+      desc = "Vault autocommit — daily backstop snapshot of ~/notes";
+      cwd = "%h/notes";
+      onCalendar = "*-*-* 03:30:00";
+      spawner = false;
+      script = pkgs.writeShellScript "vault-autocommit" ''
+        set -uo pipefail
+        cd "$HOME/notes" || exit 0
+        # No-op on a host where the vault isn't a repo (Mac: Obsidian Sync only).
+        git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+          echo "not a git repo — nothing to do"; exit 0; }
+        git add -A
+        if git diff --cached --quiet; then
+          echo "no changes"
+          exit 0
+        fi
+        git commit -qm "vault: backstop autosave $(date '+%Y-%m-%d %H:%M')"
+        git --no-pager diff --shortstat HEAD~1 HEAD
+      '';
+    };
     # Daily 02:45 — cleanly stop the day's 🦞 assistant before the 03:00 vault
     # compile. Deliberate stop (not a crash), so it is not auto-respawned.
     "claude-assistant-shutdown" = {
