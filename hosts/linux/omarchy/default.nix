@@ -244,6 +244,31 @@ let
         printf %s "/vault-compile" | claude --rc --bg --effort medium -n vault-compile
       '';
     };
+    # Hourly at :15 — snapshot the vault into its LOCAL-ONLY git repo. ~/notes is
+    # Obsidian-synced (so edits from any device land here) and has no remote by
+    # design: consulting work product stays off third-party hosts. The point is
+    # history — an undo button for the nightly compile and for skill-driven edits
+    # to notes — not backup. Plain script, no Claude session, so spawner = false.
+    "vault-autocommit" = {
+      desc = "Vault autocommit — hourly snapshot of ~/notes";
+      cwd = "%h/notes";
+      onCalendar = "*-*-* *:15:00";
+      spawner = false;
+      script = pkgs.writeShellScript "vault-autocommit" ''
+        set -uo pipefail
+        cd "$HOME/notes" || exit 0
+        # No-op on a host where the vault isn't a repo (Mac: Obsidian Sync only).
+        git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+          echo "not a git repo — nothing to do"; exit 0; }
+        git add -A
+        if git diff --cached --quiet; then
+          echo "no changes"
+          exit 0
+        fi
+        git commit -qm "vault: autosave $(date '+%Y-%m-%d %H:%M')"
+        git --no-pager diff --shortstat HEAD~1 HEAD
+      '';
+    };
     # Daily 02:45 — cleanly stop the day's 🦞 assistant before the 03:00 vault
     # compile. Deliberate stop (not a crash), so it is not auto-respawned.
     "claude-assistant-shutdown" = {
