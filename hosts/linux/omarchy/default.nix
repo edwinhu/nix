@@ -126,7 +126,8 @@ let
   };
 
   # vimium-toggle: GLOBAL Vimium on/off, resting state OFF (opt-in "vim mode"),
-  # bound to SUPER+V in dotfiles' hypr bindings.conf (Chrome exposes no
+  # bound to SUPER+SHIFT+V in dotfiles' hypr bindings.conf (plain SUPER+V is
+  # omarchy's Universal paste). Chrome exposes no
   # enable/disable shortcut and Vimium's only command is its popup, so an
   # external toggle drives this). It flips Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}`
   # global absolute-exclusion rule in chrome.storage.sync (Vimium is deny-list
