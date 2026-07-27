@@ -25,6 +25,17 @@ in
       file = "${nix-secrets}/readwise-token.age";
       mode = "400";
     };
+    # LSEG (Refinitiv) platform-session credentials as shell exports:
+    # LSEG_APP_KEY / LSEG_USERNAME / LSEG_PASSWORD. Source it, do not cat it:
+    #   set -a; . "$LSEG_CREDENTIALS_FILE"; set +a
+    # The `lseg.data` library documents these as RDP_APP_KEY / RDP_USERNAME /
+    # RDP_PASSWORD, so a caller must map the names. Note also that its own docs
+    # show `platform.Password(...)`, which does not exist in 2.1.1 — the class is
+    # `platform.GrantPassword`.
+    lseg-credentials = {
+      file = "${nix-secrets}/lseg-credentials.age";
+      mode = "400";
+    };
     # Beeper Desktop API token for the `beeper` MCP server (~/areas/assistant).
     # Non-expiring: minted with expiresInSeconds=0, so there is nothing to renew.
     beeper-access-token = {
@@ -45,6 +56,12 @@ in
     };
     canvas-api-token = {
       file = "${nix-secrets}/canvas-api-token.age";
+      mode = "400";
+    };
+    # Telnyx API v2 key for programmatic SMS (~/projects/telnyx-sms).
+    # Non-expiring; rotate by deleting the key in the Telnyx portal.
+    telnyx-api-key = {
+      file = "${nix-secrets}/telnyx-api-key.age";
       mode = "400";
     };
     flakehub-token = {
@@ -131,11 +148,13 @@ in
     GEMINI_API_KEY_FILE = "${tempDir}/gemini-api-key";
     CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
+    LSEG_CREDENTIALS_FILE = "${tempDir}/lseg-credentials";
     BEEPER_ACCESS_TOKEN_FILE = "${tempDir}/beeper-access-token";
     RAINDROP_TOKEN_FILE = "${tempDir}/raindrop-token";
     WEBHOOK_SECRET_FILE = "${tempDir}/webhook-secret";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
     CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
+    TELNYX_API_KEY_FILE = "${tempDir}/telnyx-api-key";
     FLAKEHUB_TOKEN_FILE = "${tempDir}/flakehub-token";
     GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND = "file";
   };
@@ -175,6 +194,7 @@ in
     get-webhook-secret = "cat $WEBHOOK_SECRET_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
+    get-telnyx-api-key = "cat $TELNYX_API_KEY_FILE";
     get-flakehub-token = "cat $FLAKEHUB_TOKEN_FILE";
   };
 
