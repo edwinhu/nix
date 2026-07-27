@@ -8,11 +8,6 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # xremap (Hyprland variant) drives the Hyper(F13) leader binds — see the
-  # xremap systemd user service + xdg.configFile below. `withVariant` (NOT
-  # `features`) selects the compositor connector; nixpkgs' default build is wlroots.
-  xremapHypr = pkgs.xremap.override { withVariant = "hyprland"; };
-
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
   # NONE of Brother's shipped backends support this model out of the box:
   #   - brscan5 (what the DS-740D download page offers) has no model-table entry
@@ -131,9 +126,9 @@ let
   };
 
   # vimium-toggle: GLOBAL Vimium on/off, resting state OFF (opt-in "vim mode"),
-  # bound to Hyper(F13)+V via the xremap config below (Chrome exposes no
-  # enable/disable shortcut and Vimium's only command is its popup, so xremap
-  # drives this). It flips Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}`
+  # bound to SUPER+V in dotfiles' hypr bindings.conf (Chrome exposes no
+  # enable/disable shortcut and Vimium's only command is its popup, so an
+  # external toggle drives this). It flips Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}`
   # global absolute-exclusion rule in chrome.storage.sync (Vimium is deny-list
   # only, so per-page opt-in over a default-off isn't expressible) — reached over
   # CDP (:9222) through a Vimium content-script isolated world (the MV3 service
@@ -1006,15 +1001,6 @@ in
     '';
   };
 
-  # Hyper(F13) leader binds — consumed by the xremap service below. The bulk of
-  # this used to be a limux keymap translation; limux is gone (herdr binds its
-  # own keys in ~/.config/herdr/config.toml), so only Hyper+V survives.
-  # Inject vimium-toggle's absolute store path so xremap's `launch` action
-  # resolves it without depending on the systemd user service's PATH.
-  xdg.configFile."xremap/config.yml".text =
-    builtins.replaceStrings [ "@VIMIUM_TOGGLE@" ] [ "${vimiumToggle}/bin/vimium-toggle" ]
-      (builtins.readFile ./files/xremap.yml);
-
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
@@ -1074,24 +1060,6 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # xremap: Hyper(F13) leader binds (config: xdg.configFile above).
-    # HYPRLAND_INSTANCE_SIGNATURE comes from the graphical-session user env (uwsm);
-    # /dev/uinput is reachable because `eh` is in the `input` group. --watch
-    # re-grabs devices on hotplug (the Glove80 exposes 1 node on BT, 2 on USB).
-    { xremap = {
-      Unit = {
-        Description = "xremap — Hyper(F13) leader binds";
-        PartOf = [ "graphical-session.target" ];
-        After = [ "graphical-session.target" ];
-      };
-      Service = {
-        Type = "simple";
-        ExecStart = "${xremapHypr}/bin/xremap --watch %h/.config/xremap/config.yml";
-        Restart = "on-failure";
-        RestartSec = 2;
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    }; }
     # swlinux dictation daemon: Parakeet STT + s1-mini cleanup, capturing the
     # OBSBOT mic via the system-default source (SWLINUX_MIC=default — the
     # "builtin" auto-pick would grab the empty analog jack on this desktop).
@@ -1105,7 +1073,7 @@ in
     # zwlr_virtual_pointer_manager_v1 / zwp_virtual_keyboard_manager_v1, all of
     # which need WAYLAND_DISPLAY (uwsm exports it into the user manager).
     # /dev/uinput for gamepad emulation works because `eh` is in the `input`
-    # group (same reason xremap works). The binary is the nixGLIntel-wrapped
+    # group (same reason ydotoold works). The binary is the nixGLIntel-wrapped
     # override; `capture = wlr` comes from xdg.configFile above — see both for
     # the startup-hang and GBM/EGL traps.
     { sunshine = {
@@ -1169,7 +1137,7 @@ in
     }; }
     # ydotoold: virtual uinput device daemon that `ydotool` talks to over
     # %t/.ydotool_socket. Runs as the user (not root) — /dev/uinput is reachable
-    # because `eh` is in the `input` group (the same grant xremap relies on). This
+    # because `eh` is in the `input` group (the same grant ydotoold relies on). This
     # is the input-synthesis half of the native Wayland "computer use" loop (see
     # the linux-computer-use skill): grim = screenshot (see), hyprctl = window /
     # system control, ydotool = keyboard + mouse (act). Client socket path is

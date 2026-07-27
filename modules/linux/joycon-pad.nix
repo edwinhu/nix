@@ -6,7 +6,7 @@
 # and an Alt-Tab switcher (Capture hold + stick flick).
 #
 # Runs as a user service (see hosts/linux/omarchy). /dev/input reads + rumble
-# work because `eh` is in the `input` group — the same grant xremap/ydotoold use.
+# work because `eh` is in the `input` group — the same grant ydotoold uses.
 # Pairing needs a one-time `ClassicBondedOnly=false` in /etc/bluetooth/input.conf
 # (Arch-managed, not nix — see the repo's README/pair-joycon.sh): Joy-Cons pair
 # but don't bond, and BlueZ refuses non-bonded HID by default.
