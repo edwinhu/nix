@@ -58,8 +58,8 @@ let
     paperpile-cli
     stremio-linux-shell
 
-    # Terminal workspace / tailscale TUI (source builds)
-    limux
+    # Tailscale TUI (source build). Terminal workspaces are herdr's job now —
+    # it's cross-platform, so it lives in modules/shared/packages.nix.
     tsui
 
     # Bluetooth CLI. The Omarchy/Arch base ships only the bluez *daemon*

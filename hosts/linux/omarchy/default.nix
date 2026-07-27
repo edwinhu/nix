@@ -8,8 +8,8 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # xremap (Hyprland variant) drives the Hyper(F13) leader remaps for limux — see
-  # the xremap systemd user service + xdg.configFile below. `withVariant` (NOT
+  # xremap (Hyprland variant) drives the Hyper(F13) leader binds — see the
+  # xremap systemd user service + xdg.configFile below. `withVariant` (NOT
   # `features`) selects the compositor connector; nixpkgs' default build is wlroots.
   xremapHypr = pkgs.xremap.override { withVariant = "hyprland"; };
 
@@ -736,7 +736,6 @@ in
         # These GTK apps report LOGICAL coords like everything else here, so
         # scale_factor=1 now just matches the default. Kept explicit for parity
         # with alarm (where they override alarm's 0.5 default).
-        "dev.limux.linux".scale_factor = 1;
         "doublecmd".scale_factor = 1;
         "org.gnome.Nautilus".scale_factor = 1;
         # Obsidian (Electron): unlike this host's GTK apps, Chromium WEB CONTENT
@@ -900,8 +899,7 @@ in
 
   # Host-local ghostty override (included last by the shared ~/.config/ghostty/
   # config). The shared font-size 14 is tuned for macOS Retina and renders too
-  # big on this 32" 4K @ scale-2 panel (and in limux's embedded libghostty), so
-  # shrink it here only — macOS/alarm keep their own size.
+  # big on this 32" 4K @ scale-2 panel, so shrink it here only — macOS/alarm keep their own size.
   xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
 
   # Sunshine (Moonlight streaming host). Two settings here are load-bearing on
@@ -1008,9 +1006,9 @@ in
     '';
   };
 
-  # Hyper(F13) leader remaps for limux — consumed by the xremap service below.
-  # F13+<key> emits limux's stock Ctrl+Alt(+Shift) combo (limux can't bind F13
-  # itself). Hold F13 like Cmd/Shift while tapping the key.
+  # Hyper(F13) leader binds — consumed by the xremap service below. The bulk of
+  # this used to be a limux keymap translation; limux is gone (herdr binds its
+  # own keys in ~/.config/herdr/config.toml), so only Hyper+V survives.
   # Inject vimium-toggle's absolute store path so xremap's `launch` action
   # resolves it without depending on the systemd user service's PATH.
   xdg.configFile."xremap/config.yml".text =
@@ -1076,13 +1074,13 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # xremap: Hyper(F13) leader -> limux combos (config: xdg.configFile above).
+    # xremap: Hyper(F13) leader binds (config: xdg.configFile above).
     # HYPRLAND_INSTANCE_SIGNATURE comes from the graphical-session user env (uwsm);
     # /dev/uinput is reachable because `eh` is in the `input` group. --watch
     # re-grabs devices on hotplug (the Glove80 exposes 1 node on BT, 2 on USB).
     { xremap = {
       Unit = {
-        Description = "xremap — Hyper(F13) leader remaps for limux";
+        Description = "xremap — Hyper(F13) leader binds";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
       };
@@ -1191,25 +1189,27 @@ in
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
     # joycon-pad: Bluetooth Joy-Con (L) as a macro pad — stick→pointer,
-    # ZL→swlinux dictation, SL/SR→limux tabs, Capture-hold→Alt-Tab. Reads the
-    # hid-nintendo evdev node + drives ydotool/swlinux/limux; `input` group grants
+    # ZL→swlinux dictation, SL/SR→tab switch, Capture-hold→Alt-Tab. Reads the
+    # hid-nintendo evdev node + drives ydotool/swlinux; `input` group grants
     # /dev/input + rumble. Config is stow-linked at ~/.config/joycon-pad/config.toml
     # (dotfiles), which the daemon prefers over its packaged default. --wait lets
     # the service start before the Joy-Con connects and bind it on (re)connect.
     # One-time pairing fix (ClassicBondedOnly=false) is manual — see the repo.
     { joycon-pad = {
       Unit = {
-        Description = "joycon-pad — Joy-Con macro pad for swlinux + limux";
+        Description = "joycon-pad — Joy-Con macro pad for swlinux";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" "bluetooth.target" ];
       };
       Service = {
         Type = "simple";
-        # swlinux + limux are shelled out to by bare name; ydotool is also on the
+        # swlinux is shelled out to by bare name; ydotool is also on the
         # wrapper's PATH but listed here too. YDOTOOL_SOCKET matches ydotoold.
+        # (limux used to be on this PATH for the SL/SR tab binds; the daemon's
+        # own config decides what those keys send now — see joycon-pad's repo.)
         Environment = [
           "YDOTOOL_SOCKET=%t/.ydotool_socket"
-          "PATH=${lib.makeBinPath [ pkgs.ydotool pkgs.swlinux pkgs.limux ]}"
+          "PATH=${lib.makeBinPath [ pkgs.ydotool pkgs.swlinux ]}"
         ];
         ExecStart = "${pkgs.joycon-pad}/bin/joycon-pad --wait 3600";
         # Restart=always, NOT on-failure: on device loss (Joy-Con powers off or

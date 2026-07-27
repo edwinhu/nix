@@ -68,9 +68,21 @@
       url = "git+ssh://git@github.com/edwinhu/joycon-pad.git";
       flake = false;
     };
+    # herdr: terminal-native agent multiplexer (replaces limux/cmux). It's a
+    # single Rust TUI binary that runs INSIDE the terminal — no GTK/GL, so no
+    # nixGL wrap and no .desktop/Walker plumbing. Upstream ships a flake with
+    # packages.<system>.default for all four linux/darwin systems; pin the
+    # release tag (upstream's own install docs recommend it over master).
+    #
+    # Deliberately NOT `inputs.nixpkgs.follows = "nixpkgs"`: herdr's flake
+    # composes oxalica/rust-overlay against its own nixpkgs pin, and forcing
+    # ours risks a toolchain mismatch for no benefit — it's one small package.
+    herdr = {
+      url = "github:ogulcancelik/herdr/v0.7.5";
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, herdr } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -275,6 +287,8 @@
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
+                  # herdr — terminal multiplexer for agents (see the input above).
+                  herdr = inputs.herdr.packages.${info.system}.default;
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
                   elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
@@ -352,51 +366,13 @@
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
-                # limux is a GPU/GL app (libghostty + GTK4). Like beeper, on a
-                # non-NixOS host it can't find system Mesa/EGL and dies with
-                # "failed to create EGL display" — wrap bin/limux in nixGLIntel
-                # (the wrapper's GL env is inherited by the limux-host child that
-                # actually creates the GL context). x86_64/aarch64 both need it.
-                limux = let
-                  # Pin ghostty to the UNWRAPPED package: the overlay's `ghostty`
-                  # is a nixGL symlinkJoin, which flattens the multi-output derivation
-                  # and so drops the `terminfo` output limux.nix copies from. limux
-                  # only wants ghostty's share/ resources + terminfo — it never runs
-                  # the binary, and carries its own nixGL wrapper — so the wrap is
-                  # both unnecessary and lossy here.
-                  limuxPkg = prev.callPackage ./modules/shared/limux.nix {
-                    ghostty = prev.ghostty;
-                  };
-                in prev.symlinkJoin {
-                  name = "limux-nixgl-${limuxPkg.version or "unknown"}";
-                  paths = [
-                    (prev.writeShellScriptBin "limux" ''
-                      # Unset GDK_SCALE (Omarchy sets =2 globally in monitors.conf):
-                      # libghostty does its own HiDPI scaling from the compositor's
-                      # 2x wl_output, so GDK_SCALE=2 double-scales -> huge terminal.
-                      exec env -u GDK_SCALE ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${limuxPkg}/bin/limux "$@"
-                    '')
-                    limuxPkg
-                  ];
-                  # limux's dev.limux.linux.desktop hard-codes Exec/TryExec to the
-                  # UNWRAPPED ${limuxPkg}/bin/limux, so launching from the launcher
-                  # bypasses the nixGL wrap -> "failed to create EGL display".
-                  # Replace the symlinked desktop file with one whose Exec/TryExec
-                  # point at the wrapped $out/bin/limux.
-                  postBuild = ''
-                    d=$out/share/applications/dev.limux.linux.desktop
-                    if [ -e "$d" ]; then
-                      rm -f "$d"
-                      sed "s|${limuxPkg}/bin/limux|$out/bin/limux|g" \
-                        ${limuxPkg}/share/applications/dev.limux.linux.desktop > "$d"
-                    fi
-                  '';
-                  meta = limuxPkg.meta or {};
-                  passthru = { unwrapped = limuxPkg; };
-                };
+                # herdr — terminal multiplexer for agents (see the input above).
+                # Replaces limux: it's a plain TUI binary, so unlike limux it
+                # needs no nixGL wrap, no GDK_SCALE fix, and no .desktop patching.
+                herdr = inputs.herdr.packages.${info.system}.default;
                 # ghostty is the default terminal on Omarchy (xdg-terminals.list,
-                # host module). Same GPU/GL story as limux — it's the same GTK4 +
-                # libghostty renderer — so unwrapped it dies with "failed to make
+                # host module). It's a GTK4 + libghostty renderer, so on this
+                # non-NixOS host, unwrapped, it dies with "failed to make
                 # GL context current: Failed to create EGL display" on this
                 # non-NixOS host. Verified: bare binary fails, nixGLIntel-wrapped
                 # renders a surface and exits 0.
@@ -408,8 +384,7 @@
                     (prev.writeShellScriptBin "ghostty" ''
                       # Unset GDK_SCALE (Omarchy sets =2 globally in monitors.conf):
                       # ghostty already scales from the compositor's 2x wl_output,
-                      # so GDK_SCALE=2 double-scales -> huge terminal. Same fix as
-                      # limux, which embeds the same renderer.
+                      # so GDK_SCALE=2 double-scales -> huge terminal.
                       exec env -u GDK_SCALE ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${ghosttyPkg}/bin/ghostty "$@"
                     '')
                     ghosttyPkg
@@ -430,7 +405,7 @@
                   meta = ghosttyPkg.meta or {};
                   passthru = (ghosttyPkg.passthru or {}) // { unwrapped = ghosttyPkg; };
                 };
-                # stremio-linux-shell uses mpv (GL) — same as beeper/limux, wrap
+                # stremio-linux-shell uses mpv (GL) — same as beeper/ghostty, wrap
                 # bin/stremio in nixGLIntel so it finds system Mesa/EGL on non-NixOS
                 # ("failed to create EGL display" otherwise). Also pass
                 # --no-window-decorations: the app's client-side titlebar adds
@@ -450,7 +425,7 @@
                 };
                 # hylo — Edwin's own Electron PDF reader (gh:edwinhu/hylo),
                 # fetched as the release AppImage (see modules/shared/hylo.nix).
-                # Same GL story as beeper/stremio/limux: wrap bin/hylo in
+                # Same GL story as beeper/stremio/ghostty: wrap bin/hylo in
                 # nixGLIntel so Chromium/Mesa resolve against system GL on
                 # non-NixOS (Omarchy has no /run/opengl-driver; nixGLIntel drives
                 # AMD too), and force --no-sandbox — the store chrome-sandbox is

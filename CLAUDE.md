@@ -71,7 +71,7 @@ nix flake update nix-secrets  # Update only secrets
 - All secrets encrypted with agenix in separate private repository
 - The flake uses nixpkgs-unstable channel for latest packages
 - **nixGL wrap for GPU/GL apps on Omarchy (non-NixOS):** nixpkgs GUI apps that
-  use GL/EGL/mpv (beeper, limux, stremio-linux-shell, …) fail on the Omarchy
+  use GL/EGL/mpv (beeper, ghostty, stremio-linux-shell, …) fail on the Omarchy
   hosts with `MESA-LOADER: failed to open dri … gbm` or `failed to create EGL
   display` — a nix-built binary can't find the system Mesa/EGL driver because
   there's no `/run/opengl-driver`. Fix: wrap the app's binary in `nixGLIntel`
@@ -81,18 +81,18 @@ nix flake update nix-secrets  # Update only secrets
   `${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/<bin> "$@"`
   over the base package (wrapper shadows `bin/<bin>` via first-path-wins; the
   package's `share/` icons+desktop entry come through unchanged). See the
-  `beeper`, `limux`, and `stremio-linux-shell` overrides for working examples.
+  `beeper`, `ghostty`, and `stremio-linux-shell` overrides for working examples.
   nixGL is a no-op where the system GL driver is already found, so it's safe.
   - **Also patch the .desktop entry** if the app ships one whose `Exec`/`TryExec`
-    hard-codes an ABSOLUTE store path to its own binary (e.g. limux's
-    `dev.limux.linux.desktop`). The wrapper only fixes launches that resolve to
+    hard-codes an ABSOLUTE store path to its own binary (e.g. ghostty's
+    `com.mitchellh.ghostty.desktop`). The wrapper only fixes launches that resolve to
     `~/.nix-profile/bin/<app>` (relative `Exec=<app>`, terminal invocation) — a
     hard-coded absolute path bypasses the wrapper, so the launcher still hits the
     EGL error. Fix with a `symlinkJoin` `postBuild` that `sed`s the entry's
-    Exec/TryExec from `${pkg}/bin/<app>` to `$out/bin/<app>` (see limux).
+    Exec/TryExec from `${pkg}/bin/<app>` to `$out/bin/<app>` (see ghostty).
   - **GDK_SCALE double-scaling:** Omarchy sets `GDK_SCALE=2` globally
     (monitors.conf) for the 2x display. Apps that already honor the Wayland
-    wl_output scale (e.g. limux/libghostty) then double-scale → huge UI. Fix per
+    wl_output scale (e.g. ghostty/libghostty) then double-scale → huge UI. Fix per
     app in its wrapper: `exec env -u GDK_SCALE nixGLIntel ${pkg}/bin/<app> …`.
 - **Nix GUI apps missing from Walker — no entry, or an entry with no icon
   (Omarchy):** after adding a GUI app to `home.packages`, it commonly either

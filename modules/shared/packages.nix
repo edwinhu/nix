@@ -83,6 +83,7 @@ with pkgs; [
   haskellPackages.pandoc-crossref
   ripgrep
   ripgrep-all
+  herdr  # agent multiplexer TUI (replaces limux/cmux); flake input, see flake.nix
   rmux  # tmux-compatible multiplexer; rc-recover drives it to toggle Remote Control
   starship
   tabiew

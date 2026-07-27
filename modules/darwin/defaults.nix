@@ -207,7 +207,6 @@
     enable = true;
     username = user;
     entries = [
-      { path = "/Applications/cmux.app"; }
       { path = "/Applications/Superhuman.app"; }
       { path = "/Applications/Reader.app"; }
       # Wrapper bundle, NOT /Applications/Dia.app — clicking the real app

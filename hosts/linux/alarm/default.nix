@@ -88,7 +88,6 @@ in
           roles_match_type = 2;
           roles = [ 43 88 79 7 44 11 62 35 8 45 37 32 51 52 ];
         };
-        "dev.limux.linux".scale_factor = 1;
         "doublecmd".scale_factor = 1;
         "org.gnome.Nautilus".scale_factor = 1;
         # Beeper: hint only what's useful for keyboard navigation — the

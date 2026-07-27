@@ -1,8 +1,8 @@
-# joycon-pad — a Nintendo Switch Joy-Con (L) as a macro pad for swlinux + limux.
+# joycon-pad — a Nintendo Switch Joy-Con (L) as a macro pad for swlinux.
 # Single-file evdev daemon fetched from gh:edwinhu/joycon-pad via the
 # joycon-pad-src flake input. Reads the Bluetooth-paired Joy-Con (in-tree
-# hid-nintendo driver) and drives swlinux (ZL → dictation), limux (SL/SR → tab
-# switch, X/Y → panes), the pointer (stick → ydotool mousemove), arrows (d-pad),
+# hid-nintendo driver) and drives swlinux (ZL → dictation), the terminal
+# multiplexer (SL/SR → tab switch, X/Y → panes), the pointer (stick → ydotool mousemove), arrows (d-pad),
 # and an Alt-Tab switcher (Capture hold + stick flick).
 #
 # Runs as a user service (see hosts/linux/omarchy). /dev/input reads + rumble
@@ -33,7 +33,7 @@ stdenvNoCC.mkDerivation {
 
   # The PEP-723 shebang (uv run) is stripped: we wrap the module under a pinned
   # python that already has evdev, and put ydotool on PATH for pointer/keys.
-  # swlinux + limux are added to PATH by the systemd unit (they're user pkgs).
+  # swlinux is added to PATH by the systemd unit (it's a user pkg).
   installPhase = ''
     runHook preInstall
     install -Dm644 joycon_pad.py $out/libexec/joycon-pad/joycon_pad.py
@@ -44,7 +44,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   meta = {
-    description = "Nintendo Switch Joy-Con as a macro pad for swlinux + limux";
+    description = "Nintendo Switch Joy-Con as a macro pad for swlinux";
     homepage = "https://github.com/edwinhu/joycon-pad";
     license = lib.licenses.mit;
     platforms = lib.platforms.linux;

@@ -5,7 +5,7 @@
 # time, so the target machine needs neither libfuse nor a system Electron. The
 # nixGLIntel wrap + --no-sandbox (Chromium can't use the non-setuid store
 # chrome-sandbox) is applied one level up, in the flake overlay, exactly like
-# beeper/stremio/limux.
+# beeper/stremio/ghostty.
 #
 # Only the icon is installed here; the .desktop is declared in home-manager
 # (xdg.desktopEntries.hylo) so its Exec can point at the wrapped `hylo` on PATH
