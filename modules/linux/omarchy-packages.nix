@@ -50,12 +50,6 @@ let
   linuxOnly = with pkgs; [
     # Communication / media
     beeper
-    # Zoom (nixpkgs zoom-us wrapped in nixGL — see flake overlay). Ships
-    # Zoom.desktop + zoommtg:// handlers; screen-share via xdg-desktop-portal-hyprland.
-    zoom-us
-    superhuman-cli
-    morgen-cli
-    paperpile-cli
     stremio-linux-shell
 
     # Tailscale TUI (source build). Terminal workspaces are herdr's job now —
@@ -79,13 +73,8 @@ let
     # Local Wayland dictation (gh:edwinhu/superwhisper-linux)
     swlinux
 
-    # Dictation + AI meeting notes; the Linux stand-in for the macOS-only
-    # granola cask (nixGL-wrapped in flake.nix).
-    openwhispr
-
     # File managers / PDF reader
     doublecmd
-    hylo
     ueberzugpp
 
     # Note-taking. nix-managed (nixGL-wrapped in flake.nix) instead of the Arch
@@ -97,5 +86,36 @@ let
     lmmath
     maple-mono.NF
   ];
+
+  # x86_64-linux ONLY — every one of these is distributed as a prebuilt x86-64
+  # binary with no ARM64 Linux build published anywhere upstream.
+  #
+  # These MUST be gated, not merely "broken on aarch64". A package whose
+  # meta.platforms excludes the host aborts the ENTIRE home-manager evaluation
+  # the moment it appears in home.packages ("error: Refusing to evaluate package
+  # … not available on the requested hostPlatform"), so a single x86-only entry
+  # takes down every other package on the aarch64 Omarchy host (`alarm`, Asahi)
+  # rather than just skipping itself. Add new prebuilt-binary packages HERE, not
+  # to linuxOnly, unless you have confirmed an aarch64-linux artifact exists.
+  #
+  #   zoom-us        Zoom ships no ARM64 Linux client; use app.zoom.us instead.
+  #   openwhispr     GH releases are x86_64 only.
+  #   hylo           GH release is an x86_64 AppImage only.
+  #   superhuman-cli \
+  #   morgen-cli      > own repos; Bun release CI publishes darwin-arm64 and
+  #   paperpile-cli  /  linux-x64 but no linux-arm64. Bun CAN target
+  #                     bun-linux-arm64 — adding that to each repo's
+  #                     release.yml is the real fix, after which these move
+  #                     back into linuxOnly.
+  x86_64Only = with pkgs; [
+    zoom-us
+    openwhispr
+    hylo
+    superhuman-cli
+    morgen-cli
+    paperpile-cli
+  ];
 in
-lib.subtractLists providedByOmarchyBase shared ++ linuxOnly
+lib.subtractLists providedByOmarchyBase shared
+++ linuxOnly
+++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 x86_64Only
