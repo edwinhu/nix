@@ -3,7 +3,7 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.38.5";
+  version = "0.38.6";
 
   # Prebuilt Bun binaries per platform. The linux-x64 asset is a normal
   # dynamically-linked ELF; on FHS hosts (Omarchy/Arch) it runs against system
@@ -15,11 +15,11 @@ let
       # asset added out-of-band; new tag-triggered releases do not, so track the
       # CI name.)
       asset = "superhuman-darwin-arm64";
-      hash = "sha256-IXJj0KmeySTTdk5WlFO9dELgXNerJ7t2RSd3LsDrocE=";
+      hash = "sha256-6pKX88/yBMQe0WFTx/dLKbGt+csDmE+/FwbwsDxVYLU=";
     };
     x86_64-linux = {
       asset = "superhuman-linux-x64";
-      hash = "sha256-ojHreb0+nQ27jMrIxy+xLICu+bUd07Z30bEJ5Loqu+g=";
+      hash = "sha256-7ZquKzytvzGWmtoVAlarDq7QrA4BAZqB3m1Fp8JvMOQ=";
     };
   };
 
