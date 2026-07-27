@@ -486,6 +486,7 @@ in
     activation.installAITools = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD env \
         PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
+        AI_TOOLS_SKIP="${lib.concatStringsSep " " (userInfo.aiToolsSkip or [])}" \
         ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
     '';
 

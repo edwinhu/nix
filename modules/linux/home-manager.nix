@@ -58,9 +58,12 @@
     # Use `nix run ~/nix#update-ai-tools` to force-bump to latest.
     # PATH must include curl (installer downloads) plus user dirs so `want()`
     # sees already-installed tools and skips reinstall.
+    # AI_TOOLS_SKIP drops tools this host has no use for from the default set
+    # (declared as userInfo.aiToolsSkip in flake.nix).
     activation.installAITools = lib.hm.dag.entryAfter ["writeBoundary"] ''
       $DRY_RUN_CMD env \
         PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
+        AI_TOOLS_SKIP="${lib.concatStringsSep " " (userInfo.aiToolsSkip or [])}" \
         ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
     '';
   };

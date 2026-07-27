@@ -7,6 +7,9 @@
 # Install all:   bash ~/nix/scripts/setup-ai-tools.sh
 # Install one:   bash ~/nix/scripts/setup-ai-tools.sh claude
 # Reinstall:     bash ~/nix/scripts/setup-ai-tools.sh --force claude
+# Skip some:     AI_TOOLS_SKIP="readwise" bash ~/nix/scripts/setup-ai-tools.sh
+#                (per-host default, set via userInfo.aiToolsSkip in flake.nix;
+#                 ignored for tools named explicitly on the command line)
 #
 # Or via nix:    nix run ~/nix#setup-ai-tools
 
@@ -23,7 +26,7 @@ for arg in "$@"; do
   case "$arg" in
     -f|--force) FORCE=1 ;;
     -h|--help)
-      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     claude|codex|opencode|gemini|agy|qmd|readwise) TOOLS+=("$arg") ;;
@@ -35,6 +38,26 @@ for arg in "$@"; do
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
   TOOLS=(claude codex opencode agy qmd readwise)
+  # Per-host opt-out. AI_TOOLS_SKIP is a space-separated tool list, set from
+  # `userInfo.aiToolsSkip` in flake.nix, for hosts that don't want part of the
+  # default set (e.g. rjds has no use for readwise, and installing it there
+  # means a git clone + bun compile on every switch, plus a login warning for
+  # a token that host never needs).
+  #
+  # Only filters the DEFAULT set: naming a tool on the command line always
+  # installs it, so `setup-ai-tools.sh readwise` still works on a skip host.
+  if [ -n "${AI_TOOLS_SKIP:-}" ]; then
+    keep=()
+    for t in "${TOOLS[@]}"; do
+      skip=0
+      for s in $AI_TOOLS_SKIP; do
+        [ "$t" = "$s" ] && skip=1
+      done
+      [ "$skip" = "1" ] || keep+=("$t")
+    done
+    TOOLS=(${keep[@]+"${keep[@]}"})
+    echo "${YELLOW}→ Skipping per AI_TOOLS_SKIP: ${AI_TOOLS_SKIP}${NC}"
+  fi
 fi
 
 # Remove stale nix-era wrappers at ~/.local/bin/<tool> that exec into /nix/store.
