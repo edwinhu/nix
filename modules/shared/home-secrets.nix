@@ -140,6 +140,29 @@ in
     GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND = "file";
   };
 
+  # gemini-cli selects its auth method from GEMINI_API_KEY specifically, and
+  # errors out if none of GEMINI_API_KEY / GOOGLE_GENAI_USE_VERTEXAI /
+  # GOOGLE_GENAI_USE_GCA is set — the *_FILE indirection above isn't enough for
+  # it. Export the value itself (and GOOGLE_API_KEY, which google-genai and the
+  # look-at skill's api backend read) so both work in a plain login shell, not
+  # just inside a Claude Code session. Guarded so a missing/undecrypted secret
+  # leaves the vars unset rather than exporting an empty string.
+  home.sessionVariablesExtra = let
+    keyFile = if pkgs.stdenv.isDarwin
+              then "$(getconf DARWIN_USER_TEMP_DIR)agenix/gemini-api-key"
+              else "\${XDG_RUNTIME_DIR}/agenix/gemini-api-key";
+  in ''
+    if [ -r "${keyFile}" ]; then
+      GEMINI_API_KEY="$(tr -d '\n' < "${keyFile}")"
+      if [ -n "$GEMINI_API_KEY" ]; then
+        export GEMINI_API_KEY
+        export GOOGLE_API_KEY="$GEMINI_API_KEY"
+      else
+        unset GEMINI_API_KEY
+      fi
+    fi
+  '';
+
   # Create shell aliases for reading secrets when needed
   home.shellAliases = {
     get-google-search-api-key = "cat $GOOGLE_SEARCH_API_KEY_FILE";
