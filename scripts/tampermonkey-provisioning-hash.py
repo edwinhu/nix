@@ -14,7 +14,7 @@ background.js (functions No/Do) and against what GitHub actually serves.
 
 Usage:  ./tampermonkey-provisioning-hash.py script1.user.js script2.user.js ...
 """
-import hashlib, json, sys, pathlib
+import base64, hashlib, json, sys, pathlib
 
 SCRIPT_URLS = {
     "lseg-workspace-banner.user.js":
@@ -42,7 +42,13 @@ def main(paths):
         url = SCRIPT_URLS.get(f.name)
         if not url:
             sys.exit(f"no @updateURL known for {f.name}; add it to SCRIPT_URLS")
-        scripts.append({"file_url": url, "source": f.read_text()})
+        # source MUST be base64 of the UTF-8 bytes. Tampermonkey does
+        #   decodeURIComponent(escape(atob(source)))
+        # and that atob() sits OUTSIDE the installer's try/catch, so raw text
+        # throws InvalidCharacterError, kills the extension's init as an uncaught
+        # rejection, and provisioning dies silently after "start downloading".
+        scripts.append({"file_url": url,
+                        "source": base64.b64encode(f.read_bytes()).decode("ascii")})
     bundle = {"version": "1", "scripts": scripts}
     out = pathlib.Path("tampermonkey-provisioning.json")
     out.write_text(json.dumps(bundle, indent=2))
@@ -50,6 +56,8 @@ def main(paths):
     print(f'hash: 1:{tm_hash(bundle)}')
     print("\nUpload the JSON to its gist, then put the hash in "
           "hosts/linux/omarchy/files/chromium-tampermonkey-policy.json")
+    print("NOTE: the gist RAW url is CDN-cached for 5 minutes. Verify the update "
+          "landed with `gh api gists/<id>` rather than curling the raw url.")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2: sys.exit(__doc__)

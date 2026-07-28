@@ -836,6 +836,17 @@ in
   #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-tampermonkey-policy.json \
   #     /etc/chromium/policies/managed/tampermonkey.json
   #
+  # `source` MUST be BASE64 of the script's UTF-8 bytes, not raw text. The
+  # installer does `Qe(Xe(source))` = decodeURIComponent(escape(atob(source))),
+  # and that atob sits OUTSIDE its try/catch. Raw text throws
+  # InvalidCharacterError (immediately, if the script contains any character
+  # above U+00FF -- an em-dash in a @name is enough), the rejection escapes the
+  # extension's init IIFE uncaught, and provisioning dies in total silence after
+  # the "start downloading" line: no error, no scripts, no success marker, and a
+  # half-initialised extension. Cost most of an evening and three independent
+  # investigations to find; the first two theories (offscreen/XHR transport, then
+  # a stuck request) were both wrong.
+  #
   # The hash is NOT a plain sha256 of the file. Tampermonkey walks the parsed
   # JSON and hashes recursively: leaves as sha256("<typeof>:<value>"), arrays and
   # objects as sha256 of their children's hashes concatenated, object keys sorted
