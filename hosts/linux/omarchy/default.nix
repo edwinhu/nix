@@ -553,18 +553,6 @@ in
     file.".local/state/brother/brscan-skey".source =
       "${brscanSkey}/opt/brother/scanner/brscan-skey";
 
-    # LSEG Workspace webapp: the unpacked banner-hiding extension, loaded via
-    # --load-extension below. Unpacked (not the Web Store forcelist) because it
-    # is ours and one file; that also keeps it clear of the
-    # DeveloperToolsAvailability side effect documented at the flags block —
-    # force-installed extensions block CDP attach to their service worker, and
-    # this host's tooling depends on CDP. A pure-CSS content script has no
-    # service worker anyway.
-    file.".local/share/chromium-extensions/lseg-banner-hide" = {
-      source = ./files/chromium-extensions/lseg-banner-hide;
-      recursive = true;
-    };
-
     # Scanner launcher entry. MUST live under ~/.local/share/applications
     # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
     # nix-profile share where xdg.desktopEntries would place it. TUI.float →
@@ -872,9 +860,10 @@ in
       # location=4 (command-line) entry at all, only the forcelist ones. Nothing
       # errors -- the flag is simply ignored -- which is why it went unnoticed.
       #
-      # Comma-separated: Chromium honours only the LAST --load-extension flag,
-      # so a second line would silently drop copy-url.
-      --load-extension=${config.home.homeDirectory}/.local/share/omarchy/default/chromium/extensions/copy-url,${config.home.homeDirectory}/.local/share/chromium-extensions/lseg-banner-hide
+      # If a second unpacked extension is ever added here it MUST be appended
+      # comma-separated to this same flag -- Chromium honours only the LAST
+      # --load-extension, so a second line would silently drop copy-url.
+      --load-extension=${config.home.homeDirectory}/.local/share/omarchy/default/chromium/extensions/copy-url
       --remote-debugging-port=9222
       --remote-allow-origins=*
       # Keep the visible-but-unfocused browser window's ACTIVE tab reachable. In
@@ -1333,8 +1322,10 @@ in
     # Verified by launching it and reading hyprctl clients. "workspace" also
     # matches but is too generic (it would catch unrelated window titles).
     #
-    # The unsupported-browser banner is hidden by the unpacked extension loaded
-    # via --load-extension in chromium-flags.conf below.
+    # The unsupported-browser banner is hidden by a Tampermonkey userscript,
+    # files/userscripts/lseg-workspace-banner.user.js. It was briefly a bespoke
+    # unpacked extension; a userscript is the same content script with less
+    # machinery, and Tampermonkey earns its place across other scripts too.
     lseg-workspace = {
       name = "LSEG Workspace";
       comment = "LSEG Workspace Web (Refinitiv Eikon)";
