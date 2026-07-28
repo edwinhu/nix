@@ -553,6 +553,44 @@ in
     file.".local/state/brother/brscan-skey".source =
       "${brscanSkey}/opt/brother/scanner/brscan-skey";
 
+    # LSEG Workspace webapp: the unpacked banner-hiding extension, loaded via
+    # --load-extension below. Unpacked (not the Web Store forcelist) because it
+    # is ours and one file; that also keeps it clear of the
+    # DeveloperToolsAvailability side effect documented at the flags block —
+    # force-installed extensions block CDP attach to their service worker, and
+    # this host's tooling depends on CDP. A pure-CSS content script has no
+    # service worker anyway.
+    file.".local/share/chromium-extensions/lseg-banner-hide" = {
+      source = ./files/chromium-extensions/lseg-banner-hide;
+      recursive = true;
+    };
+
+    # LSEG Workspace launcher. omarchy-launch-webapp execs the default browser
+    # with --app=<url>, so this inherits chromium-flags.conf wholesale: it lands
+    # on the SAME browser process and Default profile as every other window,
+    # which is what keeps CDP on :9222 covering it (same endpoint, no per-app
+    # profile, no re-login) and what loads the banner extension above. That is
+    # the same mechanism Superhuman and Morgen already rely on — see the
+    # chromium-flags.conf comment.
+    #
+    # Consequence worth knowing: because it shares the profile, launching this
+    # when Chromium is already running adds a window to the running instance and
+    # the flags are NOT re-applied — they only take effect on a cold start. If
+    # :9222 is ever missing, it means Chromium was started before the flags or
+    # the managed policy landed; fully quit and relaunch, then verify with
+    #   curl -s localhost:9222/json/version
+    file.".local/share/applications/lseg-workspace.desktop".text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=LSEG Workspace
+      Comment=LSEG Workspace Web (Refinitiv Eikon)
+      Exec=omarchy-launch-webapp https://workspace.refinitiv.com/web
+      Icon=applications-office
+      Terminal=false
+      Categories=Office;Finance;
+      StartupNotify=true
+    '';
+
     # Scanner launcher entry. MUST live under ~/.local/share/applications
     # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
     # nix-profile share where xdg.desktopEntries would place it. TUI.float →
@@ -851,7 +889,9 @@ in
       --ozone-platform=wayland
       --ozone-platform-hint=wayland
       --enable-features=TouchpadOverscrollHistoryNavigation
-      --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url
+      # Comma-separated: Chromium honours only the LAST --load-extension flag,
+      # so a second line would silently drop copy-url.
+      --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url,~/.local/share/chromium-extensions/lseg-banner-hide
       --remote-debugging-port=9222
       --remote-allow-origins=*
       # Keep the visible-but-unfocused browser window's ACTIVE tab reachable. In
