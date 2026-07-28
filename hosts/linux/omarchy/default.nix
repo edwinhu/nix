@@ -553,6 +553,18 @@ in
     file.".local/state/brother/brscan-skey".source =
       "${brscanSkey}/opt/brother/scanner/brscan-skey";
 
+    # LSEG Workspace webapp: the unpacked banner-hiding extension, loaded via
+    # --load-extension below. Unpacked (not the Web Store forcelist) because it
+    # is ours and one file; that also keeps it clear of the
+    # DeveloperToolsAvailability side effect documented at the flags block —
+    # force-installed extensions block CDP attach to their service worker, and
+    # this host's tooling depends on CDP. A pure-CSS content script has no
+    # service worker anyway.
+    file.".local/share/chromium-extensions/lseg-banner-hide" = {
+      source = ./files/chromium-extensions/lseg-banner-hide;
+      recursive = true;
+    };
+
     # Scanner launcher entry. MUST live under ~/.local/share/applications
     # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
     # nix-profile share where xdg.desktopEntries would place it. TUI.float →
@@ -851,7 +863,9 @@ in
       --ozone-platform=wayland
       --ozone-platform-hint=wayland
       --enable-features=TouchpadOverscrollHistoryNavigation
-      --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url
+      # Comma-separated: Chromium honours only the LAST --load-extension flag,
+      # so a second line would silently drop copy-url.
+      --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url,~/.local/share/chromium-extensions/lseg-banner-hide
       --remote-debugging-port=9222
       --remote-allow-origins=*
       # Keep the visible-but-unfocused browser window's ACTIVE tab reachable. In
@@ -1294,6 +1308,33 @@ in
       mimeType = [ "application/pdf" ];
       startupNotify = true;
       settings.StartupWMClass = "hylo";
+    };
+
+    # LSEG Workspace as a Chromium app on the shared Default profile, same shape
+    # as superhuman below: one browser process, so the browser-wide :9222 from
+    # chromium-flags.conf already covers it and lseg tooling can drive the live
+    # session with no per-app profile and no re-login.
+    #
+    # Window pattern is "refinitiv", NOT "lseg". omarchy-launch-or-focus matches
+    # \bPATTERN\b case-insensitively against the Hyprland class or title, and the
+    # class Chromium gives this window is
+    #   chrome-workspace.refinitiv.com__web-Default
+    # which contains no "lseg" at all — the obvious pattern silently never
+    # matches, so every launch would open a duplicate instead of focusing.
+    # Verified by launching it and reading hyprctl clients. "workspace" also
+    # matches but is too generic (it would catch unrelated window titles).
+    #
+    # The unsupported-browser banner is hidden by the unpacked extension loaded
+    # via --load-extension in chromium-flags.conf below.
+    lseg-workspace = {
+      name = "LSEG Workspace";
+      comment = "LSEG Workspace Web (Refinitiv Eikon)";
+      exec = "omarchy-launch-or-focus-webapp refinitiv https://workspace.refinitiv.com/web";
+      terminal = false;
+      type = "Application";
+      icon = "${iconDir}/LSEG Workspace.png";
+      categories = [ "Office" "Finance" ];
+      startupNotify = true;
     };
 
     # Superhuman as a Chromium app on the shared Default profile (where you're
