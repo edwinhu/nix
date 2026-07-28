@@ -573,6 +573,14 @@ in
     # the same mechanism Superhuman and Morgen already rely on — see the
     # chromium-flags.conf comment.
     #
+    # Icon is the real LSEG Workspace mark (the blue WS tile), lifted from the
+    # macOS app bundle's Contents/Resources/electron.icns on mbp via `iconutil -c
+    # iconset` — 256x256 is the largest size that .icns carries. Not from
+    # workspace.refinitiv.com/favicon.ico, which is 16px and 32px only, nor
+    # lseg.com's, which tops out at 48px; both are too small for a launcher.
+    # Interpolated as a store path (like openwhispr's) rather than copied into
+    # ~/.local/share/applications/icons, so it needs no separate home.file and
+    # cannot drift from the .desktop that references it.
     # Consequence worth knowing: because it shares the profile, launching this
     # when Chromium is already running adds a window to the running instance and
     # the flags are NOT re-applied — they only take effect on a cold start. If
@@ -585,7 +593,7 @@ in
       Name=LSEG Workspace
       Comment=LSEG Workspace Web (Refinitiv Eikon)
       Exec=omarchy-launch-webapp https://workspace.refinitiv.com/web
-      Icon=applications-office
+      Icon=${./files/icons/lseg-workspace.png}
       Terminal=false
       Categories=Office;Finance;
       StartupNotify=true
