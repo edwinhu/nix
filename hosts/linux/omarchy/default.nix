@@ -565,40 +565,6 @@ in
       recursive = true;
     };
 
-    # LSEG Workspace launcher. omarchy-launch-webapp execs the default browser
-    # with --app=<url>, so this inherits chromium-flags.conf wholesale: it lands
-    # on the SAME browser process and Default profile as every other window,
-    # which is what keeps CDP on :9222 covering it (same endpoint, no per-app
-    # profile, no re-login) and what loads the banner extension above. That is
-    # the same mechanism Superhuman and Morgen already rely on — see the
-    # chromium-flags.conf comment.
-    #
-    # Icon is the real LSEG Workspace mark (the blue WS tile), lifted from the
-    # macOS app bundle's Contents/Resources/electron.icns on mbp via `iconutil -c
-    # iconset` — 256x256 is the largest size that .icns carries. Not from
-    # workspace.refinitiv.com/favicon.ico, which is 16px and 32px only, nor
-    # lseg.com's, which tops out at 48px; both are too small for a launcher.
-    # Interpolated as a store path (like openwhispr's) rather than copied into
-    # ~/.local/share/applications/icons, so it needs no separate home.file and
-    # cannot drift from the .desktop that references it.
-    # Consequence worth knowing: because it shares the profile, launching this
-    # when Chromium is already running adds a window to the running instance and
-    # the flags are NOT re-applied — they only take effect on a cold start. If
-    # :9222 is ever missing, it means Chromium was started before the flags or
-    # the managed policy landed; fully quit and relaunch, then verify with
-    #   curl -s localhost:9222/json/version
-    file.".local/share/applications/lseg-workspace.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=LSEG Workspace
-      Comment=LSEG Workspace Web (Refinitiv Eikon)
-      Exec=omarchy-launch-webapp https://workspace.refinitiv.com/web
-      Icon=${./files/icons/lseg-workspace.png}
-      Terminal=false
-      Categories=Office;Finance;
-      StartupNotify=true
-    '';
-
     # Scanner launcher entry. MUST live under ~/.local/share/applications
     # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
     # nix-profile share where xdg.desktopEntries would place it. TUI.float →
@@ -1342,6 +1308,33 @@ in
       mimeType = [ "application/pdf" ];
       startupNotify = true;
       settings.StartupWMClass = "hylo";
+    };
+
+    # LSEG Workspace as a Chromium app on the shared Default profile, same shape
+    # as superhuman below: one browser process, so the browser-wide :9222 from
+    # chromium-flags.conf already covers it and lseg tooling can drive the live
+    # session with no per-app profile and no re-login.
+    #
+    # Window pattern is "refinitiv", NOT "lseg". omarchy-launch-or-focus matches
+    # \bPATTERN\b case-insensitively against the Hyprland class or title, and the
+    # class Chromium gives this window is
+    #   chrome-workspace.refinitiv.com__web-Default
+    # which contains no "lseg" at all — the obvious pattern silently never
+    # matches, so every launch would open a duplicate instead of focusing.
+    # Verified by launching it and reading hyprctl clients. "workspace" also
+    # matches but is too generic (it would catch unrelated window titles).
+    #
+    # The unsupported-browser banner is hidden by the unpacked extension loaded
+    # via --load-extension in chromium-flags.conf below.
+    lseg-workspace = {
+      name = "LSEG Workspace";
+      comment = "LSEG Workspace Web (Refinitiv Eikon)";
+      exec = "omarchy-launch-or-focus-webapp refinitiv https://workspace.refinitiv.com/web";
+      terminal = false;
+      type = "Application";
+      icon = "${iconDir}/LSEG Workspace.png";
+      categories = [ "Office" "Finance" ];
+      startupNotify = true;
     };
 
     # Superhuman as a Chromium app on the shared Default profile (where you're
