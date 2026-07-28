@@ -826,6 +826,27 @@ in
   #     /etc/chromium/policies/managed/extensions.json
   # Verify: chrome://policy (Reload policies) shows ExtensionInstallForcelist.
   #
+  # Tampermonkey userscripts are PROVISIONED declaratively — a FOURTH policy.
+  # Tampermonkey ships storage.managed_schema (schema.json in its bundle) with a
+  # single key, `jsonImport`: a list of {url, hash} pointing at a Tampermonkey
+  # JSON export. On startup it fetches each url, verifies the hash, installs the
+  # scripts, and records the hash so it only ever applies once. That closes the
+  # last manual step — a fresh machine ends up with the userscripts already
+  # installed, no clicking through Tampermonkey's install page:
+  #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-tampermonkey-policy.json \
+  #     /etc/chromium/policies/managed/tampermonkey.json
+  #
+  # The hash is NOT a plain sha256 of the file. Tampermonkey walks the parsed
+  # JSON and hashes recursively: leaves as sha256("<typeof>:<value>"), arrays and
+  # objects as sha256 of their children's hashes concatenated, object keys sorted
+  # and the keys themselves NOT hashed. Prefix "1:" is the format version. So
+  # reformatting the JSON is fine, but changing any value means recomputing.
+  # Regenerate with scripts/tampermonkey-provisioning-hash.py.
+  #
+  # The bundle is only for FIRST install. Each script carries @updateURL pointing
+  # at its own gist, so it self-updates afterwards and the bundle can go stale
+  # without harm — it is a seed, not a sync channel.
+
   # Force-installing extensions has a NON-OBVIOUS side effect that needs a THIRD
   # policy. DeveloperToolsAvailability defaults to
   # DisallowedForForceInstalledExtensions, so the moment an extension arrives via
