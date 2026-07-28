@@ -1,0 +1,16 @@
+{
+  "3rdparty": {
+    "extensions": {
+      "dhdgffkkebhmkfjojejmpbldmpobfkfo": {
+        "jsonImport": [
+          {
+            "url": "https://gist.githubusercontent.com/edwinhu/036606d03f1187fda242732a7cead0ef/raw/tampermonkey-provisioning.json",
+            "hash": "1:a4d03bf0d56e1d167d65a3b2dcb86297aa05ce51e9c7cb2611337a10eba17fa7",
+            "haltOnError": false,
+            "installAsSystemScripts": false
+          }
+        ]
+      }
+    }
+  }
+}
