@@ -863,9 +863,18 @@ in
       --ozone-platform=wayland
       --ozone-platform-hint=wayland
       --enable-features=TouchpadOverscrollHistoryNavigation
+      # ABSOLUTE PATHS, NOT ~. The Arch chromium wrapper is a C binary that
+      # splits this file with g_shell_parse_argv ("shell quoting rules apply but
+      # no further parsing is performed" -- its own --help). That does NOT expand
+      # tilde, so `--load-extension=~/...` reaches Chromium with a literal ~ and
+      # silently loads nothing. copy-url had been specified that way since it was
+      # added and had NEVER loaded: the Default profile's extension list showed no
+      # location=4 (command-line) entry at all, only the forcelist ones. Nothing
+      # errors -- the flag is simply ignored -- which is why it went unnoticed.
+      #
       # Comma-separated: Chromium honours only the LAST --load-extension flag,
       # so a second line would silently drop copy-url.
-      --load-extension=~/.local/share/omarchy/default/chromium/extensions/copy-url,~/.local/share/chromium-extensions/lseg-banner-hide
+      --load-extension=${config.home.homeDirectory}/.local/share/omarchy/default/chromium/extensions/copy-url,${config.home.homeDirectory}/.local/share/chromium-extensions/lseg-banner-hide
       --remote-debugging-port=9222
       --remote-allow-origins=*
       # Keep the visible-but-unfocused browser window's ACTIVE tab reachable. In
