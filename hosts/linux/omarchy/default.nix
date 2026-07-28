@@ -1322,10 +1322,17 @@ in
     # Verified by launching it and reading hyprctl clients. "workspace" also
     # matches but is too generic (it would catch unrelated window titles).
     #
-    # The unsupported-browser banner is hidden by a Tampermonkey userscript,
-    # files/userscripts/lseg-workspace-banner.user.js. It was briefly a bespoke
-    # unpacked extension; a userscript is the same content script with less
-    # machinery, and Tampermonkey earns its place across other scripts too.
+    # The unsupported-browser banner is hidden by a Tampermonkey userscript:
+    #   https://gist.github.com/edwinhu/14c99c2fba85dc519b837c6281506332
+    #
+    # Deliberately NOT tracked here. nix installs Tampermonkey (forcelist policy
+    # below) but cannot install a *script* into it — Tampermonkey keeps those in
+    # its own extension LevelDB, with no symlink or declarative path in. A
+    # .user.js in this repo would be the one file nix stores but never applies,
+    # and would still need a manual import. The gist carries @updateURL, so it
+    # installs once per machine and self-updates thereafter — the same pattern as
+    # the VitalSource->Readwise script, which survived a machine migration
+    # untouched precisely because it lived in a gist rather than a config repo.
     lseg-workspace = {
       name = "LSEG Workspace";
       comment = "LSEG Workspace Web (Refinitiv Eikon)";
