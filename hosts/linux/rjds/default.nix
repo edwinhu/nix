@@ -1,4 +1,4 @@
-{ config, pkgs, lib, user, userInfo, nix-secrets, ... }:
+{ config, pkgs, lib, user, nix-secrets, ... }:
 
 let
   giteaDir = "${config.home.homeDirectory}/.config/gitea";
@@ -14,27 +14,6 @@ let
     done
     echo "Tailscale address 100.70.33.29 is unavailable" >&2
     exit 1
-  '';
-  bootstrapGitea = pkgs.writeShellScript "bootstrap-gitea-admin" ''
-    set -eu
-    healthy=false
-    for attempt in $(${pkgs.coreutils}/bin/seq 1 60); do
-      if ${pkgs.curl}/bin/curl --fail --silent http://127.0.0.1:3000/api/healthz >/dev/null; then
-        healthy=true
-        break
-      fi
-      ${pkgs.coreutils}/bin/sleep 2
-    done
-    if [ "$healthy" != true ]; then
-      echo "Gitea did not become healthy within 120 seconds" >&2
-      exit 1
-    fi
-    if ${docker} exec --user git gitea gitea admin user list | ${pkgs.gnugrep}/bin/grep -q "[[:space:]]${user}[[:space:]]"; then
-      exit 0
-    fi
-    ${docker} exec -i --user git gitea sh -c \
-      'IFS= read -r password || true; exec gitea admin user create --username "$1" --email "$2" --admin --must-change-password --password "$password"' \
-      sh "${user}" "${userInfo.email}" < "$XDG_RUNTIME_DIR/agenix/gitea-admin-password"
   '';
   serveGitea = pkgs.writeShellScript "serve-gitea" ''
     set -eu
@@ -73,10 +52,6 @@ in
       file = "${nix-secrets}/gitea-lfs-jwt-secret.age";
       mode = "400";
     };
-    gitea-admin-password = {
-      file = "${nix-secrets}/gitea-admin-password.age";
-      mode = "400";
-    };
   };
 
   home.activation.giteaDeploymentFiles =
@@ -108,25 +83,6 @@ in
       RestartSec = 10;
       TimeoutStartSec = 600;
       TimeoutStopSec = 120;
-    };
-    Install.WantedBy = [ "default.target" ];
-  };
-
-  systemd.user.services.gitea-bootstrap = {
-    Unit = {
-      Description = "Create the initial private Gitea administrator";
-      After = [ "agenix.service" "gitea.service" ];
-      Requires = [ "agenix.service" "gitea.service" ];
-      StartLimitIntervalSec = 300;
-      StartLimitBurst = 3;
-    };
-    Service = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      ExecStart = bootstrapGitea;
-      Restart = "on-failure";
-      RestartSec = 10;
-      TimeoutStartSec = 150;
     };
     Install.WantedBy = [ "default.target" ];
   };
