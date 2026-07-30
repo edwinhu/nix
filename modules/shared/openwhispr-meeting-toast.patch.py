@@ -7,7 +7,7 @@ mouse-leave via `this.notificationWindow.setIgnoreMouseEvents(true, { forward:
 true })`. On wlroots (Hyprland/Sway) forwarded mouse-move events are never
 delivered to a click-through surface, so the mouseenter that would flip it back
 to interactive can't fire and the toast sticks click-through — Start/Dismiss stop
-responding (upstream issue #840, unfixed as of 1.7.6).
+responding (upstream issue #840, unfixed as of 1.8.0).
 
 Fix: neutralize that call so the toast stays interactive. We edit the packed
 `app.asar` blob in place with a byte-for-byte same-length substitution, so every
@@ -40,7 +40,7 @@ root = sys.argv[1]
 # The fuse wire is a magic sentinel followed by: version byte, fuse-count byte,
 # then one state byte per fuse ('0'=disabled, '1'=enabled, 'r'=removed/inert).
 # EnableEmbeddedAsarIntegrityValidation is index 4 of the stable FuseV1Options
-# enum. Verified for 1.7.5: the wire lives in `open-whispr-app`, and index 4 is
+# enum. Verified for 1.8.0: the wire lives in `open-whispr-app`, and index 4 is
 # '0' (disabled).
 # ---------------------------------------------------------------------------
 FUSE_SENTINEL = b"dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX"

@@ -26,12 +26,12 @@
 
 let
   pname = "openwhispr";
-  version = "1.7.5";
+  version = "1.8.0";
 
   src = fetchurl {
     name = "openwhispr-${version}.AppImage";
     url = "https://github.com/OpenWhispr/openwhispr/releases/download/v${version}/OpenWhispr-${version}-linux-x86_64.AppImage";
-    hash = "sha256-InmwYfIw+CfvCYx2DwZDIS9l/yj+MK5m7AUoT0TvbO4=";
+    hash = "sha256-nm2UfVqn9/NfpwImVBCL/40wgmBbtOz/SMfIGL9hspE=";
   };
 
   # The raw extracted AppImage tree (AppRun, the Electron runtime, native
@@ -55,7 +55,7 @@ let
   # stop responding. Verified empirically on Hyprland: a window in that state
   # receives neither forwarded mousemove nor button clicks; a plain interactive
   # overlay receives both. Upstream tracks this as issue #840 (open, unfixed as
-  # of 1.7.6; the open PR #1026 addresses a different overlay bug and explicitly
+  # of 1.8.0; the open PR #1026 addresses a different overlay bug and explicitly
   # notes Hyprland click quirks remain).
   #
   # Fix: neutralize that call so the meeting toast stays interactive on Linux,
