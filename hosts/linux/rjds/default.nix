@@ -17,12 +17,18 @@ let
   '';
   bootstrapGitea = pkgs.writeShellScript "bootstrap-gitea-admin" ''
     set -eu
+    healthy=false
     for attempt in $(${pkgs.coreutils}/bin/seq 1 60); do
       if ${pkgs.curl}/bin/curl --fail --silent http://127.0.0.1:3000/api/healthz >/dev/null; then
+        healthy=true
         break
       fi
       ${pkgs.coreutils}/bin/sleep 2
     done
+    if [ "$healthy" != true ]; then
+      echo "Gitea did not become healthy within 120 seconds" >&2
+      exit 1
+    fi
     if ${docker} exec --user git gitea gitea admin user list | ${pkgs.gnugrep}/bin/grep -q "[[:space:]]${user}[[:space:]]"; then
       exit 0
     fi
@@ -111,11 +117,16 @@ in
       Description = "Create the initial private Gitea administrator";
       After = [ "agenix.service" "gitea.service" ];
       Requires = [ "agenix.service" "gitea.service" ];
+      StartLimitIntervalSec = 300;
+      StartLimitBurst = 3;
     };
     Service = {
       Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = bootstrapGitea;
+      Restart = "on-failure";
+      RestartSec = 10;
+      TimeoutStartSec = 150;
     };
     Install.WantedBy = [ "default.target" ];
   };
@@ -125,11 +136,17 @@ in
       Description = "Tailscale HTTPS ingress for Gitea";
       After = [ "gitea.service" ];
       Requires = [ "gitea.service" ];
+      StartLimitIntervalSec = 300;
+      StartLimitBurst = 3;
     };
     Service = {
       Type = "oneshot";
       RemainAfterExit = true;
       ExecStart = serveGitea;
+      ExecStop = "${tailscale} serve --yes --https=443 off";
+      Restart = "on-failure";
+      RestartSec = 10;
+      TimeoutStartSec = 150;
     };
     Install.WantedBy = [ "default.target" ];
   };
