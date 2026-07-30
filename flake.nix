@@ -507,7 +507,11 @@
                     (prev.writeShellScriptBin "openwhispr" ''
                       export VK_DRIVER_FILES="${radvIcd}"
                       export VK_ICD_FILENAMES="${radvIcd}"
-                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${owPkg}/bin/openwhispr --no-sandbox "$@"
+                      # OpenWhispr 1.8 forces XWayland for overlay positioning.
+                      # XWayland reports this 2x 4K display at 1x, so explicitly
+                      # restore the compositor's device scale for a correctly
+                      # sized, pixel-sharp UI.
+                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${owPkg}/bin/openwhispr --no-sandbox --force-device-scale-factor=2 "$@"
                     '')
                     owPkg
                   ];
