@@ -1,0 +1,61 @@
+services:
+  gitea:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: local/gitea-pandoc:1.27.1
+    container_name: gitea
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "100.70.33.29:2222:22"
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__server__DOMAIN: rjds.tailc143b.ts.net
+      GITEA__server__ROOT_URL: https://rjds.tailc143b.ts.net/
+      GITEA__server__HTTP_ADDR: 0.0.0.0
+      GITEA__server__HTTP_PORT: "3000"
+      GITEA__server__SSH_DOMAIN: rjds.tailc143b.ts.net
+      GITEA__server__SSH_PORT: "2222"
+      GITEA__server__LFS_START_SERVER: "true"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY__FILE: /run/secrets/secret-key
+      GITEA__security__INTERNAL_TOKEN__FILE: /run/secrets/internal-token
+      GITEA__server__LFS_JWT_SECRET__FILE: /run/secrets/lfs-jwt-secret
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__REQUIRE_SIGNIN_VIEW: "true"
+      GITEA__repository__FORCE_PRIVATE: "true"
+      GITEA__repository__DEFAULT_PRIVATE: private
+      GITEA__repository__DEFAULT_PUSH_CREATE_PRIVATE: "true"
+      # Match the existing dedicated GitHub RSA key on mbp (2048-bit).
+      GITEA__ssh.minimum_key_sizes__RSA: "2048"
+      GITEA__markup.docx__ENABLED: "true"
+      GITEA__markup.docx__FILE_EXTENSIONS: .docx
+      GITEA__markup.docx__RENDER_COMMAND: timeout 60s pandoc --from docx --to html --self-contained --template /etc/gitea/pandoc-template.html
+      GITEA__markup.docx__IS_INPUT_FILE: "true"
+      GITEA__markup.sanitizer.docx.img__ALLOW_DATA_URI_IMAGES: "true"
+    volumes:
+      - /data/eh2889/gitea:/data
+      - ./pandoc-template.html:/etc/gitea/pandoc-template.html:ro
+      - ${XDG_RUNTIME_DIR}/agenix/gitea-secret-key:/run/secrets/secret-key:ro
+      - ${XDG_RUNTIME_DIR}/agenix/gitea-internal-token:/run/secrets/internal-token:ro
+      - ${XDG_RUNTIME_DIR}/agenix/gitea-lfs-jwt-secret:/run/secrets/lfs-jwt-secret:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 512
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
