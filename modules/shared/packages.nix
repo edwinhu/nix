@@ -56,6 +56,9 @@ with pkgs; [
   # claude, codex, opencode: installed via ~/nix/scripts/setup-ai-tools.sh
   # (each tool manages its own auto-updates; nix just bundles the bootstrap script)
   # omniwm: copied to /Applications via modules/darwin/defaults.nix postActivation
+  (import ./nlm.nix { inherit pkgs; })
+  (import ./scholar.nix { inherit pkgs; })
+  (import ./consensus.nix { inherit pkgs; })
   gws
 
   # Text and terminal utilities
@@ -84,7 +87,6 @@ with pkgs; [
   ripgrep
   ripgrep-all
   herdr  # agent multiplexer TUI (replaces limux/cmux); flake input, see flake.nix
-  rmux  # tmux-compatible multiplexer; rc-recover drives it to toggle Remote Control
   starship
   tabiew
   tailspin
