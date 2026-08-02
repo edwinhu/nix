@@ -86,13 +86,7 @@ with pkgs; [
   haskellPackages.pandoc-crossref
   ripgrep
   ripgrep-all
-  herdr  # agent multiplexer TUI (replaces limux/cmux/rmux); flake input, see flake.nix
-  # rmux was dropped here when herdr took over the multiplexer role. It is NOT
-  # abandoned — it is our own project (github:Helvesec/rmux, ~/projects/rmux) and
-  # ~/dotfiles/.rmux.conf is kept for running dev builds from that checkout. It is
-  # simply no longer installed into the profile. rc-recover's attach backends are
-  # herdr and tmux only; its ~/.rmux.conf reference is historical context for why
-  # `-f /dev/null` is load-bearing, not a live dependency.
+  herdr  # agent multiplexer TUI (replaces limux/cmux); flake input, see flake.nix
   starship
   tabiew
   tailspin
