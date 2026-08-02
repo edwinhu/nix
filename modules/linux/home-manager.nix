@@ -7,6 +7,8 @@
     # Imported so the options exist; enable per host once the guest is stood up:
     #   programs.wordRender.enable = true;  (see ../shared/word-render/README.md)
     ../shared/word-render.nix
+    # herdr's agent skill, from the same flake input as the binary.
+    ../shared/herdr-skill.nix
   ];
 
   # Linux-specific Stylix configuration (Qt theming)

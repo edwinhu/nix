@@ -128,6 +128,8 @@
         agenix.homeManagerModules.default
         ../shared/home-secrets.nix
         ../shared/word-render.nix
+        # herdr's agent skill, from the same flake input as the binary.
+        ../shared/herdr-skill.nix
         # chrome-cdp + readwise services. Cross-platform module: emits launchd
         # agents here (macOS) and systemd user services on Linux. On THIS Mac
         # only com.chrome-cdp is emitted (readerServices.enableChromeCdp = true;
