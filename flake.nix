@@ -261,6 +261,9 @@
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
         superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         morgen-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/morgen-cli.nix {};
+        # allowUnfree: private repo, so the module declares license = unfree
+        # (same as paperpile-cli, which is overlay-only and never hit this).
+        obsidian-cli = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/obsidian-cli.nix {};
         omniwm = (import nixpkgs { inherit system; }).callPackage ./modules/shared/omniwm.nix {};
         # elio via newer nixpkgs: the main lock's cargo vendor fetcher sends
         # no User-Agent and crates.io now 403s it (affects all platforms).
@@ -364,6 +367,10 @@
                 superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                 paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
+                # obsidian-cli: web clipper + passthrough proxy. On darwin the
+                # GUI is a cask (no `obsidian` in the nix profile), so this is
+                # exposed under its own name rather than shadowing anything.
+                obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
@@ -466,18 +473,42 @@
                 # works via unprivileged user namespaces (no --no-sandbox needed —
                 # verified it launches). The launcher/`obsidian://` handler is
                 # repointed at this wrapped binary in hosts/linux/omarchy.
+                #
+                # Two binaries come out of this:
+                #   obsidian     — the GUI, nixGL-wrapped, unchanged. Still what
+                #     the launcher/`obsidian://` handler runs.
+                #   obsidian-cli — gh:edwinhu/obsidian-cli. Handles `clip` itself
+                #     (Defuddle+Turndown web clipper, writes into the vault, needs
+                #     no running app) and proxies every other subcommand to the
+                #     GUI binary via OBSIDIAN_BINARY, pinned to an absolute store
+                #     path so it can never exec itself.
+                #
+                # `obsidian-cli` DELIBERATELY shadows the `bin/obsidian-cli` that
+                # nixpkgs' obsidian ships (Obsidian's own CLI — the thing that
+                # prints "Command line interface is not enabled. Please turn it on
+                # in Settings > General > Advanced"). Ours is listed first so
+                # symlinkJoin picks it; the official one stays reachable at
+                # `${obsidian.unwrapped}/bin/obsidian-cli` if it's ever wanted.
+                # Enabling the in-app setting makes the passthrough half work,
+                # since that is what gates the app binary's CLI mode too.
                 obsidian = let
                   base = prev.obsidian;
+                  gui = prev.writeShellScriptBin "obsidian" ''
+                    exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/obsidian "$@"
+                  '';
+                  cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 in prev.symlinkJoin {
                   name = "obsidian-nixgl-${base.version or "unknown"}";
                   paths = [
-                    (prev.writeShellScriptBin "obsidian" ''
-                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/obsidian "$@"
+                    (prev.writeShellScriptBin "obsidian-cli" ''
+                      export OBSIDIAN_BINARY="''${OBSIDIAN_BINARY:-${gui}/bin/obsidian}"
+                      exec ${cli}/bin/obsidian-cli "$@"
                     '')
+                    gui
                     base
                   ];
                   meta = base.meta or {};
-                  passthru = { unwrapped = base; };
+                  passthru = { unwrapped = base; inherit cli; };
                 };
                 # openwhispr — local dictation + AI meeting notes, the Linux
                 # stand-in for the macOS-only granola cask. Fetched as the
