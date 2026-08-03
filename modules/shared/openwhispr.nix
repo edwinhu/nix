@@ -26,12 +26,12 @@
 
 let
   pname = "openwhispr";
-  version = "1.8.0";
+  version = "1.8.1";
 
   src = fetchurl {
     name = "openwhispr-${version}.AppImage";
     url = "https://github.com/OpenWhispr/openwhispr/releases/download/v${version}/OpenWhispr-${version}-linux-x86_64.AppImage";
-    hash = "sha256-nm2UfVqn9/NfpwImVBCL/40wgmBbtOz/SMfIGL9hspE=";
+    hash = "sha256-9QPEEb20XrbhNNYl45z/TmC2d0/+CzzfkKi0EOzR9uY=";
   };
 
   # The raw extracted AppImage tree (AppRun, the Electron runtime, native
