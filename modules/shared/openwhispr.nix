@@ -79,11 +79,45 @@ let
   # silently regressing. The tradeoff is that the small (392x92) toast captures
   # clicks over its whole rectangle while visible — strictly better than an
   # unclickable button.
+  # Meeting-detection accuracy fix.
+  #
+  # The detection engine acts on exactly ONE signal: `sustained-audio-detected`
+  # from the audio activity detector. Process detection (which does know about
+  # Zoom/Teams) is wired as context-only on purpose, and the Google Calendar
+  # path is independent. So on Linux the entire question "am I in a meeting?"
+  # reduces to upstream's `pactl subscribe` loop, which counts `source-output`
+  # new/remove events and prompts after two seconds of ANY microphone stream —
+  # it never asks which application opened the mic. On this host that is
+  # actively wrong: the swlinux dictation daemon holds a `pw-cat` capture stream
+  # continuously, and any restart of it, any browser mic check, any voice
+  # message reads as "It sounds like you're in a meeting."
+  #
+  # The same counter also can't see a call that predates it: `pactl subscribe`
+  # only reports changes, so a meeting already in progress when OpenWhispr
+  # starts emits no `new` event and is never detected. (Upstream's polling
+  # fallback does scan, but it only runs if `pactl` fails to spawn — and it
+  # would report "mic active" forever here anyway, for the same reason.)
+  #
+  # Fix: replace `src/helpers/audioActivityDetector.js` with a fork that asks
+  # pactl WHO holds the mic and only reports meeting audio for a known native
+  # conferencing client, or a browser that is simultaneously playing audio (a
+  # call is two-way; dictation and voice notes are capture-only). Known capture
+  # helpers are ignored outright, and the predicate is evaluated once at startup
+  # so an in-progress call is picked up. See the header comments in
+  # openwhispr-audio-activity-detector.js and openwhispr-meeting-detection.patch.py.
+  #
+  # That file ships unminified in the asar, so this is a whole-file swap rather
+  # than a byte patch — which means the archive is REPACKED (offsets move), and
+  # so this must run AFTER the same-length toast substitution above. The patch
+  # script pins the sha256 of the file it replaces, so an upstream rework of the
+  # detector fails the build rather than silently reverting the fix.
   patchedApp = runCommand "openwhispr-${version}-patched"
     { nativeBuildInputs = [ python3 ]; } ''
     cp -r ${contents} $out
     chmod -R u+w $out
     python3 ${./openwhispr-meeting-toast.patch.py} $out
+    python3 ${./openwhispr-meeting-detection.patch.py} $out \
+      ${./openwhispr-audio-activity-detector.js}
   '';
 in
 appimageTools.wrapAppImage {
