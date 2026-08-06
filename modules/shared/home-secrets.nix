@@ -217,9 +217,11 @@ in
       fi
     '';
 
-  # gws expects OAuth files at fixed paths. Keep the app-level client secret
-  # and the portable user OAuth grant in agenix; token_cache.json is runtime
-  # cache and can be regenerated from credentials.enc.
+  # gws expects OAuth files at fixed paths. The app-level client secret is
+  # static and is refreshed from agenix on every activation. The user OAuth
+  # grant (credentials.enc) is NOT static -- Google rotates and expires it --
+  # so agenix only seeds it on a machine that has none; token_cache.json is
+  # runtime cache and can be regenerated from credentials.enc.
   home.activation.installGwsClientSecret =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       GWS_CONFIG_DIR="$HOME/.config/gws"
@@ -245,8 +247,19 @@ in
       }
 
       GWS_AGE_IDENTITY="${homeDir}/.ssh/id_ed25519_agenix"
+
+      # Static app credential: always refresh from agenix.
       install_gws_age_secret "${nix-secrets}/gws-client-secret-json.age" "$GWS_CONFIG_DIR/client_secret.json" "$GWS_AGE_IDENTITY"
-      install_gws_age_secret "${nix-secrets}/gws-credentials-enc.age" "$GWS_CONFIG_DIR/credentials.enc" "$GWS_AGE_IDENTITY"
-      install_gws_age_secret "${nix-secrets}/gws-encryption-key.age" "$GWS_CONFIG_DIR/.encryption_key" "$GWS_AGE_IDENTITY"
+
+      # credentials.enc is a user OAuth grant, not a static secret. Installing
+      # it unconditionally reverted every fresh `gws auth login` to whichever
+      # grant was captured at the pinned nix-secrets rev -- the cause of the
+      # perpetual re-auth loop. Seed it only when absent (new machine); after
+      # that the local copy is authoritative and a re-auth sticks. The
+      # encryption key must travel with it, since it is what decrypts it.
+      if [ -n "''${DRY_RUN_CMD:-}" ] || [ ! -f "$GWS_CONFIG_DIR/credentials.enc" ]; then
+        install_gws_age_secret "${nix-secrets}/gws-credentials-enc.age" "$GWS_CONFIG_DIR/credentials.enc" "$GWS_AGE_IDENTITY"
+        install_gws_age_secret "${nix-secrets}/gws-encryption-key.age" "$GWS_CONFIG_DIR/.encryption_key" "$GWS_AGE_IDENTITY"
+      fi
     '';
 }
