@@ -48,6 +48,7 @@ with pkgs; [
   # data science tools
   pixi
   uv
+  rv   # R package manager (modules/shared/rv.nix); new_project.sh runs `rv init`
 
   # semantic search
   semtools  # search "query" files... — no indexing needed

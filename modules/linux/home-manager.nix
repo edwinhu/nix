@@ -46,14 +46,10 @@
       ALTERNATE_EDITOR = "";
     };
 
-    # rv (R package manager) - install from official installer if not present
-    activation.rv = lib.hm.dag.entryAfter ["writeBoundary"] ''
-      RV_BIN="$HOME/.local/bin/rv"
-      if [ ! -x "$RV_BIN" ]; then
-        $DRY_RUN_CMD mkdir -p "$HOME/.local/bin"
-        $DRY_RUN_CMD ${pkgs.curl}/bin/curl -LsSf https://a2-ai.github.io/rv-docs/install.sh | $DRY_RUN_CMD ${pkgs.bash}/bin/bash -s -- --to "$HOME/.local/bin"
-      fi
-    '';
+    # rv (R package manager) is now a real derivation — modules/shared/rv.nix,
+    # wired through the overlay in flake.nix and listed in shared/packages.nix.
+    # (It used to be an activation script that curl-piped an installer URL that
+    # upstream deleted, failing silently.)
 
     # Idempotent bootstrap for AI CLIs (claude, codex, opencode).
     # Each tool self-updates after install, so this only runs missing installs.

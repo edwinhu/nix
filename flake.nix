@@ -293,6 +293,7 @@
                   superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
+                  rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
                   # herdr — terminal multiplexer for agents (see the input above).
                   herdr = inputs.herdr.packages.${info.system}.default;
@@ -372,6 +373,7 @@
                 # exposed under its own name rather than shadowing anything.
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
+                rv = prev.callPackage ./modules/shared/rv.nix {};
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
