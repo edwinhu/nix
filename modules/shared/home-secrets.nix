@@ -46,6 +46,10 @@ in
       file = "${nix-secrets}/raindrop-token.age";
       mode = "400";
     };
+    permacc-api-key = {
+      file = "${nix-secrets}/permacc-api-key.age";
+      mode = "400";
+    };
     webhook-secret = {
       file = "${nix-secrets}/webhook-secret.age";
       mode = "400";
@@ -151,6 +155,7 @@ in
     LSEG_CREDENTIALS_FILE = "${tempDir}/lseg-credentials";
     BEEPER_ACCESS_TOKEN_FILE = "${tempDir}/beeper-access-token";
     RAINDROP_TOKEN_FILE = "${tempDir}/raindrop-token";
+    PERMACC_API_KEY_FILE = "${tempDir}/permacc-api-key";
     WEBHOOK_SECRET_FILE = "${tempDir}/webhook-secret";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
     CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
@@ -191,6 +196,7 @@ in
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
     get-beeper-access-token = "cat $BEEPER_ACCESS_TOKEN_FILE";
     get-raindrop-token = "cat $RAINDROP_TOKEN_FILE";
+    get-permacc-api-key = "cat $PERMACC_API_KEY_FILE";
     get-webhook-secret = "cat $WEBHOOK_SECRET_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";
