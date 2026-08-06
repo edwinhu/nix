@@ -3,12 +3,13 @@
 # TUI instead of printing help, and probing a mutating subcommand by omitting
 # arguments EXECUTES it).
 #
-# Sourced from the SAME flake input that provides the binary, so the doc can
-# never describe a different version than the tool it documents. That matters
-# here more than usual: the skill's whole job is to describe a CLI surface.
-# (`inputs.herdr` is pinned to v0.7.5 in flake.nix. Its URL says
+# Extracted from the BINARY ITSELF via `herdr --skill` (v0.8.0+ embeds the doc in
+# the executable), so the doc cannot describe a different version than the tool it
+# documents — not merely the same git rev, the same artifact. That matters here
+# more than usual: the skill's whole job is to describe a CLI surface.
+# (`inputs.herdr` is pinned to v0.8.0 in flake.nix. Its URL says
 # `ogulcancelik/herdr`, which GitHub redirects to `herdrdev/herdr` — same repo,
-# same v0.7.5 commit 99df3ac3. Not a second upstream.)
+# same v0.8.0 commit 346411fa. Not a second upstream.)
 #
 # Deliberately NOT installed by `npx skills add herdrdev/herdr --skill herdr -g`
 # and NOT vendored into dotfiles:
@@ -22,17 +23,25 @@
 # Claude Code only scans ~/.claude/skills — it has no knowledge of ~/.agents, so
 # the first line is what makes the skill visible to it. The second serves the
 # agents that DO read the shared location (codex, agy, copilot, …).
-# LAYOUT NOTE, check this on every input bump: at the pinned v0.7.5 the skill is
-# a single `SKILL.md` at the REPO ROOT. Upstream later moved it to
-# `skills/herdr/SKILL.md` (that is the path herdr.dev's install docs and
-# `npx skills add` use). Sourcing the root file is correct for THIS pin and will
-# silently produce a dangling link if the input is bumped past the move without
-# updating the path here — home-manager creates the symlink whether or not the
-# target exists, and nothing fails until an agent tries to read the skill.
-{ herdr, ... }:
+# WHY THE BINARY AND NOT THE REPO FILE: the in-repo path is not a stable contract.
+# Upstream moved the skill from the repo ROOT to `skills/herdr/SKILL.md` between
+# v0.7.5 and v0.8.0, and a stale `${herdr}/SKILL.md` survives that move as a
+# DANGLING SYMLINK — home-manager creates the link whether or not the target
+# exists, so nothing fails until an agent tries to read the skill. `herdr --skill`
+# is a CLI contract and moves with the tool, so bumps stay a one-line pin change.
+# (Verified at v0.8.0: `--skill` output is byte-identical to skills/herdr/SKILL.md.)
+#
+# Note this EXECUTES the binary at build time, so it would need rework under
+# cross-compilation. Both hosts build natively today.
+#
+# `pkgs.herdr` (the package, via the overlay in flake.nix) — NOT the `herdr`
+# specialArg, which is the flake input SOURCE and has no bin/.
+{ pkgs, ... }:
 
 let
-  skillFile = "${herdr}/SKILL.md";
+  skillFile = pkgs.runCommand "herdr-skill.md" { } ''
+    ${pkgs.herdr}/bin/herdr --skill > $out
+  '';
 in
 {
   home.file.".claude/skills/herdr/SKILL.md".source = skillFile;

@@ -78,7 +78,7 @@
     # composes oxalica/rust-overlay against its own nixpkgs pin, and forcing
     # ours risks a toolchain mismatch for no benefit — it's one small package.
     herdr = {
-      url = "github:ogulcancelik/herdr/v0.7.5";
+      url = "github:ogulcancelik/herdr/v0.8.0";
     };
   };
 
