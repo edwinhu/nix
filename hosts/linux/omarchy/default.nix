@@ -36,11 +36,31 @@ let
   #     keeps chawan fast: with network access it tries to fetch remote images
   #     and fonts and hangs for minutes on a real newsletter.
   #
+  # STYLING AND WIDTH MUST BE FORCED IN DUMP MODE, or the output is plain
+  # monochrome text wrapped at 80 columns — every style chawan's CSS engine
+  # computed is thrown away on the way out. `-d` writes to a pipe, so chawan
+  # cannot detect the terminal and its "auto" settings resolve to nothing:
+  #   - color-mode        → monochrome. Measured: 0 escape sequences in the
+  #                         output; with true-color, 1632.
+  #   - format-mode       → no attributes. color-mode alone is NOT enough —
+  #                         with only colour forced, bold/italic/underline are
+  #                         all still absent; this array is what restores them.
+  #   - columns           → the documented 80 fallback, while the message view
+  #                         is ~130 wide, so everything was squeezed into 80
+  #                         columns with heavy padding.
+  # 120 leaves margin inside a 152-column terminal minus aerc's 22-column
+  # sidebar. aerc's pager (`less -Rc`) passes the escapes through.
+  #
   # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
   # stdin it has not been told to read, so the `-` is load-bearing.
   aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
     set -u
-    set -- ${pkgs.chawan}/bin/cha -d -T text/html -
+    set -- ${pkgs.chawan}/bin/cha -d -T text/html \
+      -o 'display.color-mode="true-color"' \
+      -o 'display.format-mode=["bold","italic","underline","reverse","strike"]' \
+      -o 'display.columns=120' \
+      -o 'display.force-columns=true' \
+      -
     if command -v ${pkgs.util-linux}/bin/unshare >/dev/null 2>&1; then
       set -- ${pkgs.util-linux}/bin/unshare --map-root-user --net "$@"
     fi
@@ -1025,12 +1045,17 @@ in
   # binds.conf is deliberately NOT declared — it stays hand-editable.
   xdg.configFile."aerc/accounts.conf" = {
     force = true;
+    # The default folder on both accounts is the low-noise view of the inbox,
+    # not the inbox: Exchange's Focused (owa-bridge exposes InferenceClassification
+    # as the virtual folders Focused/Other over INBOX) and Gmail's Priority Inbox
+    # importance marker (already an IMAP folder, [Gmail]/Important). The full
+    # INBOX is one `gm`/folder switch away in both cases.
     text = ''
       [Work]
       from          = Edwin Hu <ehu@law.virginia.edu>
       source        = imap+insecure://owa:x@127.0.0.1:1143
       outgoing      = ${lib.getExe pkgs.owa-bridge} sendmail --account ehu@law.virginia.edu
-      default       = INBOX
+      default       = Focused
       cache-headers = true
 
       [Personal]
@@ -1039,7 +1064,7 @@ in
       source-cred-cmd   = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
       outgoing          = smtps://eddyhu%40gmail.com@smtp.gmail.com
       outgoing-cred-cmd = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
-      default           = INBOX
+      default           = [Gmail]/Important
       folders-sort      = INBOX
       postpone          = [Gmail]/Drafts
       cache-headers     = true
