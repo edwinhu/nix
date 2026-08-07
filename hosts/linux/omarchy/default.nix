@@ -53,6 +53,25 @@ let
   # by hand exactly when the terminal fails to advertise. Safe here — Ghostty
   # does support the protocol.
   #
+  # CELL GEOMETRY IS HARDCODED because nothing in the stack will tell chawan the
+  # truth. An image has to be sized in pixels, so chawan asks the terminal for
+  # its cell size (CSI 16t) — but inside aerc it is talking to aerc's embedded
+  # emulator, itself inside a herdr pane, and herdr answers NONE of CSI 16t/14t/
+  # 18t (measured: all three time out; herdr also reports TERM=xterm-256color
+  # rather than xterm-ghostty). chawan then falls back to its documented 9x18
+  # guess. Real Ghostty here is 16x36 — off by 1.8x wide and 2x tall — so images
+  # were sized against nonsense, which showed up as "random which ones render"
+  # and "none at all by default".
+  #
+  # Measured in a plain Ghostty window, and self-consistent: CSI 14t reported
+  # 2432x1980 px against CSI 18t's 152x55 grid, i.e. exactly 16x36 per cell.
+  #
+  # FRAGILE ON PURPOSE, since the alternative is no images: these numbers are a
+  # font-size and display-DPI constant. Change the Ghostty font size, or move the
+  # window to a monitor with different scaling, and images will be mis-sized
+  # until they are re-measured with ~/scratch/cellsize.sh in a PLAIN Ghostty
+  # window (herdr cannot answer the query, so measuring inside it returns blank).
+  #
   # display.query-da1 is deliberately LEFT ALONE. Setting it false was tried and
   # was a mistake: cha-config(5) warns "do not alter this value unless Chawan
   # told you so; the output will look awful", because it disables not just the
@@ -70,6 +89,10 @@ let
       -o 'buffer.cookie=false' \
       -o 'display.alt-screen=false' \
       -o 'display.image-mode="kitty"' \
+      -o 'display.pixels-per-column=16' \
+      -o 'display.pixels-per-line=36' \
+      -o 'display.force-pixels-per-column=true' \
+      -o 'display.force-pixels-per-line=true' \
       -o 'page.j="scrollDown"' \
       -o 'page.k="scrollUp"' \
       -o 'page."M-[B"="scrollDown"' \
