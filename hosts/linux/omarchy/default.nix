@@ -33,6 +33,21 @@ let
   #
   # Cookies stay off: they are not needed to render and are pure extra linkage.
   #
+  # SCROLLING is rebound below, and it is not a preference — out of the box this
+  # is unusable inside aerc. chawan is a browser: `j`/arrows move a CURSOR and
+  # only scroll once it reaches the bottom edge, which reads as "the page won't
+  # move". Its actual scroll keys are `J`/`K` and `C-e`/`C-y` — and every one of
+  # those is swallowed by aerc's own [view] bindings (`J` = next message, `C-y` =
+  # copy-link) before chawan ever sees them. Space isn't bound in chawan at all.
+  # So the only working scroll key by default is PgDn. Rebinding j/k/arrows to
+  # scroll (not move a cursor) and space to page down makes it behave like the
+  # pager the message viewer is pretending to be. Keys aerc claims are avoided.
+  #
+  # alt-screen=false keeps chawan drawing on the normal screen instead of taking
+  # over the alternate one, so opening a message feels like rendered mail rather
+  # than launching a browser. It does NOT hand keys back to aerc — chawan still
+  # owns input until `q` — which is inherent to `!` filters.
+  #
   # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
   # stdin it has not been told to read, so the `-` is load-bearing.
   aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
@@ -41,6 +56,12 @@ let
       -T text/html \
       -o 'buffer.images=true' \
       -o 'buffer.cookie=false' \
+      -o 'display.alt-screen=false' \
+      -o 'page.j="scrollDown"' \
+      -o 'page.k="scrollUp"' \
+      -o 'page."M-[B"="scrollDown"' \
+      -o 'page."M-[A"="scrollUp"' \
+      -o "page.' '=\"pageDown\"" \
       -
   '';
 
