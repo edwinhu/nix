@@ -48,6 +48,15 @@ let
   # than launching a browser. It does NOT hand keys back to aerc — chawan still
   # owns input until `q` — which is inherent to `!` filters.
   #
+  # image-mode is FORCED, and query-da1 disabled, because chawan cannot negotiate
+  # capabilities through aerc. It normally probes the terminal (DA1, plus
+  # CSI 14t/16t for pixel geometry) to decide whether images are possible — but
+  # it is talking to aerc's embedded terminal emulator, not to Ghostty, and gets
+  # no usable answer. Left to detect, it concludes "no image support" and renders
+  # every <img> as a placeholder, which is exactly the "scrolling works but no
+  # images" symptom. Telling it outright that the outer terminal speaks kitty is
+  # the only way through, and is safe here because Ghostty does.
+  #
   # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
   # stdin it has not been told to read, so the `-` is load-bearing.
   aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
@@ -57,6 +66,8 @@ let
       -o 'buffer.images=true' \
       -o 'buffer.cookie=false' \
       -o 'display.alt-screen=false' \
+      -o 'display.query-da1=false' \
+      -o 'display.image-mode="kitty"' \
       -o 'page.j="scrollDown"' \
       -o 'page.k="scrollUp"' \
       -o 'page."M-[B"="scrollDown"' \
@@ -1175,6 +1186,18 @@ in
     text = ''
       [general]
       unsafe-accounts-conf = true
+
+      # Prefer the HTML part of a multipart/alternative message. aerc's default
+      # is the reverse (text/plain first), which meant chawan almost never ran —
+      # most real mail carries a plain alternative, so the rich rendering and
+      # inline images this setup exists for were only reachable on the rare
+      # HTML-only message. Flipping this is what makes the filter actually apply.
+      #
+      # Trade-off, deliberate: essentially every message now opens in chawan's
+      # interactive viewer rather than the pager, so `q` is needed to get back.
+      # Reverse this line first if that becomes tiresome.
+      [viewer]
+      alternatives = text/html,text/plain
 
       # Sort by date, newest first, rather than aerc's default of UID order.
       # owa-bridge now keeps UID order and arrival order in agreement (its sync
