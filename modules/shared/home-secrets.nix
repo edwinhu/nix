@@ -46,6 +46,14 @@ in
       file = "${nix-secrets}/raindrop-token.age";
       mode = "400";
     };
+    # Google app password for the personal Gmail account (eddyhu@gmail.com),
+    # read by aerc's source-cred-cmd/outgoing-cred-cmd and by himalaya's
+    # backend.auth.cmd. The work account needs nothing here — it goes through
+    # the local owa-bridge, which brokers its own short-lived OWA token.
+    aerc-gmail-app-password = {
+      file = "${nix-secrets}/aerc-gmail-app-password.age";
+      mode = "400";
+    };
     permacc-api-key = {
       file = "${nix-secrets}/permacc-api-key.age";
       mode = "400";
@@ -156,6 +164,7 @@ in
     BEEPER_ACCESS_TOKEN_FILE = "${tempDir}/beeper-access-token";
     RAINDROP_TOKEN_FILE = "${tempDir}/raindrop-token";
     PERMACC_API_KEY_FILE = "${tempDir}/permacc-api-key";
+    AERC_GMAIL_APP_PASSWORD_FILE = "${tempDir}/aerc-gmail-app-password";
     WEBHOOK_SECRET_FILE = "${tempDir}/webhook-secret";
     QUALTRICS_API_TOKEN_FILE = "${tempDir}/qualtrics-api-token";
     CANVAS_API_TOKEN_FILE = "${tempDir}/canvas-api-token";
@@ -197,6 +206,7 @@ in
     get-beeper-access-token = "cat $BEEPER_ACCESS_TOKEN_FILE";
     get-raindrop-token = "cat $RAINDROP_TOKEN_FILE";
     get-permacc-api-key = "cat $PERMACC_API_KEY_FILE";
+    get-aerc-gmail-app-password = "cat $AERC_GMAIL_APP_PASSWORD_FILE";
     get-webhook-secret = "cat $WEBHOOK_SECRET_FILE";
     get-qualtrics-api-token = "cat $QUALTRICS_API_TOKEN_FILE";
     get-canvas-api-token = "cat $CANVAS_API_TOKEN_FILE";

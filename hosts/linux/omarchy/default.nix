@@ -1050,6 +1050,157 @@ in
     '';
   };
 
+  # ---------------------------------------------------------------------------
+  # Mail: aerc (TUI) + himalaya (scriptable), two accounts each.
+  #
+  # [Work] ehu@law.virginia.edu — the UVA tenant grants no IMAP/SMTP and gates
+  # third-party OAuth consent behind an admin, so both clients talk to the
+  # owa-bridge user service on 127.0.0.1:1143 instead (see systemd.user.services
+  # below) and send through its sendmail(1) shim. Credentials there are ignored
+  # by design: the real one is the OWA token the bridge holds.
+  #
+  # [Personal] eddyhu@gmail.com — Gmail allows native IMAP/SMTP, so no bridge.
+  # The app password comes from agenix (aerc-gmail-app-password.age), decrypted
+  # to $XDG_RUNTIME_DIR/agenix at activation. Only the *command* that reads it
+  # appears here; the secret never enters the nix store.
+  #
+  # Neither account sets a copy-to / save-copy: Exchange files a MIME /sendmail
+  # in Sent Items server-side and Gmail's SMTP does the same, so having the
+  # client append its own copy would duplicate every sent message.
+  #
+  # binds.conf is deliberately NOT declared — it stays hand-editable.
+  xdg.configFile."aerc/accounts.conf" = {
+    force = true;
+    text = ''
+      [Work]
+      from          = Edwin Hu <ehu@law.virginia.edu>
+      source        = imap+insecure://owa:x@127.0.0.1:1143
+      outgoing      = ${lib.getExe pkgs.owa-bridge} sendmail --account ehu@law.virginia.edu
+      default       = INBOX
+      cache-headers = true
+
+      [Personal]
+      from              = Edwin Hu <eddyhu@gmail.com>
+      source            = imaps://eddyhu%40gmail.com@imap.gmail.com
+      source-cred-cmd   = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
+      outgoing          = smtps://eddyhu%40gmail.com@smtp.gmail.com
+      outgoing-cred-cmd = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
+      default           = INBOX
+      folders-sort      = INBOX
+      postpone          = [Gmail]/Drafts
+      cache-headers     = true
+    '';
+  };
+
+  # unsafe-accounts-conf is REQUIRED, not a preference: a nix-managed
+  # accounts.conf is a world-readable /nix/store symlink, and aerc refuses to
+  # start on anything looser than 0600 without it. home-manager's own
+  # programs.aerc module asserts exactly this. It costs nothing here — the file
+  # holds cred *commands*, never a credential.
+  #
+  # Everything else is aerc's stock [filters]: `html` is the shipped filter that
+  # renders text/html through w3m (hence w3m in omarchy-packages.nix).
+  #
+  # text/html deliberately DROPS the stock `!` prefix. `!` means "skip the pager,
+  # run this as the main process in aerc's embedded terminal", which puts w3m in
+  # interactive mode — and that branch of aerc's filter script adds
+  # `-o display_borders=true`, so a newsletter built out of nested layout tables
+  # renders as six levels of box-drawing with the text shoved off-screen. Without
+  # `!` the same script takes its `-dump -cols 100 -o disable_center=true` branch
+  # and pipes clean text through `less -Rc`.
+  #
+  # The only things `!` bought were in-w3m link following (aerc's own :open-link
+  # covers it) and inline images, which cannot work here for two independent
+  # reasons: the filter runs w3m under `unshare --net`, so remote images never
+  # load, and w3mimgdisplay is X11-only while Ghostty is a Wayland window
+  # (WINDOWID unset, so it cannot attach). Verified 2026-08-07.
+  xdg.configFile."aerc/aerc.conf" = {
+    force = true;
+    text = ''
+      [general]
+      unsafe-accounts-conf = true
+
+      # Sort by date, newest first, rather than aerc's default of UID order.
+      # owa-bridge now keeps UID order and arrival order in agreement (its sync
+      # window used to number backfill as if it had just arrived, floating April
+      # mail to the top), but sorting on the field we actually mean is both
+      # correct on its own terms and immune to a bridge that gets this wrong.
+      [ui]
+      sort = -r date
+
+      [filters]
+      text/plain=colorize
+      text/calendar=calendar
+      message/delivery-status=colorize
+      message/rfc822=colorize
+      text/html=html
+      .headers=colorize
+    '';
+  };
+
+  # himalaya 1.2.0 config schema (the v2 schema in upstream's master sample does
+  # NOT apply). Written by hand rather than through programs.himalaya, because
+  # that module derives `accounts` from accounts.email.accounts and would
+  # overwrite everything below.
+  xdg.configFile."himalaya/config.toml" = {
+    force = true;
+    text = ''
+      [accounts.work]
+      default = true
+      email = "ehu@law.virginia.edu"
+      display-name = "Edwin Hu"
+
+      backend.type = "imap"
+      backend.host = "127.0.0.1"
+      backend.port = 1143
+      backend.encryption.type = "none"
+      backend.login = "owa"
+      # The bridge accepts any credentials — its real one is the OWA token.
+      backend.auth.type = "password"
+      backend.auth.cmd = "echo x"
+
+      # Exchange's folder names, mapped to the names himalaya expects.
+      folder.aliases.inbox = "INBOX"
+      folder.aliases.sent = "Sent Items"
+      folder.aliases.drafts = "Drafts"
+      folder.aliases.trash = "Deleted Items"
+
+      # The sendmail backend hands the raw message to this command on stdin and
+      # names no recipients on argv; owa-bridge reads them from the headers.
+      message.send.backend.type = "sendmail"
+      message.send.backend.cmd = "${lib.getExe pkgs.owa-bridge} sendmail --account ehu@law.virginia.edu"
+      # Exchange saves a MIME send to Sent Items itself; a client copy would dup.
+      message.send.save-copy = false
+
+      [accounts.personal]
+      email = "eddyhu@gmail.com"
+      display-name = "Edwin Hu"
+
+      backend.type = "imap"
+      backend.host = "imap.gmail.com"
+      backend.port = 993
+      backend.encryption.type = "tls"
+      backend.login = "eddyhu@gmail.com"
+      backend.auth.type = "password"
+      backend.auth.cmd = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
+
+      folder.aliases.inbox = "INBOX"
+      folder.aliases.sent = "[Gmail]/Sent Mail"
+      folder.aliases.drafts = "[Gmail]/Drafts"
+      folder.aliases.trash = "[Gmail]/Trash"
+
+      message.send.backend.type = "smtp"
+      message.send.backend.host = "smtp.gmail.com"
+      message.send.backend.port = 465
+      message.send.backend.encryption.type = "tls"
+      message.send.backend.login = "eddyhu@gmail.com"
+      message.send.backend.auth.type = "password"
+      message.send.backend.auth.cmd = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
+      # Gmail's SMTP files sent mail itself.
+      message.send.save-copy = false
+    '';
+  };
+
   # Run the hints daemon as part of the graphical session (replaces the manual
   # `exec-once = hintsd` in ~/.config/hypr/autostart.conf). uwsm exports the
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
@@ -1181,6 +1332,47 @@ in
         # Safety ceiling only — the in-memory refresh exits in <1s.
         TimeoutStartSec = 90;
         ExecStart = "${superhumanAuthRefresh}";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # owa-bridge: loopback IMAP bridge for the UVA mailbox, so aerc (and
+    # himalaya, and anything else that speaks IMAP) can read and write work mail.
+    # Native IMAP against that tenant is foreclosed — third-party OAuth consent
+    # is admin-gated, first-party client-id borrowing now fails AADSTS65002 — so
+    # this daemon holds the OWA token scraped from the live Outlook Web tab and
+    # translates IMAP to Outlook REST. Long-running (NOT a oneshot, unlike
+    # superhuman-auth-refresh above), hence no timer.
+    #
+    # Extracted from superhuman-cli — which this is meant to replace for the UVA
+    # mailbox, so it deliberately depends on nothing in that repo. Built from
+    # the owa-bridge-src flake input (modules/shared/owa-bridge.nix), so this
+    # runs a lock-pinned store path, not the ~/projects working tree. The send
+    # half is `owa-bridge sendmail`, invoked by aerc's `outgoing` and
+    # himalaya's sendmail backend, not by this service.
+    #
+    # SECURITY: binds 127.0.0.1:1143 and accepts ANY LOGIN credentials — the
+    # real credential is the process's OWA token. startImapd refuses to bind
+    # anything but loopback, so this cannot accidentally be exposed.
+    { owa-bridge = {
+      Unit = {
+        Description = "owa-bridge — loopback IMAP bridge for the UVA mailbox";
+        # Needs the CDP browser signed in to Outlook Web, which comes up with
+        # the graphical session.
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "simple";
+        # No CDP_PORT: the token broker discovers its own endpoint, same as
+        # every other OWA-backed tool here. The binary is self-contained (bun
+        # runtime embedded), so it needs no PATH or working directory either.
+        ExecStart =
+          "${pkgs.owa-bridge}/bin/owa-bridge imapd "
+          + "--account ehu@law.virginia.edu";
+        # A wedged or signed-out browser makes startup fail; back off rather
+        # than spin, and give up for a while instead of hammering Exchange.
+        Restart = "on-failure";
+        RestartSec = 30;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }

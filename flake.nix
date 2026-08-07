@@ -68,6 +68,12 @@
       url = "git+ssh://git@github.com/edwinhu/joycon-pad.git";
       flake = false;
     };
+    # owa-bridge: Outlook mailbox as loopback IMAP + sendmail(1), for aerc and
+    # himalaya (private repo, SSH-fetched like swlinux/joycon-pad).
+    owa-bridge-src = {
+      url = "git+ssh://git@github.com/edwinhu/owa-bridge.git";
+      flake = false;
+    };
     # herdr: terminal-native agent multiplexer (replaces limux/cmux). It's a
     # single Rust TUI binary that runs INSIDE the terminal — no GTK/GL, so no
     # nixGL wrap and no .desktop/Walker plumbing. Upstream ships a flake with
@@ -82,7 +88,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, herdr } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, owa-bridge-src, herdr } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -269,6 +275,11 @@
         # no User-Agent and crates.io now 403s it (affects all platforms).
         elio = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/elio.nix {};
         onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
+        # allowUnfree for the same reason as obsidian-cli: private repo, so the
+        # module declares license = unfree. Built from the pinned source input.
+        owa-bridge = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/owa-bridge.nix {
+          src = inputs.owa-bridge-src;
+        };
         onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
       });
 
@@ -626,6 +637,12 @@
                 # See modules/linux/joycon-pad.nix + the omarchy user service.
                 joycon-pad = prev.callPackage ./modules/linux/joycon-pad.nix {
                   src = inputs.joycon-pad-src;
+                };
+                # Outlook mailbox as loopback IMAP + sendmail(1) — Linux only,
+                # it's what aerc/himalaya read work mail through here. See
+                # modules/shared/owa-bridge.nix + the omarchy user service.
+                owa-bridge = prev.callPackage ./modules/shared/owa-bridge.nix {
+                  src = inputs.owa-bridge-src;
                 };
 
                 # Double Commander Qt6 from official releases (aarch64 only; the

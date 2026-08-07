@@ -73,6 +73,24 @@ let
     # Local Wayland dictation (gh:edwinhu/superwhisper-linux)
     swlinux
 
+    # Mail. The UVA tenant grants no IMAP/SMTP, so both clients read work mail
+    # through owa-bridge's loopback IMAP (a user service brings it up) and send
+    # through its sendmail(1) shim; personal Gmail goes direct. aerc is the TUI,
+    # himalaya the scriptable one, w3m the HTML renderer aerc's text/html filter
+    # shells out to. Configs for all three are declared in the omarchy host.
+    #
+    # aerc here REPLACES pacman's (`sudo pacman -Rns aerc`): a second copy in
+    # /usr/bin would shadow-or-be-shadowed by PATH order, and nix owns the
+    # config now. It is not in providedByOmarchyBase for that reason — that list
+    # is for tools the base install ships and we defer to.
+    aerc
+    himalaya
+    w3m
+
+    # Outlook mailbox as loopback IMAP + sendmail(1) (gh:edwinhu/owa-bridge).
+    # Source-built, so unlike the Bun-release CLIs below it needs no x86_64 gate.
+    owa-bridge
+
     # File managers / PDF reader
     doublecmd
     ueberzugpp
