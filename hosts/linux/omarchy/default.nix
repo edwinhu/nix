@@ -48,14 +48,17 @@ let
   # than launching a browser. It does NOT hand keys back to aerc — chawan still
   # owns input until `q` — which is inherent to `!` filters.
   #
-  # image-mode is FORCED, and query-da1 disabled, because chawan cannot negotiate
-  # capabilities through aerc. It normally probes the terminal (DA1, plus
-  # CSI 14t/16t for pixel geometry) to decide whether images are possible — but
-  # it is talking to aerc's embedded terminal emulator, not to Ghostty, and gets
-  # no usable answer. Left to detect, it concludes "no image support" and renders
-  # every <img> as a placeholder, which is exactly the "scrolling works but no
-  # images" symptom. Telling it outright that the outer terminal speaks kitty is
-  # the only way through, and is safe here because Ghostty does.
+  # image-mode is FORCED because chawan may not learn through aerc's embedded
+  # terminal that the outer one speaks kitty; cha-image(7) prescribes setting it
+  # by hand exactly when the terminal fails to advertise. Safe here — Ghostty
+  # does support the protocol.
+  #
+  # display.query-da1 is deliberately LEFT ALONE. Setting it false was tried and
+  # was a mistake: cha-config(5) warns "do not alter this value unless Chawan
+  # told you so; the output will look awful", because it disables not just the
+  # DA1 probe but ALL dynamic terminal querying — including the pixel-geometry
+  # queries an image needs to be sized. The symptom was images degrading from an
+  # [img] placeholder to blank space, i.e. placed with no usable dimensions.
   #
   # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
   # stdin it has not been told to read, so the `-` is load-bearing.
@@ -66,7 +69,6 @@ let
       -o 'buffer.images=true' \
       -o 'buffer.cookie=false' \
       -o 'display.alt-screen=false' \
-      -o 'display.query-da1=false' \
       -o 'display.image-mode="kitty"' \
       -o 'page.j="scrollDown"' \
       -o 'page.k="scrollUp"' \
