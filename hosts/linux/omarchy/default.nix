@@ -36,6 +36,16 @@ let
   #     keeps chawan fast: with network access it tries to fetch remote images
   #     and fonts and hangs for minutes on a real newsletter.
   #
+  # -I/-O UTF-8 are NOT optional; dropping them is what produced mojibake
+  # (a curly apostrophe rendering as "\u00e2\u20ac\u2122"). aerc decodes a part to UTF-8
+  # before piping it here, but plenty of marketing mail carries a <meta> that
+  # still DECLARES a legacy charset, and chawan believes the declaration over
+  # the bytes — decoding UTF-8 as windows-1252. Reproduced exactly: a page
+  # declaring windows-1252 while holding UTF-8 bytes came out as the byte
+  # sequence C3 A2 E2 82 AC E2 84 A2. aerc's own shipped w3m filter passes both
+  # flags for precisely this reason; this filter replaced it and initially did
+  # not.
+  #
   # STYLING AND WIDTH MUST BE FORCED IN DUMP MODE, or the output is plain
   # monochrome text wrapped at 80 columns — every style chawan's CSS engine
   # computed is thrown away on the way out. `-d` writes to a pipe, so chawan
@@ -55,7 +65,7 @@ let
   # stdin it has not been told to read, so the `-` is load-bearing.
   aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
     set -u
-    set -- ${pkgs.chawan}/bin/cha -d -T text/html \
+    set -- ${pkgs.chawan}/bin/cha -d -T text/html -I UTF-8 -O UTF-8 \
       -o 'display.color-mode="true-color"' \
       -o 'display.format-mode=["bold","italic","underline","reverse","strike"]' \
       -o 'display.columns=120' \
