@@ -8,97 +8,43 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # aerc's text/html filter: chawan, interactive, WITH inline images.
+  # aerc's text/html filter: chawan in DUMP mode, network-isolated.
   #
-  # chawan has a real CSS engine (it honours a newsletter's own column layout
-  # instead of flattening it) and speaks the kitty/sixel graphics protocols that
-  # Ghostty supports — which is the whole reason it replaced w3m here.
-  # w3mimgdisplay is X11-only and cannot draw into a Wayland window at all, so
-  # images were simply impossible before.
+  # chawan (not w3m) because it has a real CSS engine and honours a newsletter's
+  # own column layout instead of flattening it — measured 29ms vs w3m's 21ms on a
+  # 142KB newsletter, so the fidelity is nearly free. Dump mode renders exactly
+  # the same as the interactive mode did; it is the SAME renderer, so nothing
+  # about the layout changes.
   #
-  # INTERACTIVE, not `-d`: dump mode emits no image escapes whatsoever (verified
-  # — a dumped <img> is a blank line), so images require a TTY. That is why the
-  # filter is registered with aerc's `!` prefix, which runs it as the main
-  # process in aerc's embedded terminal rather than piping it to the pager.
-  # aerc can carry the result: its vaxis backend advertises CanKittyGraphics /
-  # CanSixel and links go-sixel.
+  # INLINE IMAGES WERE TRIED AND ARE IMPOSSIBLE HERE. Do not re-attempt without
+  # reading this. aerc pipes the message part in on STDIN, so chawan treats the
+  # document as `<*stdin*>` — and chawan only fetches remote images for documents
+  # that are THEMSELVES remote. Every image in an email is a remote URL, so none
+  # of them ever load. Measured three ways: an https document loaded 52/56
+  # images, the same markup as a file:// document loaded 0/1, and via stdin
+  # (aerc's actual path) every image rendered as `[img]`. There is no config to
+  # relax it — `buffer.images` is only on/off, and siteconf matches on URL, which
+  # a stdin document has none of. Interactive mode, forced image-mode, and
+  # hardcoded cell geometry were each tried and none of them address this.
   #
-  # NETWORK IS DELIBERATELY ALLOWED, and this is a real privacy trade the user
-  # made knowingly on 2026-08-07. Every image in a marketing email is a remote
-  # URL, so fetching them tells the sender when (and how often) the mail was
-  # opened — the tracking-pixel read-receipt that aerc's own filter blocks with
-  # `unshare --net`. Images and that protection are mutually exclusive; there is
-  # no configuration that gets both. To go back, re-add
-  # `unshare --map-root-user --net` here and drop the `!` in aerc.conf.
-  #
-  # Cookies stay off: they are not needed to render and are pure extra linkage.
-  #
-  # SCROLLING is rebound below, and it is not a preference — out of the box this
-  # is unusable inside aerc. chawan is a browser: `j`/arrows move a CURSOR and
-  # only scroll once it reaches the bottom edge, which reads as "the page won't
-  # move". Its actual scroll keys are `J`/`K` and `C-e`/`C-y` — and every one of
-  # those is swallowed by aerc's own [view] bindings (`J` = next message, `C-y` =
-  # copy-link) before chawan ever sees them. Space isn't bound in chawan at all.
-  # So the only working scroll key by default is PgDn. Rebinding j/k/arrows to
-  # scroll (not move a cursor) and space to page down makes it behave like the
-  # pager the message viewer is pretending to be. Keys aerc claims are avoided.
-  #
-  # alt-screen=false keeps chawan drawing on the normal screen instead of taking
-  # over the alternate one, so opening a message feels like rendered mail rather
-  # than launching a browser. It does NOT hand keys back to aerc — chawan still
-  # owns input until `q` — which is inherent to `!` filters.
-  #
-  # image-mode is FORCED because chawan may not learn through aerc's embedded
-  # terminal that the outer one speaks kitty; cha-image(7) prescribes setting it
-  # by hand exactly when the terminal fails to advertise. Safe here — Ghostty
-  # does support the protocol.
-  #
-  # CELL GEOMETRY IS HARDCODED because nothing in the stack will tell chawan the
-  # truth. An image has to be sized in pixels, so chawan asks the terminal for
-  # its cell size (CSI 16t) — but inside aerc it is talking to aerc's embedded
-  # emulator, itself inside a herdr pane, and herdr answers NONE of CSI 16t/14t/
-  # 18t (measured: all three time out; herdr also reports TERM=xterm-256color
-  # rather than xterm-ghostty). chawan then falls back to its documented 9x18
-  # guess. Real Ghostty here is 16x36 — off by 1.8x wide and 2x tall — so images
-  # were sized against nonsense, which showed up as "random which ones render"
-  # and "none at all by default".
-  #
-  # Measured in a plain Ghostty window, and self-consistent: CSI 14t reported
-  # 2432x1980 px against CSI 18t's 152x55 grid, i.e. exactly 16x36 per cell.
-  #
-  # FRAGILE ON PURPOSE, since the alternative is no images: these numbers are a
-  # font-size and display-DPI constant. Change the Ghostty font size, or move the
-  # window to a monitor with different scaling, and images will be mis-sized
-  # until they are re-measured with ~/scratch/cellsize.sh in a PLAIN Ghostty
-  # window (herdr cannot answer the query, so measuring inside it returns blank).
-  #
-  # display.query-da1 is deliberately LEFT ALONE. Setting it false was tried and
-  # was a mistake: cha-config(5) warns "do not alter this value unless Chawan
-  # told you so; the output will look awful", because it disables not just the
-  # DA1 probe but ALL dynamic terminal querying — including the pixel-geometry
-  # queries an image needs to be sized. The symptom was images degrading from an
-  # [img] placeholder to blank space, i.e. placed with no usable dimensions.
+  # Consequences of dump mode, all of them wins given the above:
+  #   - aerc's own keybindings work; chawan no longer owns input until `q`.
+  #   - Scrolling is aerc's pager, so no chawan key rebinding is needed. (The
+  #     interactive version had to remap j/k/arrows/space because chawan's own
+  #     scroll keys — J/K, C-e/C-y — are all swallowed by aerc's [view] binds.)
+  #   - `unshare --net` is back, which is what blocks tracking pixels. It also
+  #     keeps chawan fast: with network access it tries to fetch remote images
+  #     and fonts and hangs for minutes on a real newsletter.
   #
   # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
   # stdin it has not been told to read, so the `-` is load-bearing.
   aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
     set -u
-    exec ${pkgs.chawan}/bin/cha \
-      -T text/html \
-      -o 'buffer.images=true' \
-      -o 'buffer.cookie=false' \
-      -o 'display.alt-screen=false' \
-      -o 'display.image-mode="kitty"' \
-      -o 'display.pixels-per-column=16' \
-      -o 'display.pixels-per-line=36' \
-      -o 'display.force-pixels-per-column=true' \
-      -o 'display.force-pixels-per-line=true' \
-      -o 'page.j="scrollDown"' \
-      -o 'page.k="scrollUp"' \
-      -o 'page."M-[B"="scrollDown"' \
-      -o 'page."M-[A"="scrollUp"' \
-      -o "page.' '=\"pageDown\"" \
-      -
+    set -- ${pkgs.chawan}/bin/cha -d -T text/html -
+    if command -v ${pkgs.util-linux}/bin/unshare >/dev/null 2>&1; then
+      set -- ${pkgs.util-linux}/bin/unshare --map-root-user --net "$@"
+    fi
+    exec "$@"
   '';
 
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
@@ -1152,7 +1098,7 @@ in
       text/calendar=calendar
       message/delivery-status=colorize
       message/rfc822=colorize
-      text/html=! ${aercChawanHtml}
+      text/html=${aercChawanHtml}
       .headers=colorize
     '';
   };
