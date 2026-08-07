@@ -85,6 +85,12 @@ let
     # is for tools the base install ships and we defer to.
     aerc
     himalaya
+
+    # chawan renders aerc's text/html (see aercChawanHtml in the omarchy host).
+    # w3m stays even though the filter no longer uses it: aerc's OWN shipped
+    # `html` filter shells out to it, so keeping it means that fallback still
+    # works if the chawan filter is ever reverted or fails.
+    chawan
     w3m
 
     # Outlook mailbox as loopback IMAP + sendmail(1) (gh:edwinhu/owa-bridge).

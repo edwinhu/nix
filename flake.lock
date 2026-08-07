@@ -529,11 +529,11 @@
     "owa-bridge-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1786123838,
-        "narHash": "sha256-BxEZuzcdK8Flq+vZF++ZDrcUdgo78dDTYnwx8kNWAoM=",
+        "lastModified": 1786127554,
+        "narHash": "sha256-WecqSWGIgdghPGKLHu+IIAcL1qBuOzT6QTq4Jhy2jZM=",
         "ref": "refs/heads/main",
-        "rev": "6310ceb6b3b4c7885ed9fca3f25820582cce6897",
-        "revCount": 3,
+        "rev": "e0335074ce45377d3be3af66a7371bbb9ab3649a",
+        "revCount": 4,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/owa-bridge.git"
       },

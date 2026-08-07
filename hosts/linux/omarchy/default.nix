@@ -8,6 +8,42 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
+  # aerc's text/html filter: chawan, interactive, WITH inline images.
+  #
+  # chawan has a real CSS engine (it honours a newsletter's own column layout
+  # instead of flattening it) and speaks the kitty/sixel graphics protocols that
+  # Ghostty supports — which is the whole reason it replaced w3m here.
+  # w3mimgdisplay is X11-only and cannot draw into a Wayland window at all, so
+  # images were simply impossible before.
+  #
+  # INTERACTIVE, not `-d`: dump mode emits no image escapes whatsoever (verified
+  # — a dumped <img> is a blank line), so images require a TTY. That is why the
+  # filter is registered with aerc's `!` prefix, which runs it as the main
+  # process in aerc's embedded terminal rather than piping it to the pager.
+  # aerc can carry the result: its vaxis backend advertises CanKittyGraphics /
+  # CanSixel and links go-sixel.
+  #
+  # NETWORK IS DELIBERATELY ALLOWED, and this is a real privacy trade the user
+  # made knowingly on 2026-08-07. Every image in a marketing email is a remote
+  # URL, so fetching them tells the sender when (and how often) the mail was
+  # opened — the tracking-pixel read-receipt that aerc's own filter blocks with
+  # `unshare --net`. Images and that protection are mutually exclusive; there is
+  # no configuration that gets both. To go back, re-add
+  # `unshare --map-root-user --net` here and drop the `!` in aerc.conf.
+  #
+  # Cookies stay off: they are not needed to render and are pure extra linkage.
+  #
+  # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
+  # stdin it has not been told to read, so the `-` is load-bearing.
+  aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
+    set -u
+    exec ${pkgs.chawan}/bin/cha \
+      -T text/html \
+      -o 'buffer.images=true' \
+      -o 'buffer.cookie=false' \
+      -
+  '';
+
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
   # NONE of Brother's shipped backends support this model out of the box:
   #   - brscan5 (what the DS-740D download page offers) has no model-table entry
@@ -1101,19 +1137,18 @@ in
   # Everything else is aerc's stock [filters]: `html` is the shipped filter that
   # renders text/html through w3m (hence w3m in omarchy-packages.nix).
   #
-  # text/html deliberately DROPS the stock `!` prefix. `!` means "skip the pager,
-  # run this as the main process in aerc's embedded terminal", which puts w3m in
-  # interactive mode — and that branch of aerc's filter script adds
-  # `-o display_borders=true`, so a newsletter built out of nested layout tables
-  # renders as six levels of box-drawing with the text shoved off-screen. Without
-  # `!` the same script takes its `-dump -cols 100 -o disable_center=true` branch
-  # and pipes clean text through `less -Rc`.
+  # text/html carries the `!` prefix, which means "skip the pager, run this as
+  # the main process in aerc's embedded terminal". That is required for inline
+  # images: chawan emits image escapes only to a TTY, and a piped `-d` dump
+  # renders an <img> as a blank line. The cost is that chawan runs as a full TUI
+  # browser inside the message view — keys go to it, `q` returns to aerc.
   #
-  # The only things `!` bought were in-w3m link following (aerc's own :open-link
-  # covers it) and inline images, which cannot work here for two independent
-  # reasons: the filter runs w3m under `unshare --net`, so remote images never
-  # load, and w3mimgdisplay is X11-only while Ghostty is a Wayland window
-  # (WINDOWID unset, so it cannot attach). Verified 2026-08-07.
+  # Historical note, because this line has flipped twice: the STOCK `! html`
+  # (w3m) was bad specifically because w3m's interactive branch sets
+  # `-o display_borders=true`, so table-layout newsletters rendered as six levels
+  # of box-drawing with the text shoved off-screen. That is a w3m problem, not an
+  # interactive-mode problem — chawan lays the same mail out properly. So `!` is
+  # back, with a different renderer behind it.
   xdg.configFile."aerc/aerc.conf" = {
     force = true;
     text = ''
@@ -1133,7 +1168,7 @@ in
       text/calendar=calendar
       message/delivery-status=colorize
       message/rfc822=colorize
-      text/html=html
+      text/html=! ${aercChawanHtml}
       .headers=colorize
     '';
   };
