@@ -265,7 +265,6 @@
         gws = (import nixpkgs { inherit system; }).callPackage ./modules/shared/gws.nix {};
         # chrome-for-testing: removed from build to reduce rsync time (338 MB app bundle)
         # chrome-for-testing = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/chrome-for-testing.nix {};
-        superhuman-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/superhuman-cli.nix {};
         morgen-cli = (import nixpkgs { inherit system; }).callPackage ./modules/shared/morgen-cli.nix {};
         # allowUnfree: private repo, so the module declares license = unfree
         # (same as paperpile-cli, which is overlay-only and never hit this).
@@ -301,7 +300,6 @@
                   gws = prev.callPackage ./modules/shared/gws.nix {};
                   # chrome-for-testing: removed from overlay to reduce rsync time
                   # chrome-for-testing = prev.callPackage ./modules/shared/chrome-for-testing.nix {};
-                  superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   rv = prev.callPackage ./modules/shared/rv.nix {};
@@ -376,7 +374,6 @@
             overlays = [
               (final: prev: {
                 gws = prev.callPackage ./modules/shared/gws.nix {};
-                superhuman-cli = prev.callPackage ./modules/shared/superhuman-cli.nix {};
                 morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                 paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                 # obsidian-cli: web clipper + passthrough proxy. On darwin the

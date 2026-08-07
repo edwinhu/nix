@@ -76,8 +76,8 @@ let
     # Mail. The UVA tenant grants no IMAP/SMTP, so both clients read work mail
     # through owa-bridge's loopback IMAP (a user service brings it up) and send
     # through its sendmail(1) shim; personal Gmail goes direct. aerc is the TUI,
-    # himalaya the scriptable one, w3m the HTML renderer aerc's text/html filter
-    # shells out to. Configs for all three are declared in the omarchy host.
+    # himalaya the scriptable one. Configs for both are declared in the omarchy
+    # host, which also replaced superhuman-cli for this mailbox.
     #
     # aerc here REPLACES pacman's (`sudo pacman -Rns aerc`): a second copy in
     # /usr/bin would shadow-or-be-shadowed by PATH order, and nix owns the
@@ -125,8 +125,7 @@ let
   #   zoom-us        Zoom ships no ARM64 Linux client; use app.zoom.us instead.
   #   openwhispr     GH releases are x86_64 only.
   #   hylo           GH release is an x86_64 AppImage only.
-  #   superhuman-cli \
-  #   morgen-cli      > own repos; Bun release CI publishes darwin-arm64 and
+  #   morgen-cli     \  own repos; Bun release CI publishes darwin-arm64 and
   #   paperpile-cli  /  linux-x64 but no linux-arm64. Bun CAN target
   #                     bun-linux-arm64 — adding that to each repo's
   #                     release.yml is the real fix, after which these move
@@ -135,7 +134,6 @@ let
     zoom-us
     openwhispr
     hylo
-    superhuman-cli
     morgen-cli
     paperpile-cli
   ];

@@ -380,91 +380,6 @@ let
     Install.WantedBy = [ "timers.target" ];
   };
 
-  # superhuman-cli TOKEN REFRESH — the ONE mechanism that keeps this deployment
-  # working. Context: there is NO Superhuman Linux desktop app. Superhuman here
-  # runs as the "Superhuman Mail" Chromium extension on the browser-wide CDP
-  # endpoint (:9222); the CLI's native background_page token-refresh path (which
-  # the macOS app provides via per-account background_page IFRAMES) does not
-  # exist, so silent refresh is structurally impossible and `superhuman doctor`
-  # reports UNHEALTHY. That "unhealthy" is COSMETIC and expected here.
-  #
-  # Symptom if nothing refreshes: provider tokens in
-  # ~/.config/superhuman-cli/tokens.json expire (~hourly) and never refresh, so
-  # any WRITE op (star/archive/send/draft) fails with "Authentication failed
-  # (run 'superhuman account auth')". READS still work (they scrape the live
-  # extension/cache), which is why this hides until a write is attempted.
-  #
-  # Fix: `superhuman account auth` refreshes NON-INTERACTIVELY. It reads +
-  # refreshes both tokens directly from the extension service worker's in-memory
-  # Credential (credential.getAuthDataInBackgroundAsync({refresh:true}) — the
-  # extension's own sessions.getTokens flow): NO page navigation/reload, NO
-  # focus steal. When the extension service worker is live it exits in <1s.
-  # Guarded to only run when Superhuman is actually live (CDP up + a
-  # mail.superhuman.com page) so it never thrashes or clobbers creds when logged
-  # out. Driven by the superhuman-auth-refresh oneshot + ~45min timer below
-  # (tokens last ~1h).
-  #
-  # WHY THE CALL IS `timeout`-BOUNDED (do not remove): the in-memory path
-  # (cmdAuth -> connectToSuperhumanChrome -> listAccountsChrome) attaches to the
-  # Superhuman extension's MV3 service_worker and `Runtime.evaluate`s in it to
-  # read accounts. MV3 service workers idle out, and Chromium does NOT reliably
-  # start a dormant/wedged extension SW on a CDP attach — when it's down, both
-  # the CDP attach AND the evaluate block with NO internal timeout in the CLI
-  # (v0.38.3), so `account auth` hangs indefinitely. Unbounded, that runs to the
-  # unit's TimeoutStartSec and marks the unit FAILED — which surfaces as a
-  # `nix run .#build-switch` failure (home-manager restarts this oneshot on
-  # switch; if the SW happens to be dormant at that moment the switch reports a
-  # failed service). A hang is the SAME class as the logged-out no-op the guard
-  # above already skips ("no reachable sync target"), so we bound the call and
-  # treat a timeout as a clean skip (exit 0); the next timer fire retries when
-  # the SW is awake again (normal during active Superhuman use). A GENUINE auth
-  # failure exits non-zero FAST (not via the timeout) and still fails the unit
-  # loudly, so real breakage still surfaces in the journal. (An earlier revision
-  # used `exec ... account auth` with no bound on the theory that v0.38.2 always
-  # exited in <1s; 0.38.3's service_worker path can block, so the bound is back —
-  # but now it skips-on-hang instead of failing, and never reloads the tab.)
-  #
-  # HISTORY: an earlier superhuman-bgpage helper (a background CDP tab at
-  # mail.superhuman.com/background_page.html, stashed in a hidden Hyprland
-  # special workspace) was added first, to flip `doctor` to "healthy". It was
-  # REMOVED as redundant once we proved — with every background_page target
-  # closed and the bgpage timer stopped — that `account auth` still refreshes
-  # BOTH accounts' tokens from expired→valid AND a full draft create/delete
-  # write round-trip succeeds. bgpage only satisfied doctor's cosmetic URL check
-  # and never sourced tokens; auth-refresh alone is sufficient. (If you ever
-  # want doctor to read "healthy" again for looks, re-add the tab — but it buys
-  # nothing functional.)
-  superhumanAuthRefresh = pkgs.writeShellScript "superhuman-auth-refresh" ''
-    set -uo pipefail
-    PORT="''${CDP_PORT:-9222}"
-    # Guard: only refresh when Superhuman is actually live. If the CDP endpoint
-    # is down or there's no mail.superhuman.com page target, exit 0 (logged out
-    # / browser closed) — never clobber creds or spin when there's no session.
-    targets=$(${pkgs.curl}/bin/curl -sf "http://127.0.0.1:$PORT/json" 2>/dev/null) || exit 0
-    printf '%s' "$targets" | ${pkgs.python3}/bin/python3 -c \
-      'import sys, json; sys.exit(0 if any(t.get("type") == "page" and "mail.superhuman.com" in t.get("url", "") for t in json.load(sys.stdin)) else 1)' \
-      || exit 0
-    # Refresh tokens non-interactively (in-memory extension path — no reload, no
-    # focus steal). Bounded by `timeout` (see the block comment above): a hang
-    # means the extension service worker is dormant/unreachable, so skip cleanly
-    # (exit 0) and let the next timer fire retry. `timeout` returns 124 on the
-    # deadline; a real auth error returns the CLI's own fast non-zero and is
-    # propagated so the unit fails loudly. 20s sits well under TimeoutStartSec=90.
-    #
-    # Deliberately NOT `env CDP_PORT="$PORT"`: $PORT is the guard's probe port,
-    # not an instruction about where the CLI should look. Passing it would pin the
-    # candidate list to one port and skip the Electron probe. The CLI discovers
-    # its own endpoint (Electron port, then Chrome/Chromium).
-    timeout 20 ${pkgs.superhuman-cli}/bin/superhuman account auth
-    rc=$?
-    if [ "$rc" -eq 124 ]; then
-      echo "superhuman-auth-refresh: refresh timed out after 20s (extension" \
-           "service worker dormant / no reachable sync target); skipping this" \
-           "cycle — tokens will refresh on the next fire when Superhuman is live."
-      exit 0
-    fi
-    exit "$rc"
-  '';
 in
 {
   imports = [
@@ -1391,41 +1306,15 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # superhuman-auth-refresh: refresh superhuman-cli OAuth tokens so WRITE ops
-    # (star/archive/send/draft) keep working. This is the ONLY superhuman
-    # keep-alive — see the superhumanAuthRefresh let-binding (the earlier
-    # superhuman-bgpage helper was removed as redundant). Oneshot; ~45min timer
-    # below (tokens last ~1h). With v0.38.2 the refresh is in-memory, exits in
-    # <1s and never reloads a tab; TimeoutStartSec below is just a safety ceiling
-    # (if a future build ever hangs, the unit fails loudly instead of wedging).
-    # No-op when logged out.
-    { superhuman-auth-refresh = {
-      Unit = {
-        Description = "Refresh superhuman-cli OAuth tokens (keeps writes working)";
-        After = [ "graphical-session.target" ];
-        PartOf = [ "graphical-session.target" ];
-      };
-      Service = {
-        Type = "oneshot";
-        # No CDP_PORT: the CLI discovers its endpoint. The script's liveness
-        # guard keeps its own ${CDP_PORT:-9222} default for the curl probe, which
-        # is a different job from telling the CLI where to look.
-        # Safety ceiling only — the in-memory refresh exits in <1s.
-        TimeoutStartSec = 90;
-        ExecStart = "${superhumanAuthRefresh}";
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    }; }
     # owa-bridge: loopback IMAP bridge for the UVA mailbox, so aerc (and
     # himalaya, and anything else that speaks IMAP) can read and write work mail.
     # Native IMAP against that tenant is foreclosed — third-party OAuth consent
     # is admin-gated, first-party client-id borrowing now fails AADSTS65002 — so
     # this daemon holds the OWA token scraped from the live Outlook Web tab and
-    # translates IMAP to Outlook REST. Long-running (NOT a oneshot, unlike
-    # superhuman-auth-refresh above), hence no timer.
+    # translates IMAP to Outlook REST. Long-running, so no timer.
     #
-    # Extracted from superhuman-cli — which this is meant to replace for the UVA
-    # mailbox, so it deliberately depends on nothing in that repo. Built from
+    # Extracted from superhuman-cli, which it has now fully replaced for this
+    # mailbox — it deliberately depends on nothing in that repo. Built from
     # the owa-bridge-src flake input (modules/shared/owa-bridge.nix), so this
     # runs a lock-pinned store path, not the ~/projects working tree. The send
     # half is `owa-bridge sendmail`, invoked by aerc's `outgoing` and
@@ -1525,18 +1414,6 @@ in
       Timer = {
         OnBootSec = "30s";
         OnUnitActiveSec = "5min";
-      };
-      Install.WantedBy = [ "timers.target" ];
-    }; }
-    # Periodically refresh superhuman-cli OAuth tokens (see
-    # superhuman-auth-refresh.service). Tokens last ~1h; refresh every ~45min
-    # with a small headroom so writes never hit an expired token. ~4min after
-    # boot.
-    { superhuman-auth-refresh = {
-      Unit.Description = "Periodically refresh superhuman-cli OAuth tokens";
-      Timer = {
-        OnBootSec = "4min";
-        OnUnitActiveSec = "45min";
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
