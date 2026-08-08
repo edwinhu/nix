@@ -77,6 +77,622 @@ let
     exec "$@"
   '';
 
+  # Python helper for the PDF preview filter: speaks herdr's socket API.
+  aercPdfHelper = pkgs.writeText "herdr-graphics.py" ''
+"""herdr pane-graphics helper for the aerc PDF preview filter.
+
+Modes:
+
+  info <sock> <pane_id>
+      Print "<cell_w> <cell_h> <pane_cols> <pane_rows>" and exit 0, or exit 1
+      on any error. This is the GATE -- see fact 1.
+
+  stream <sock> <pane_id> <token> <status_file>
+      Read frame requests from stdin, one per line:
+          <png_path> <grid_cols> <grid_rows> <viewport_cols>
+      and keep the image on screen for as long as this process lives AND the
+      filter's indicator line (identified by <token>) is actually visible in
+      the pane. Writes "shown" / "hidden" / "blocked" to <status_file> so the
+      filter can tell the user when it is waiting on another part's stream.
+
+      Note the filter does NOT pass a row/column: the helper MEASURES where the
+      indicator actually is (fact 6) and derives placement from that.
+
+FACTS ESTABLISHED THE HARD WAY. Do not rediscover these.
+
+1. pane.graphics.info IS THE ONLY HONEST GATE. pane.graphics.set returns
+   {"result":{"type":"ok"}} even on a pane that cannot render anything -- it
+   stores the image regardless of whether any client can composite it. info()
+   is the only call that fails loudly (cell_size_unavailable).
+
+2. USE THE STREAM, NOT set(). set() rejects image data over 512 KiB
+   ("image_too_large"), and a full-pane page at exact cell resolution is over
+   that, so set() cannot do this job at all. The stream has no such limit
+   (verified: a 585,198-byte PNG that set() refuses transmits fine). The stream
+   is also connection-bound -- when this process dies, including SIGKILL, herdr
+   emits a kitty delete for the image.
+
+3. AERC DOES NOT KILL THE FILTER ON A PART SWITCH. Measured: Ctrl+j/Ctrl+k
+   switches the pane to another part, no delete is emitted, and both the filter
+   and this helper stay alive. So fact 2's teardown never fires, and without the
+   watcher below the page stays painted over whatever part you switched to.
+
+4. ONLY THE STREAM OWNER CAN CLEAR A STREAM-OWNED IMAGE, AND THERE IS EXACTLY
+   ONE STREAM PER PANE. pane.graphics.clear from another connection returns
+   stream_conflict and does nothing. "Hide" is therefore implemented by closing
+   our own stream (herdr turns that into a delete) and "restore" by reopening.
+
+5. A MESSAGE WITH TWO PDF PARTS RUNS TWO FILTERS AT ONCE, COMPETING FOR THAT
+   ONE STREAM. aerc starts a filter per part and keeps them all alive. The
+   loser gets stream_conflict. It must NOT treat that as fatal: it has to keep
+   retrying and take the stream over once the other part is hidden and releases
+   it. That is why the stream is opened lazily in the watcher, not at startup,
+   and why the token must be UNIQUE PER PROCESS -- with a shared marker each
+   helper sees the other's identical indicator line, concludes it is still
+   visible, never releases, and the two deadlock.
+
+6. DO NOT COMPUTE THE VERTICAL OFFSET ARITHMETICALLY. aerc's parts list grows
+   with the number of attachments, so the chrome below the viewer is not a
+   fixed height: measured 4 rows for text+2 PDFs (parts list + status) versus 1
+   for a lone PDF. The old `pane_rows - term_rows - 1` overshot by exactly the
+   extra part lines and pushed the page down the pane. We locate the token's
+   ACTUAL row in the pane text and place the image directly under it, which is
+   correct for any layout.
+"""
+import json
+import socket
+import struct
+import sys
+import threading
+import time
+
+POLL_SECONDS = 0.4
+INDENT = 2          # our indicator line starts with this many spaces
+
+
+def connect(sock_path):
+    s = socket.socket(socket.AF_UNIX)
+    s.settimeout(10)
+    s.connect(sock_path)
+    return s
+
+
+def recv_line(s):
+    buf = b""
+    while b"\n" not in buf:
+        chunk = s.recv(65536)
+        if not chunk:
+            raise EOFError("server closed connection")
+        buf += chunk
+    return buf.split(b"\n", 1)[0].decode()
+
+
+def png_size(data):
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    return struct.unpack(">II", data[16:24])
+
+
+def rpc(sock_path, method, params):
+    """One-shot request on its own connection. The streaming socket cannot be
+    reused for this: once upgraded it only accepts frame headers."""
+    s = connect(sock_path)
+    try:
+        s.sendall((json.dumps({"id": "r", "method": method, "params": params}) + "\n").encode())
+        return json.loads(recv_line(s))
+    finally:
+        s.close()
+
+
+def open_stream(sock_path, pane_id):
+    s = connect(sock_path)
+    s.sendall((json.dumps({"id": "s", "method": "pane.graphics.stream",
+                           "params": {"pane_id": pane_id}}) + "\n").encode())
+    reply = json.loads(recv_line(s))
+    if "error" in reply:
+        s.close()
+        raise OSError(reply["error"].get("code", "stream_open_failed"))
+    # Now a frame transport, not JSON-RPC: a header line then exactly
+    # data_length raw bytes. It never acks, so errors are invisible here --
+    # which is why info() gates first.
+    s.settimeout(None)
+    return s
+
+
+def mode_info(sock_path, pane_id):
+    reply = rpc(sock_path, "pane.graphics.info", {"pane_id": pane_id})
+    if "error" in reply:
+        sys.stderr.write("herdr graphics unavailable: %s\n"
+                         % reply["error"].get("code", "unknown"))
+        return 1
+    r = reply["result"]
+    cw, ch = int(r["cell_width_px"]), int(r["cell_height_px"])
+    if cw <= 0 or ch <= 0:
+        sys.stderr.write("herdr graphics unavailable: zero cell size\n")
+        return 1
+
+    reply = rpc(sock_path, "pane.layout", {})
+    if "error" in reply:
+        sys.stderr.write("pane layout unavailable: %s\n"
+                         % reply["error"].get("code", "unknown"))
+        return 1
+    layout = reply["result"]["layout"]
+    rect = None
+    for p in layout.get("panes", []):
+        if p.get("pane_id") == pane_id:
+            rect = p["rect"]
+    if rect is None:
+        rect = layout.get("area")
+    if not rect:
+        sys.stderr.write("pane layout has no rect for %s\n" % pane_id)
+        return 1
+    print(cw, ch, int(rect["width"]), int(rect["height"]))
+    return 0
+
+
+def find_token(sock_path, pane_id, token):
+    """Return (row, col) of our indicator line, or None if it is not on screen.
+
+    col is the pane column our terminal's column 0 maps to, recovered from the
+    indicator's leading whitespace.
+    """
+    reply = rpc(sock_path, "pane.read",
+                {"pane_id": pane_id, "source": "visible", "format": "text"})
+    text = reply.get("result", {}).get("read", {}).get("text")
+    if not text:
+        return None
+    for row, line in enumerate(text.split("\n")):
+        if token in line:
+            return row, max(0, (len(line) - len(line.lstrip(" "))) - INDENT)
+    return None
+
+
+def mode_stream(sock_path, pane_id, token, status_file):
+    conn = {"s": None}
+    want = {"frame": None}      # (png_path, gc, gr, img_cols)
+    sent = {"key": None}
+    status = [None]
+
+    def write_status(value):
+        if status_file and value != status[0]:
+            try:
+                with open(status_file, "w") as fh:
+                    fh.write(value + "\n")
+            except OSError:
+                pass
+            status[0] = value
+
+    def send_frame(path, gc, gr, col, row):
+        with open(path, "rb") as fh:
+            data = fh.read()
+        w, h = png_size(data)
+        header = {
+            "format": "png", "image_width": w, "image_height": h,
+            "data_length": len(data),
+            "placement": {"grid_cols": int(gc), "grid_rows": int(gr),
+                          "viewport_col": int(col), "viewport_row": int(row)},
+        }
+        conn["s"].sendall((json.dumps(header) + "\n").encode())
+        conn["s"].sendall(data)
+
+    def release():
+        if conn["s"] is not None:
+            try:
+                conn["s"].close()
+            except OSError:
+                pass
+            conn["s"] = None
+            sent["key"] = None
+
+    def watcher():
+        while True:
+            time.sleep(POLL_SECONDS)
+            frame = want["frame"]
+            if frame is None:
+                continue
+            try:
+                pos = find_token(sock_path, pane_id, token)
+            except Exception:
+                continue
+
+            if pos is None:                      # we are not the displayed part
+                release()
+                write_status("hidden")
+                continue
+
+            row, col = pos
+            path, gc, gr, img_cols = frame
+            place_col = col + max(0, (int(img_cols) - int(gc)) // 2)
+            place_row = row + 1                  # directly under the indicator
+            key = (path, gc, gr, place_col, place_row)
+
+            if conn["s"] is None:
+                try:
+                    conn["s"] = open_stream(sock_path, pane_id)
+                except OSError:
+                    # Another part's filter holds the single per-pane stream.
+                    # Keep retrying; it releases as soon as it is hidden.
+                    write_status("blocked")
+                    continue
+                sent["key"] = None
+            if key != sent["key"]:
+                try:
+                    send_frame(path, gc, gr, place_col, place_row)
+                    sent["key"] = key
+                except (OSError, ValueError, struct.error):
+                    release()
+                    write_status("blocked")
+                    continue
+            write_status("shown")
+
+    threading.Thread(target=watcher, daemon=True).start()
+
+    sys.stdout.write("ready\n")
+    sys.stdout.flush()
+    for line in sys.stdin:
+        parts = line.split()
+        if len(parts) != 4:
+            continue
+        want["frame"] = tuple(parts)
+        sent["key"] = None                       # force a resend for the new page
+    return 0
+
+
+def main():
+    if len(sys.argv) < 4:
+        sys.stderr.write(
+            "usage: herdr_graphics.py info <sock> <pane>\n"
+            "       herdr_graphics.py stream <sock> <pane> <token> <status_file>\n")
+        return 2
+    mode, sock_path, pane_id = sys.argv[1], sys.argv[2], sys.argv[3]
+    try:
+        if mode == "info":
+            return mode_info(sock_path, pane_id)
+        if mode == "stream":
+            token = sys.argv[4] if len(sys.argv) > 4 else None
+            status_file = sys.argv[5] if len(sys.argv) > 5 else None
+            if not token:
+                sys.stderr.write("stream mode requires a token\n")
+                return 2
+            return mode_stream(sock_path, pane_id, token, status_file)
+    except (OSError, EOFError, ValueError) as exc:
+        sys.stderr.write("herdr graphics error: %s\n" % exc)
+        return 1
+    sys.stderr.write("unknown mode %r\n" % mode)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+  '';
+
+  aercPdfPreview = pkgs.writeShellScript "aerc-pdf-preview" ''
+    export PATH=${lib.makeBinPath [ pkgs.poppler-utils pkgs.python3 pkgs.coreutils pkgs.gawk pkgs.ncurses ]}:$PATH
+    export AERC_PDF_HELPER=${aercPdfHelper}
+# aerc `!` filter: inline PDF page preview, rendered by herdr's pane-graphics
+# API rather than by anything aerc can see.
+#
+# WHY THIS WORKS WHERE EVERY IN-BAND APPROACH FAILED
+# --------------------------------------------------
+# aerc's embedded terminal PARSES AND DISCARDS kitty graphics APC sequences, so
+# a filter can never draw an image by writing escapes to its own stdout. This
+# filter never tries: it asks herdr, over herdr's unix socket, to composite the
+# image into the PANE. The bytes never pass through aerc. Placement is in grid
+# cells relative to the pane, so none of the pixel geometry that killed the
+# ueberzugpp attempt (pixels-per-cell, hosting window rect) is needed.
+#
+# NINE FACTS THAT COST A LOT OF TIME TO ESTABLISH -- do not rediscover them:
+#
+# 1. pane.graphics.info IS THE ONLY HONEST GATE. pane.graphics.set returns
+#    {"result":{"type":"ok"}} even for a pane that cannot possibly render --
+#    it stores the image regardless. info() is the only call that fails loudly
+#    (cell_size_unavailable) when nothing can be composited.
+#
+# 2. THE GATE NEEDS A POST-FLAG herdr CLIENT. Cell size is probed from the host
+#    terminal (CSI 16t) by each herdr CLIENT at client startup, and only when
+#    experimental.kitty_graphics is already enabled. A client that started
+#    before the flag was set reports cell_width_px=0 forever, and
+#    `herdr server reload-config` does NOT fix it -- the client process itself
+#    has to restart. Net effect: this filter degrades to the notice until the
+#    user's own herdr client has been restarted at least once since the flag
+#    went on. That is expected, and it is why the fallback has to be good.
+#    (An earlier theory that the client's viewport had to match the layout's
+#    was wrong; the real mechanism is the race in fact 9.)
+#
+# 3. herdr CROPS, IT DOES NOT SCALE. The placement's grid_cols/grid_rows set
+#    kitty's SOURCE-CROP rect to grid_cols*cell_w x grid_rows*cell_h. Handing
+#    it an image larger than that shows the top-left corner of the page; handing
+#    it a smaller one leaves the rest of the rect stale. So the page MUST be
+#    rendered at exactly grid_cols*cell_w x grid_rows*cell_h pixels. Rendering
+#    small and expecting herdr to scale up does not work.
+#
+# 4. set() CAPS IMAGE DATA AT 512 KiB; THE STREAM DOES NOT. A full-pane page at
+#    exact cell resolution exceeds the cap, so set() cannot do this job at all.
+#    The stream also ties the image to the connection: when the streaming
+#    process dies -- including SIGKILL -- herdr deletes the image by itself.
+#    That is why the helper is held open for the filter's whole life instead of
+#    firing one request and exiting. It makes q, :close and aerc exiting clean
+#    with no signal from aerc.
+#
+# 5. AERC DOES NOT KILL THE FILTER ON A PART SWITCH, so fact 4 does not cover
+#    the case that matters most. Measured: Ctrl+k moves the pane to another
+#    part, no delete is emitted, and both this script and the helper stay
+#    alive -- the page stays painted over whatever you switched to. aerc also
+#    REUSES the same filter when you switch back. The only observable signal is
+#    our own indicator line leaving the pane, so the helper polls pane.read for
+#    TOKEN. Hiding must be done BY THE STREAM OWNER: pane.graphics.clear from
+#    any other connection returns stream_conflict and does nothing.
+#
+# 6. TWO PDF ATTACHMENTS => TWO FILTERS COMPETING FOR ONE STREAM. aerc starts a
+#    filter per part and keeps them all running, but herdr allows exactly one
+#    graphics stream per pane. The loser must NOT give up: it retries until the
+#    other part is hidden and releases. Hence TOKEN is unique per process (a
+#    shared marker makes each helper see the other's identical indicator, never
+#    release, and deadlock), and "cannot get the stream" shows the notice as a
+#    WAITING state that clears itself, not a permanent failure.
+#
+# 7. THE VERTICAL OFFSET MUST BE MEASURED, NOT COMPUTED. aerc's parts list grows
+#    with the attachment count, so the chrome under the viewer is not fixed:
+#    4 rows for text+2 PDFs versus 1 for a lone PDF. The old
+#    `pane_rows - term_rows - 1` overshot by exactly the extra part lines and
+#    pushed the page down the pane. The helper now finds TOKEN's real row.
+#
+# 8. DO NOT TRY TO DEBUG THIS WITH herdr's TRACE LOGGING. The kitty compositor
+#    has an inviting trace vocabulary (`clipped_placement: success|...`) and the
+#    callsite symbols are in the nixpkgs binary, but the build is tracing's
+#    release_max_level_debug, so those events can NEVER fire (HERDR_LOG=trace
+#    yields 0 TRACE lines). To see whether an image reached the terminal, run
+#    the herdr client under a pty relay and read the kitty APC on the wire
+#    (a=t transmit / a=p place / a=d delete).
+#
+# 9. THE GATE IS RACY WHILE ANY PRE-FLAG CLIENT IS ATTACHED. herdr keeps ONE
+#    global host cell size and every client rewrites it, so a client reporting
+#    cell_width_px=0 re-reports it on every new client connect and can clobber
+#    a good value. A non-zero but WRONG value is possible too, from a client
+#    with a different cell size (e.g. an SSH client at 8x16 rather than the
+#    local 16x36) -- and since herdr crops rather than scales, that renders at
+#    the wrong scale rather than failing cleanly.
+set -u
+
+TMP=$(mktemp -d) || exit 0
+HELPER_PID=""
+cleanup() {
+  [ -n "$HELPER_PID" ] && kill "$HELPER_PID" 2>/dev/null
+  exec 3>&- 2>/dev/null
+  rm -rf "$TMP"
+}
+trap cleanup EXIT INT TERM HUP
+
+cat > "$TMP/in.pdf"
+
+# ---------------------------------------------------------------- notice path
+# The accepted floor. Reached whenever the preview cannot be trusted -- never
+# leave the pane blank, which is the failure mode already shipped once.
+# Under the `!` filter form aerc closes the terminal as soon as we exit, so the
+# notice has to be held on screen rather than printed and abandoned.
+notice() {
+  local pages size
+  pages=$(pdfinfo "$TMP/in.pdf" 2>/dev/null | awk '/^Pages:/{print $2}')
+  size=$(du -h "$TMP/in.pdf" 2>/dev/null | awk '{print $1}')
+  if [ -z "''${pages:-}" ]; then
+    printf '  Not a readable PDF. Press o to open it anyway, or | to pipe it.\n'
+  else
+    printf '  PDF — %s pages, %sB. Press o to open in hylo.\n' "''${pages:-?}" "''${size:-?}"
+  fi
+  [ -n "''${1:-}" ] && printf '  (inline preview unavailable: %s)\n' "$1"
+  # Hold until aerc tears the viewer down (:close, q, or aerc exiting). Note
+  # a part switch does NOT kill us -- see fact 5 -- but the notice is plain
+  # text, so a stale one is harmless where a stale image would not be.
+  # Keys come from /dev/tty, NOT stdin -- stdin is the PDF pipe and is at EOF,
+  # so reading it here would return instantly and blank the pane.
+  if [ -r /dev/tty ]; then
+    while IFS= read -r -N1 _key < /dev/tty; do :; done
+  fi
+  exit 0
+}
+
+# ---------------------------------------------------------------------- gate
+HELPER="''${AERC_PDF_HELPER:-}"
+[ -n "$HELPER" ] || HELPER="$(dirname "$0")/herdr_graphics.py"
+
+command -v pdfinfo  >/dev/null 2>&1 || notice "pdfinfo missing"
+command -v pdftoppm >/dev/null 2>&1 || notice "pdftoppm missing"
+command -v python3  >/dev/null 2>&1 || notice "python3 missing"
+[ -r "$HELPER" ]                    || notice "helper missing"
+[ -n "''${HERDR_PANE_ID:-}" ]         || notice "not in a herdr pane"
+
+SOCK="''${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}"
+[ -S "$SOCK" ] || notice "no herdr socket"
+
+INFO=$(python3 "$HELPER" info "$SOCK" "$HERDR_PANE_ID" 2>/dev/null) || notice "graphics unavailable"
+read -r CELL_W CELL_H PANE_COLS PANE_ROWS <<< "$INFO"
+case "$CELL_W$CELL_H$PANE_COLS$PANE_ROWS" in '''|*[!0-9]*) notice "bad geometry" ;; esac
+
+INFO_PDF=$(pdfinfo "$TMP/in.pdf" 2>/dev/null) || notice "unreadable PDF"
+NPAGES=$(printf '%s\n' "$INFO_PDF" | awk '/^Pages:/{print $2}')
+SIZE=$(du -h "$TMP/in.pdf" 2>/dev/null | awk '{print $1}')
+[ -n "''${NPAGES:-}" ] || notice "unreadable PDF"
+ASPECT=$(printf '%s\n' "$INFO_PDF" | awk '/^Page size:/{if ($5>0) printf "%.6f", $3/$5}')
+[ -n "''${ASPECT:-}" ] || ASPECT=0.772727
+
+# ------------------------------------------------------------------ geometry
+# The filter's own terminal is aerc's message-viewer sub-rect, somewhere inside
+# the herdr pane. Placement is pane-relative, so we need that offset. aerc puts
+# the viewer flush to the right edge of the pane, with the status line below it.
+TERM_COLS=''${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
+TERM_ROWS=''${LINES:-$(tput lines 2>/dev/null || echo 24)}
+
+
+# Row 0 of our terminal keeps the page indicator; the image occupies the rest.
+# We compute only the SIZE here. The POSITION is measured by the helper from
+# where our indicator actually lands in the pane (fact 7).
+PLACE=$(python3 -c '
+import sys
+cell_w, cell_h, term_cols, term_rows, aspect = (
+    int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]),
+    float(sys.argv[5]))
+
+img_cols = term_cols
+img_rows = term_rows - 1          # row 0 is the indicator line
+if img_cols < 4 or img_rows < 4:
+    raise SystemExit(1)
+
+avail_w, avail_h = img_cols * cell_w, img_rows * cell_h
+h = avail_h
+w = h * aspect
+if w > avail_w:
+    w = avail_w
+    h = w / aspect
+
+# Snap to whole cells so the crop rect and the rendered image agree exactly.
+gc = max(1, min(img_cols, int(w // cell_w)))
+gr = max(1, min(img_rows, int(h // cell_h)))
+print(gc, gr, img_cols, gc * cell_w, gr * cell_h)
+' "$CELL_W" "$CELL_H" "$TERM_COLS" "$TERM_ROWS" "$ASPECT" 2>/dev/null) \
+  || notice "pane too small"
+read -r GC GR IMG_COLS PX_W PX_H <<< "$PLACE"
+
+# -------------------------------------------------------------------- stream
+FIFO="$TMP/ctl"
+STATUS="$TMP/status"
+mkfifo "$FIFO" || notice "no fifo"
+# TOKEN must be UNIQUE PER PROCESS (fact 6): two PDF attachments mean two
+# filters running at once, and with a shared marker each helper would see the
+# other's identical indicator line, believe itself still visible, never release
+# the single per-pane stream, and deadlock. $$ plus a clock read is enough.
+# $$ is unique among the concurrently-live filters, which is all that matters;
+# the brackets keep it from matching digits elsewhere in the pane text.
+TOKEN="[$$]"
+python3 "$HELPER" stream "$SOCK" "$HERDR_PANE_ID" "$TOKEN" "$STATUS" \
+  < "$FIFO" > "$TMP/ready" 2>"''${AERC_PDF_DEBUG:-/dev/null}" &
+HELPER_PID=$!
+exec 3> "$FIFO"
+
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  [ -s "$TMP/ready" ] && break
+  kill -0 "$HELPER_PID" 2>/dev/null || break
+  sleep 0.1
+done
+[ -s "$TMP/ready" ] || notice "helper did not start"
+
+# --------------------------------------------------------------------- pages
+render_page() {
+  local n="$1" out="$TMP/pg-$1.png"
+  if [ ! -f "$out" ]; then
+    # Exact pixel size: herdr crops to grid_cols*cell_w x grid_rows*cell_h, so
+    # anything else shows a cropped edge (fact 3).
+    pdftoppm -png -f "$n" -l "$n" -scale-to-x "$PX_W" -scale-to-y "$PX_H" \
+      "$TMP/in.pdf" "$TMP/raw-$n" 2>/dev/null || return 1
+    mv "$TMP/raw-$n"*.png "$out" 2>/dev/null || return 1
+  fi
+  printf '%s %s %s %s\n' "$out" "$GC" "$GR" "$IMG_COLS" >&3
+}
+
+page=1
+last_state=""
+draw() {
+  local state="$1"
+  printf '\033[2J\033[H  page %s/%s   j/k page   q dismiss\033[2;90m %s\033[0m\n' \
+    "$page" "$NPAGES" "$TOKEN"
+  # Never a silent blank pane: while another part's filter holds the stream we
+  # show the notice, and it clears itself the moment we get the image up.
+  if [ "$state" != "shown" ]; then
+    printf '\n  PDF — %s pages, %sB. Press o to open in hylo.\n' "$NPAGES" "$SIZE"
+    [ "$state" = "blocked" ] && \
+      printf '  (waiting for the other attachment'\'''s preview to release…)\n'
+  fi
+  last_state="$state"
+}
+
+show() {
+  if ! render_page "$page"; then
+    printf '\033[2J\033[H  page %s: render failed\n' "$page"; return
+  fi
+  draw "''${last_state:-pending}"
+}
+show
+
+# Keys from /dev/tty: stdin is the PDF pipe (already drained), so reading it
+# would spin at EOF and tear the preview down immediately. The 1s timeout also
+# drives the status poll, so a waiting notice clears once the image appears.
+if [ -r /dev/tty ]; then
+  while true; do
+    if IFS= read -r -N1 -t 1 key < /dev/tty; then
+      case "$key" in
+        j|n) [ "$page" -lt "$NPAGES" ] && { page=$((page + 1)); show; } ;;
+        k|p) [ "$page" -gt 1 ] && { page=$((page - 1)); show; } ;;
+        q) break ;;
+      esac
+    else
+      kill -0 "$HELPER_PID" 2>/dev/null || break
+      state=$(cat "$STATUS" 2>/dev/null)
+      [ -n "$state" ] && [ "$state" != "$last_state" ] && draw "$state"
+    fi
+  done
+else
+  while kill -0 "$HELPER_PID" 2>/dev/null; do sleep 1; done
+fi
+exit 0
+  '';
+
+  # aerc's application/pdf filter: extracted text, not a rendered page.
+  #
+  # This is a deliberate retreat from a working inline image preview, because
+  # the image preview cannot work WHERE THIS USER ACTUALLY RUNS AERC.
+  #
+  # Nothing in-band survives. aerc's embedded terminal (the `!` filter form)
+  # PARSES AND DISCARDS kitty graphics APC sequences rather than passing them
+  # to Ghostty — measured with a hand-written APC, no terminal probing in the
+  # path: the identical byte stream renders in a bare Ghostty and renders
+  # NOTHING inside aerc. `chafa -f kitty` HANGS FOREVER under aerc on a
+  # /dev/tty probe aerc never answers; `chafa -f sixel` exits 0 and draws
+  # nothing (this Ghostty build has no sixel); `chafa -f symbols` renders only
+  # a text-cell smear. This is why yazi and elio manage inline images and aerc
+  # cannot: they own the TTY and write APC straight to it, whereas aerc
+  # interposes an emulator that eats the escape.
+  #
+  # ueberzugpp DOES work around that — it paints in its own Hyprland window,
+  # so aerc's emulator never gets a say — and a full implementation was built
+  # and verified: centred, aspect-correct, j/k paging, tracking move/resize,
+  # clean on message-switch and quit. It is not shipped, because placing that
+  # overlay needs three inputs and TWO OF THEM DO NOT EXIST inside a terminal
+  # multiplexer, which is how this user runs aerc (herdr):
+  #   - pane rect in cells:  available (HERDR_* env survives into the filter)
+  #   - pixels per cell:     NOT available — aerc's embedded terminal answers
+  #                          DA1 but returns empty for CSI 16t / 14t / 18t
+  #   - hosting window rect: NOT available — process ancestry from a herdr pane
+  #                          ends at the herdr systemd service, so no
+  #                          window-owning process is ever in the chain;
+  #                          `hyprctl activewindow` is a guess and in testing
+  #                          returned an unrelated Chromium window
+  # The observable result was a ~2.4x horizontal scale error and a blank pane.
+  # A guarded version that detects the multiplexer and degrades would take the
+  # text path 100% of the time here, so it would be dead weight.
+  #
+  # So this filter renders NO page and dumps NO text — extracted text was
+  # explicitly not wanted, and it is the wrong shape for a PDF anyway (columns
+  # interleave, figures and tables vanish). It prints one line of orientation
+  # and gets out of the way; `o` opens the real document in hylo, which works
+  # fine from a herdr pane. Its only job over having no filter at all is
+  # replacing aerc's "No filter configured for this mimetype" menu with the
+  # page count, the size, and the keystroke that actually helps.
+  aercPdfText = pkgs.writeShellScript "aerc-pdf-notice" ''
+    set -u
+    tmp=$(${pkgs.coreutils}/bin/mktemp) || exit 0
+    trap 'rm -f "$tmp"' EXIT INT TERM HUP
+    ${pkgs.coreutils}/bin/cat > "$tmp"
+
+    info=$(${pkgs.poppler-utils}/bin/pdfinfo "$tmp" 2>/dev/null)
+    if [ -z "$info" ]; then
+      echo "  Not a readable PDF. Press o to open it anyway, or | to pipe it."
+      exit 0
+    fi
+    pages=$(printf '%s\n' "$info" | ${pkgs.gawk}/bin/awk '/^Pages:/{print $2}')
+    size=$(${pkgs.coreutils}/bin/du -h "$tmp" | ${pkgs.gawk}/bin/awk '{print $1}')
+    printf '  PDF — %s pages, %sB. Press o to open in hylo.\n' \
+      "''${pages:-?}" "$size"
+  '';
+
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
   # NONE of Brother's shipped backends support this model out of the box:
   #   - brscan5 (what the DS-740D download page offers) has no model-table entry
@@ -1081,6 +1697,145 @@ in
     '';
   };
 
+  # aerc styleset, Catppuccin Mocha. aerc ships a `catppuccin` styleset but it is
+  # the *Frappé* flavour (#303446 base), and this machine runs Mocha — side by
+  # side the shipped one reads as a washed-out grey against the terminal. Every
+  # hex below is copied from ~/.config/omarchy/current/theme/ghostty.conf (the
+  # same values appear in that directory's colors.toml), so aerc tracks whatever
+  # `omarchy-theme-set` last selected only insofar as it stays Mocha — a theme
+  # switch does NOT repaint aerc. That is the deliberate trade: aerc reads a
+  # styleset from a fixed path with no include mechanism, so following the live
+  # theme would need a generated file and an activation hook. Pinning is honest.
+  #
+  # Mocha names, for anyone editing: base #1e1e2e, surface1 #45475a, surface2
+  # #585b70, subtext0 #a6adc8, subtext1 #bac2de, text #cdd6f4, blue #89b4fa,
+  # red #f38ba8, green #a6e3a1, yellow #f9e2af, pink #f5c2e7, teal #94e2d5.
+  #
+  # The two leading lines matter: aerc pre-seeds every styleset with defaults
+  # that hardcode palette indices 12/15 (border, title, selected, pill). Without
+  # the reset those bleed through as terminal-blue blocks under the hex colors.
+  xdg.configFile."aerc/stylesets/catppuccin-mocha" = {
+    force=true;
+    text=''
+      *.default = true
+      *.normal  = true
+
+      default.fg=#cdd6f4
+
+      error.fg=#f38ba8
+      warning.fg=#f9e2af
+      success.fg=#a6e3a1
+
+      # Borders are drawn as real box-drawing chars (see border-char-* in
+      # aerc.conf), so unlike most stylesets the fg is what's visible here.
+      border.fg=#45475a
+      title.fg=#1e1e2e
+      title.bg=#89b4fa
+      title.bold=true
+      header.fg=#89b4fa
+      header.bold=true
+
+      tab.fg=#585b70
+      tab.selected.fg=#89b4fa
+      tab.selected.bold=true
+
+      # msglist styles are layered (aerc-stylesets(7) "LAYERED STYLES"): later
+      # entries win, and an unset fg/bg falls through to the layer below. So the
+      # read/unread contrast is the base and the flag colors ride on top of it.
+      msglist_default.fg=#cdd6f4
+      msglist_read.fg=#a6adc8
+      msglist_unread.fg=#cdd6f4
+      msglist_unread.bold=true
+      msglist_answered.fg=#94e2d5
+      msglist_forwarded.fg=#94e2d5
+      msglist_flagged.fg=#f9e2af
+      msglist_flagged.bold=true
+      msglist_deleted.fg=#585b70
+      msglist_deleted.dim=true
+      msglist_result.fg=#a6e3a1
+      msglist_result.bold=true
+      msglist_thread_folded.fg=#89b4fa
+      msglist_thread_context.fg=#585b70
+      msglist_thread_orphan.fg=#f38ba8
+      msglist_gutter.fg=#45475a
+      msglist_pill.fg=#1e1e2e
+      msglist_pill.bg=#89b4fa
+
+      # Marked messages are the one thing that must survive every other layer,
+      # so they get a filled background rather than a foreground color.
+      msglist_marked.fg=#1e1e2e
+      msglist_marked.bg=#f5c2e7
+
+      # The cursor row: surface1 fill, not the terminal's selection color
+      # (#f5e0dc rosewater), which is far too loud for a row that moves on every
+      # keypress. bg only — the per-flag fg colors above stay legible on it.
+      msglist_*.selected.bg=#45475a
+      msglist_*.selected.bold=true
+
+      dirlist_default.fg=#a6adc8
+      dirlist_unread.fg=#cdd6f4
+      dirlist_unread.bold=true
+      dirlist_recent.fg=#89b4fa
+      dirlist_recent.bold=true
+      dirlist_*.selected.bg=#45475a
+      dirlist_*.selected.bold=true
+
+      statusline_default.fg=#bac2de
+      statusline_default.bg=#45475a
+      statusline_default.dim=false
+      statusline_error.fg=#f38ba8
+      statusline_error.bold=true
+      statusline_success.fg=#a6e3a1
+      statusline_success.bold=true
+
+      completion_default.fg=#cdd6f4
+      completion_*.bg=#45475a
+      completion_default.selected.bg=#585b70
+      completion_description.fg=#a6adc8
+      completion_description.dim=true
+      completion_pill.bg=#89b4fa
+      completion_gutter.bg=#585b70
+
+      part_filename.fg=#cdd6f4
+      part_mimetype.fg=#a6adc8
+      part_switcher.selected.bg=#45475a
+      part_*.selected.bg=#45475a
+
+      selector_focused.fg=#1e1e2e
+      selector_focused.bg=#89b4fa
+      selector_focused.bold=true
+      selector_chooser.bold=true
+
+      spinner.fg=#89b4fa
+      stack.fg=#cdd6f4
+
+      # [viewer] styles the built-in colorize filter, which is what renders
+      # text/plain here. It does NOT touch chawan's HTML output — chawan emits
+      # its own escapes and aerc passes them through untouched.
+      [viewer]
+      url.fg=#89b4fa
+      url.underline=true
+      header.fg=#89b4fa
+      header.bold=true
+      signature.fg=#585b70
+      signature.dim=true
+      diff_meta.fg=#cdd6f4
+      diff_meta.bold=true
+      diff_chunk.fg=#f5c2e7
+      diff_chunk_func.fg=#f5c2e7
+      diff_chunk_func.dim=true
+      diff_add.fg=#a6e3a1
+      diff_del.fg=#f38ba8
+      quote_1.fg=#94e2d5
+      quote_2.fg=#89b4fa
+      quote_3.fg=#f5c2e7
+      quote_3.dim=true
+      quote_4.fg=#585b70
+      quote_x.fg=#585b70
+      quote_x.dim=true
+    '';
+  };
+
   # unsafe-accounts-conf is REQUIRED, not a preference: a nix-managed
   # accounts.conf is a world-readable /nix/store symlink, and aerc refuses to
   # start on anything looser than 0600 without it. home-manager's own
@@ -1120,13 +1875,114 @@ in
       [viewer]
       alternatives = text/html,text/plain
 
-      # Sort by date, newest first, rather than aerc's default of UID order.
-      # owa-bridge now keeps UID order and arrival order in agreement (its sync
-      # window used to number backfill as if it had just arrived, floating April
-      # mail to the top), but sorting on the field we actually mean is both
-      # correct on its own terms and immune to a bridge that gets this wrong.
+      # `sort` is a NO-OP on both accounts and is kept only as a declaration of
+      # intent. aerc's sort needs the IMAP SORT extension, which neither backend
+      # advertises, and it does NOT sort client-side as a fallback: without SORT
+      # it warns "SORT is not supported but requested: list messages by UID" and
+      # issues a plain UID SEARCH (worker/imap/open.go). Verified at runtime on
+      # both accounts — the list is in UID order regardless of this line.
+      #
+      # That is fine today because owa-bridge keeps UID order and arrival order
+      # in agreement (its sync window used to number backfill as if it had just
+      # arrived, floating April mail to the top; fixed by the per-folder floor
+      # watermark). The line stays so that a future backend advertising SORT
+      # sorts on the field we actually mean rather than inheriting UID order by
+      # accident — but do not read it as currently doing anything.
       [ui]
       sort = -r date
+      styleset-name = catppuccin-mocha
+
+      # Fixed 22 for the sender rather than the default 20%: at this terminal
+      # width 20% is ~26 columns, which is more than any real display name needs
+      # and steals it from the subject, the only column whose content is
+      # unbounded. subject takes the remaining space (* is the default width),
+      # date is `=` (fit), so the date column is exactly as wide as the longest
+      # format below and never pads.
+      index-columns = flags>4,name<22,subject,date>=
+
+      # Nerd Font flag icons. All of these are covered by Maple Mono NF (the
+      # ghostty font-family) — checked with fc-match against a charset filter,
+      # which falls through to another font for anything the NF patch lacks.
+      # Deliberately confined to the BMP private-use block (U+E000..U+F8FF, the
+      # Font Awesome 4 set) plus plain geometric shapes: the Material Design
+      # icons at U+F0000+ are drawn double-width and would break the 4-column
+      # flags field, since aerc measures them as one cell.
+      #
+      # read/unread stays geometric (● ○) rather than an envelope, because it is
+      # the flag the eye scans down the whole column for and a filled disc reads
+      # faster at 14px than any pictogram.
+      icon-new        = ●
+      icon-old        = ○
+      icon-replied    = 
+      icon-forwarded  = 
+      icon-flagged    = 
+      icon-attachment = 
+      icon-draft      = 
+      icon-marked     = ◆
+      icon-deleted    = ✕
+
+      # Folder icons, matched on name because the two accounts disagree about
+      # everything: Exchange says "Deleted Items"/"Junk Email"/"Sent Items",
+      # Gmail says "[Gmail]/Trash"/"[Gmail]/Spam"/"[Gmail]/Sent Mail". Focused
+      # and Other (owa-bridge's virtual views over INBOX) share the inbox icon —
+      # the name beside it is what distinguishes them.
+      #
+      # compactDir abbreviates parent components to their initial, so Gmail's
+      # "[Superhuman]/AI/AutoArchived" fits the 22-column sidebar instead of
+      # being truncated to "[Superhuman]/AI/A".
+      dirlist-left = {{switch .Folder (case `^(INBOX|Focused|Other)$` "") (case `Drafts$` "") (case `Sent( Items| Mail)?$` "") (case `(Deleted Items|Trash)$` "") (case `(Junk|Spam)` "") (case `(Archive|All Mail)$` "") (case `(Important|Starred)$` "") (default "")}} {{compactDir .Folder}}
+
+      # Real box-drawing borders. aerc's default border char is a space, so the
+      # sidebar and the message view are separated by a blank column and the
+      # styleset's border color has nothing to draw on.
+      border-char-vertical = "│"
+      border-char-horizontal = "─"
+
+      # Date formats. The stock this-week format is "Jan 02", which is identical
+      # to this-year and so tells you nothing extra about the last seven days —
+      # the useful fact there is the weekday and the time. Older mail gets ISO
+      # rather than "2006 Jan 02" because it sorts and scans as a fixed shape.
+      timestamp-format     = 2006-01-02
+      this-day-time-format = 15:04
+      this-week-time-format = Mon 15:04
+      this-year-time-format = Jan 02
+
+      # Keep three rows of context below the cursor instead of letting it ride
+      # the bottom edge of the list.
+      msglist-scroll-offset = 3
+
+      # Threading ON, client-side on both accounts. Neither backend advertises
+      # the IMAP THREAD extension (owa-bridge: IMAP4rev1 LITERAL+ IDLE NAMESPACE
+      # UNSELECT MOVE ID AUTH=PLAIN; Gmail answers `BAD Unknown command: UID
+      # THREAD` even POST-auth, so this is not a pre-auth artifact), and aerc
+      # builds threads itself when the server can't — lib/msgstore.go:138, no
+      # key needed to force it.
+      #
+      # An earlier version of this comment claimed threading "would fall back to
+      # client-side threading over a full header fetch" and left it off for that
+      # reason. That was WRONG, and the mistake is worth recording: aerc fetches
+      # BODY.PEEK[HEADER] for every visible msglist row whether threading is on
+      # or off. worker/imap/fetch.go builds the fetch item list unconditionally
+      # — there is no threading branch in it. So the header fetch is the price
+      # of the message list, not of threading; threading adds only an in-memory
+      # JWZ pass, measured at 0.23ms over 991 uids on Work and 6-8ms over 5474
+      # on Personal, debounced by client-threads-delay (50ms). cache-headers is
+      # true on both accounts, so each message's headers are a one-time cost.
+      #
+      # The real trade is that threads assemble PROGRESSIVELY: a message whose
+      # header hasn't been fetched yet shows as its own row until it merges, so
+      # the list re-orders slightly while scrolling. Mild here — 793 of 850
+      # conversations in the Work inbox window are single messages. On Personal
+      # aerc's Gmail middleware (worker/middleware/gmailworker.go) widens every
+      # header fetch to the whole X-GM-THRID thread, so siblings arrive together.
+      #
+      # threading-by-subject stays off: subject-only grouping merges unrelated
+      # "Re: Faculty lunch" threads. If the progressive reordering ever grates,
+      # the real fix is server-side — owa-bridge already stores Outlook's
+      # ConversationId for every row (backend.ts:16 -> uidmap.ts:106, 991/991
+      # populated), so THREAD=REFERENCES is <100 lines in commands.ts with no
+      # new I/O, and would match Outlook Web's own threading exactly.
+      threading-enabled = true
 
       [filters]
       text/plain=colorize
@@ -1134,7 +1990,16 @@ in
       message/delivery-status=colorize
       message/rfc822=colorize
       text/html=${aercChawanHtml}
+      application/pdf=!${aercPdfPreview}
       .headers=colorize
+
+      # `o` on a part already reached hylo, via xdg-open and the desktop mime
+      # database (xdg-mime query default application/pdf => hylo.desktop).
+      # Stating it here changes nothing today but makes it independent of
+      # ~/.config/mimeapps.list. aerc extracts the part to a temp file and
+      # appends the path.
+      [openers]
+      application/pdf=hylo
     '';
   };
 
