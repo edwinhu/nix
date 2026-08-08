@@ -1,18 +1,18 @@
 { pkgs }:
 
 let
-  version = "0.1.1";
+  version = "0.1.2";
   
   systemMap = {
     "x86_64-linux" = {
       os = "linux";
       arch = "x64";
-      hash = "sha256-R/TLZ0lYHwyvhS6SQN/LTuIJNpvtzCELLGJo6t9Ad+M=";
+      hash = "sha256-Xn8d/ZOrDDEqTquRs75WluDIAMsEctiuLqo1J9rfNnM=";
     };
     "aarch64-darwin" = {
       os = "darwin";
       arch = "arm64";
-      hash = "sha256-cMrKoUmQ5EBwJU2OOGxtIuGWuBulZ4ndcxTgPzEme44=";
+      hash = "sha256-2EKskZlo8y8iaxv9eB1p2qIjDgFtuZM2aaSM3thN+GM=";
     };
   };
 
