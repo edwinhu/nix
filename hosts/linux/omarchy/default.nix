@@ -833,6 +833,28 @@ exit 0
     text = ''exec python3 ${./files/vimium-toggle.py} "$@"'';
   };
 
+  # Compose HTML mail through himalaya with the account's REAL signature.
+  #
+  # himalaya's `signature` config key (set for both accounts above) is plain text
+  # only, and it actively escapes MML inside a signature — `<#part …>` becomes
+  # `<#!part …>` — so the UVA signature's orange Web | SSRN | Bio hyperlinks
+  # cannot be expressed there. MML in a message BODY is not escaped, so hmail
+  # assembles the template by hand and appends an HTML part. It deliberately
+  # never calls `himalaya template write`, which would insert the plain-text
+  # config signature as well and send both.
+  #
+  # owa-bridge posts the exact bytes himalaya composed to Outlook's /sendmail, so
+  # what this builds is what the recipient sees. Verified work -> personal:
+  # anchors live, rgb(233,150,56) preserved, and Exchange adds a plain-text
+  # alternative part on the way through.
+  #
+  # Drafts by default; --send is required to send.
+  hmail = pkgs.writeShellApplication {
+    name = "hmail";
+    runtimeInputs = [ pkgs.himalaya pkgs.python3 ];
+    text = ''exec bash ${./files/hmail} "$@"'';
+  };
+
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
   # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
   # Superhuman uses the committed iconDir Superhuman.png — a 512px raster rendered
@@ -1071,7 +1093,7 @@ in
       # the Linux overlay — the stock binary can't reach Mesa on non-NixOS.
       # Only listed for this host: `alarm` shares omarchy-packages.nix but is
       # a headless aarch64 box with nothing to stream.
-      ++ [ brscan brscanTui vimiumToggle pkgs.ghostty pkgs.sunshine ];
+      ++ [ brscan brscanTui vimiumToggle hmail pkgs.ghostty pkgs.sunshine ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -1161,6 +1183,16 @@ in
     # nix-profile share where xdg.desktopEntries would place it. TUI.float →
     # Hyprland floats the terminal (see files/.../system.conf). `scanner` is a
     # Papirus icon name.
+    # HTML signatures for `hmail` (see the writeShellApplication above). Kept as
+    # files rather than inlined so they stay editable as HTML, and separate from
+    # the plain-text `signature` in the himalaya config — that one is what a
+    # hand-composed `template write` gets; these are what hmail sends. The work
+    # one was recovered verbatim from sent mail; do not paraphrase it.
+    file.".local/share/himalaya/signatures/work.html".source =
+      ./files/himalaya-signature-work.html;
+    file.".local/share/himalaya/signatures/personal.html".source =
+      ./files/himalaya-signature-personal.html;
+
     file.".local/share/applications/scanner.desktop".text = ''
       [Desktop Entry]
       Type=Application

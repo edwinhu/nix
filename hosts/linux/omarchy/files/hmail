@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# hmail — compose HTML mail through himalaya with the account's real signature.
+#
+# WHY THIS EXISTS
+#
+# himalaya's `signature` config key is plain text only, and it actively escapes
+# MML inside a signature (`<#part …>` becomes `<#!part …>`), so the UVA HTML
+# signature — the one with the orange Web | SSRN | Bio links — cannot be
+# expressed there. MML in a message BODY is not escaped, so an HTML part built
+# by hand works fine. owa-bridge posts the exact bytes himalaya composed to
+# Outlook's /sendmail, so whatever we build here is what the recipient sees.
+#
+# This also sidesteps a collision: `himalaya template write` would insert the
+# plain-text config signature into the body, which alongside an HTML signature
+# would send both. So the template is assembled here from scratch and
+# `template write` is never invoked.
+#
+# DRAFT BY DEFAULT. --send requires an explicit flag, and prints what it did.
+#
+#   hmail -a work -t "someone@x.edu" -s "Subject" -b "Body text."
+#   hmail -a work -t "a@x.edu,b@y.edu" -c "cc@z.edu" -s "Re: thing" -B body.html --html
+#   hmail -a personal -t "x@y.com" -s "Hi" -b "Text." --attach /path/file.pdf
+#   hmail ... --send          # actually sends
+#
+# -b takes plain text: blank lines become paragraphs, and it is HTML-escaped.
+# -B takes a file whose contents are used as the body verbatim (already HTML).
+
+set -euo pipefail
+
+SIGDIR="${HIMALAYA_SIG_DIR:-$HOME/.local/share/himalaya/signatures}"
+ACCOUNT="" TO="" CC="" BCC="" SUBJECT="" BODY="" BODYFILE="" SEND=0 RAWHTML=0
+ATTACHMENTS=()
+
+die() { printf 'hmail: %s\n' "$1" >&2; exit 1; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -a|--account)  ACCOUNT="$2"; shift 2 ;;
+    -t|--to)       TO="$2"; shift 2 ;;
+    -c|--cc)       CC="$2"; shift 2 ;;
+    --bcc)         BCC="$2"; shift 2 ;;
+    -s|--subject)  SUBJECT="$2"; shift 2 ;;
+    -b|--body)     BODY="$2"; shift 2 ;;
+    -B|--body-file) BODYFILE="$2"; shift 2 ;;
+    --html)        RAWHTML=1; shift ;;
+    --attach)      ATTACHMENTS+=("$2"); shift 2 ;;
+    --send)        SEND=1; shift ;;
+    -h|--help)     sed -n '2,30p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *)             die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$ACCOUNT" ]] || die "missing -a/--account (work|personal)"
+[[ -n "$TO"      ]] || die "missing -t/--to — owa-bridge refuses a message with no recipient header"
+[[ -n "$SUBJECT" ]] || die "missing -s/--subject"
+[[ -n "$BODY" || -n "$BODYFILE" ]] || die "missing -b/--body or -B/--body-file"
+
+SIG="$SIGDIR/$ACCOUNT.html"
+[[ -f "$SIG" ]] || die "no signature at $SIG — add one, or set HIMALAYA_SIG_DIR"
+
+for f in ${ATTACHMENTS+"${ATTACHMENTS[@]}"}; do
+  [[ -f "$f" ]] || die "attachment not found: $f"
+done
+
+# Plain text -> HTML paragraphs, escaped. A body passed with --html or -B on an
+# .html file is trusted as-is.
+render_body() {
+  if [[ -n "$BODYFILE" ]]; then
+    cat "$BODYFILE"
+  elif [[ $RAWHTML -eq 1 ]]; then
+    printf '%s\n' "$BODY"
+  else
+    printf '%s\n' "$BODY" | python3 -c '
+import html, sys
+text = sys.stdin.read().strip("\n")
+for para in text.split("\n\n"):
+    para = para.strip("\n")
+    if para:
+        print("<p>" + html.escape(para).replace("\n", "<br>") + "</p>")
+'
+  fi
+}
+
+TMP="$(mktemp -t hmail.XXXXXX)"
+trap 'rm -f "$TMP"' EXIT
+
+{
+  printf 'To: %s\n' "$TO"
+  [[ -n "$CC"  ]] && printf 'Cc: %s\n' "$CC"
+  [[ -n "$BCC" ]] && printf 'Bcc: %s\n' "$BCC"
+  printf 'Subject: %s\n' "$SUBJECT"
+  printf '\n'
+  printf '<#part type=text/html>\n'
+  render_body
+  printf '<div><br></div>\n'
+  cat "$SIG"
+  printf '<#/part>\n'
+  for f in ${ATTACHMENTS+"${ATTACHMENTS[@]}"}; do
+    printf '<#part filename=%s disposition=attachment>\n' "$f"
+  done
+} > "$TMP"
+
+if [[ $SEND -eq 1 ]]; then
+  himalaya template send -a "$ACCOUNT" < "$TMP"
+  printf 'hmail: SENT via %s to %s\n' "$ACCOUNT" "$TO" >&2
+  himalaya envelope list -a "$ACCOUNT" -f sent -s 1 2>/dev/null | tail -3
+else
+  himalaya template save -a "$ACCOUNT" -f drafts < "$TMP"
+  printf 'hmail: saved as a DRAFT (add --send to send)\n' >&2
+fi
