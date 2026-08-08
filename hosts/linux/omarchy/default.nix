@@ -2015,6 +2015,25 @@ in
       email = "ehu@law.virginia.edu"
       display-name = "Edwin Hu"
 
+      # Plain-text rendering of the Outlook/Superhuman HTML signature that this
+      # mailbox already sends. himalaya's `signature` is plain text only: it is
+      # appended verbatim to the MML template body, and MML markers inside it
+      # are actively escaped (<#part> is rewritten to <#!part>), so the original
+      # HTML — including the Web/SSRN/Bio hyperlinks — cannot be reproduced
+      # here. The link targets are spelled out instead of being hidden behind
+      # anchor text. signature-delim is emptied because the Outlook signature
+      # has no "-- " RFC delimiter above it.
+      signature = """
+      Best,
+
+      Edwin Hu
+      Associate Professor of Law
+      University of Virginia School of Law
+      ehu@law.virginia.edu
+      Web: http://edwinhu.github.io | SSRN: https://papers.ssrn.com/sol3/cf_dev/AbsByAuth.cfm?per_id=1889790 | Bio: https://www.law.virginia.edu/faculty/profile/vwh7mb/3263653
+      """
+      signature-delim = ""
+
       backend.type = "imap"
       backend.host = "127.0.0.1"
       backend.port = 1143
@@ -2040,6 +2059,15 @@ in
       [accounts.personal]
       email = "eddyhu@gmail.com"
       display-name = "Edwin Hu"
+
+      # signature-delim defaults to "-- \n" (the RFC 3676 sig delimiter), which
+      # would put a "-- " line above "Best,". Emptied so the signature reads
+      # exactly as the two lines below.
+      signature = """
+      Best,
+      Eddy
+      """
+      signature-delim = ""
 
       backend.type = "imap"
       backend.host = "imap.gmail.com"
