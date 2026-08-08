@@ -1,18 +1,18 @@
 { pkgs }:
 
 let
-  version = "0.1.0";
+  version = "0.1.1";
   
   systemMap = {
     "x86_64-linux" = {
       os = "linux";
       arch = "x64";
-      hash = "sha256-NEZVbHugREbycFo5UWa10x+fmgPxmYHftN34rYiFNVE=";
+      hash = "sha256-vByuH8/IrMXrwdzbojf+HGMvgqGPZFB/hSMSGHIJ/yY=";
     };
     "aarch64-darwin" = {
       os = "darwin";
       arch = "arm64";
-      hash = "sha256-rrpzTbo9a5vnSz2lnK2HJMH6zDqpPVwXhcqmCE7QTgE=";
+      hash = "sha256-r6svV1TDh7kh36Y976/IHPJEJtR7NjdtLWNR9V0XcH4=";
     };
   };
 
@@ -28,6 +28,11 @@ in pkgs.stdenv.mkDerivation {
   };
 
   dontUnpack = true;
+
+  # `bun build --compile` appends the bundled entrypoint to the bun runtime.
+  # strip/patchelf discard it, leaving a bare bun that prints its own help.
+  dontStrip = true;
+  dontPatchELF = true;
 
   installPhase = ''
     mkdir -p $out/bin
