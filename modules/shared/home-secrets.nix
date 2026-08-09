@@ -50,9 +50,12 @@ in
     # App integration prompts on every single call and has no session cache; a
     # service account is the only headless path. Scope is deliberately narrow:
     # 1Password refuses to grant a service account the Private or the built-in
-    # Shared vault, so this token sees ONLY the "Automation" vault. Anything a
-    # script needs promptlessly has to be copied there. Expires 90 days from
-    # issue (2026-08-08) -- 1Password caps --expires-in at 2160 hours.
+    # Shared vault, so this token sees ONLY the "Shared with Agents" vault.
+    # Anything a script needs promptlessly has to be copied there.
+    #
+    # NON-EXPIRING. Mint it in the WEB UI, not with `op service-account create`:
+    # the CLI's --expires-in is capped at 2160 hours (90 days) and has no "never"
+    # option, so a CLI-minted token silently becomes a time bomb.
     op-service-account-token = {
       file = "${nix-secrets}/op-service-account-token.age";
       mode = "400";
