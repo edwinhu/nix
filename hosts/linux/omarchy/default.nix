@@ -1651,6 +1651,20 @@ in
       encoder = vaapi
       min_log_level = 2
       csrf_allowed_origins = https://100.122.125.84,https://omarchy.tailc143b.ts.net,https://omarchy
+
+      # `sunshine --creds` FAILS SILENTLY without this. Unset, it resolves the
+      # credentials path somewhere unwritable, prints "New credentials have been
+      # created", exits 0, and writes nothing -- so the web UI has no account to
+      # authenticate against and every login is rejected. Point it at a real file.
+      credentials_file = ${config.home.homeDirectory}/.config/sunshine/credentials.json
+
+      # Sunshine gates the web UI and the pairing endpoint by ORIGIN, defaulting
+      # to `lan`. Tailscale addresses are 100.64.0.0/10 (CGNAT), not RFC1918, so
+      # a tailnet client is classified WAN and refused BEFORE the password is even
+      # checked -- which reads exactly like wrong credentials. Both keys are
+      # needed: web_ui to log in, pin to submit Moonlight's pairing code.
+      origin_web_ui_allowed = wan
+      origin_pin_allowed = wan
     '';
   };
 

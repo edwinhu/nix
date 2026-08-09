@@ -46,6 +46,17 @@ in
       file = "${nix-secrets}/raindrop-token.age";
       mode = "400";
     };
+    # 1Password service account token, for `op` WITHOUT the desktop-app prompt.
+    # App integration prompts on every single call and has no session cache; a
+    # service account is the only headless path. Scope is deliberately narrow:
+    # 1Password refuses to grant a service account the Private or the built-in
+    # Shared vault, so this token sees ONLY the "Automation" vault. Anything a
+    # script needs promptlessly has to be copied there. Expires 90 days from
+    # issue (2026-08-08) -- 1Password caps --expires-in at 2160 hours.
+    op-service-account-token = {
+      file = "${nix-secrets}/op-service-account-token.age";
+      mode = "400";
+    };
     # Google app password for the personal Gmail account (eddyhu@gmail.com),
     # read by aerc's source-cred-cmd/outgoing-cred-cmd and by himalaya's
     # backend.auth.cmd. The work account needs nothing here — it goes through
@@ -163,6 +174,7 @@ in
     LSEG_CREDENTIALS_FILE = "${tempDir}/lseg-credentials";
     BEEPER_ACCESS_TOKEN_FILE = "${tempDir}/beeper-access-token";
     RAINDROP_TOKEN_FILE = "${tempDir}/raindrop-token";
+    OP_SERVICE_ACCOUNT_TOKEN_FILE = "${tempDir}/op-service-account-token";
     PERMACC_API_KEY_FILE = "${tempDir}/permacc-api-key";
     AERC_GMAIL_APP_PASSWORD_FILE = "${tempDir}/aerc-gmail-app-password";
     WEBHOOK_SECRET_FILE = "${tempDir}/webhook-secret";
@@ -184,7 +196,20 @@ in
     keyFile = if pkgs.stdenv.isDarwin
               then "$(getconf DARWIN_USER_TEMP_DIR)agenix/gemini-api-key"
               else "\${XDG_RUNTIME_DIR}/agenix/gemini-api-key";
+    # `op` reads OP_SERVICE_ACCOUNT_TOKEN as the VALUE, so the *_FILE
+    # indirection used above cannot work for it -- export the token itself.
+    opTokenFile = if pkgs.stdenv.isDarwin
+              then "$(getconf DARWIN_USER_TEMP_DIR)agenix/op-service-account-token"
+              else "\${XDG_RUNTIME_DIR}/agenix/op-service-account-token";
   in ''
+    if [ -r "${opTokenFile}" ]; then
+      OP_SERVICE_ACCOUNT_TOKEN="$(tr -d '\n' < "${opTokenFile}")"
+      if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+        export OP_SERVICE_ACCOUNT_TOKEN
+      else
+        unset OP_SERVICE_ACCOUNT_TOKEN
+      fi
+    fi
     if [ -r "${keyFile}" ]; then
       GEMINI_API_KEY="$(tr -d '\n' < "${keyFile}")"
       if [ -n "$GEMINI_API_KEY" ]; then
@@ -205,6 +230,7 @@ in
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
     get-beeper-access-token = "cat $BEEPER_ACCESS_TOKEN_FILE";
     get-raindrop-token = "cat $RAINDROP_TOKEN_FILE";
+    get-op-service-account-token = "cat $OP_SERVICE_ACCOUNT_TOKEN_FILE";
     get-permacc-api-key = "cat $PERMACC_API_KEY_FILE";
     get-aerc-gmail-app-password = "cat $AERC_GMAIL_APP_PASSWORD_FILE";
     get-webhook-secret = "cat $WEBHOOK_SECRET_FILE";
