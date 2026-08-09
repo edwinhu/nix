@@ -507,18 +507,25 @@
                     exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/obsidian "$@"
                   '';
                   cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
+                  # No obsidian-cli release asset for aarch64-linux, and an
+                  # unbuildable path here aborts the whole rebuild. Where it is
+                  # missing, ship the stock package's own bin/obsidian-cli.
+                  cliSupported = builtins.elem prev.stdenv.hostPlatform.system
+                    [ "x86_64-linux" "aarch64-darwin" ];
                 in prev.symlinkJoin {
                   name = "obsidian-nixgl-${base.version or "unknown"}";
-                  paths = [
+                  paths = prev.lib.optional cliSupported
                     (prev.writeShellScriptBin "obsidian-cli" ''
                       export OBSIDIAN_BINARY="''${OBSIDIAN_BINARY:-${gui}/bin/obsidian}"
                       exec ${cli}/bin/obsidian-cli "$@"
                     '')
+                  ++ [
                     gui
                     base
                   ];
                   meta = base.meta or {};
-                  passthru = { unwrapped = base; inherit cli; };
+                  passthru = { unwrapped = base; }
+                    // prev.lib.optionalAttrs cliSupported { inherit cli; };
                 };
                 # openwhispr — local dictation + AI meeting notes, the Linux
                 # stand-in for the macOS-only granola cask. Fetched as the

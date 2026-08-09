@@ -61,8 +61,7 @@ with pkgs; [
   # (each tool manages its own auto-updates; nix just bundles the bootstrap script)
   # omniwm: copied to /Applications via modules/darwin/defaults.nix postActivation
   (import ./nlm.nix { inherit pkgs; })
-  (import ./scholar.nix { inherit pkgs; })
-  (import ./consensus.nix { inherit pkgs; })
+  # scholar, consensus: appended below — no aarch64-linux release asset upstream.
   gws
 
   # Text and terminal utilities
@@ -109,4 +108,11 @@ with pkgs; [
   xan
   zellij
   zoxide
+]
+# Prebuilt-binary CLIs whose upstream releases cover only these systems; including
+# them elsewhere aborts the whole rebuild. Drop the guard once a release ships an
+# asset for the new system and its systemMap gains an entry.
+++ lib.optionals (builtins.elem pkgs.stdenv.hostPlatform.system [ "x86_64-linux" "aarch64-darwin" ]) [
+  (import ./scholar.nix { inherit pkgs; })
+  (import ./consensus.nix { inherit pkgs; })
 ]
