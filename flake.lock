@@ -403,11 +403,11 @@
     "nix-secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1786115604,
-        "narHash": "sha256-BUsu4wISt1uNAGkcVkfzM7/8eOiPbNxmzsCJfNDdhBQ=",
+        "lastModified": 1786246591,
+        "narHash": "sha256-h1bghVsPi9wgmYK0ygjMcUP/m9NcrnLFNC/NTfr/nw0=",
         "ref": "refs/heads/main",
-        "rev": "8435e84eb893621e2b81ab78fc754072922c8b09",
-        "revCount": 35,
+        "rev": "01422627ad3adecc66a21f1fb184b26a2c7da10c",
+        "revCount": 37,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
       },
@@ -529,11 +529,11 @@
     "owa-bridge-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1786139211,
-        "narHash": "sha256-Iqn2Yscq0fbWniaAuqogssojKY/W9hfMDw1MTyGhS3I=",
+        "lastModified": 1786292812,
+        "narHash": "sha256-1K4iGNi/ZDV2cEY2WoOYrjAS7U/ykRL6CCAjOFC2mYA=",
         "ref": "refs/heads/main",
-        "rev": "0fb287ae29f6f855e36291eec54b3170c5d0fd35",
-        "revCount": 6,
+        "rev": "8d44c2de4f93928ca1166ac9a4b1b15d72df215b",
+        "revCount": 7,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/owa-bridge.git"
       },
