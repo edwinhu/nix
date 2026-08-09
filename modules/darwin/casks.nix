@@ -24,6 +24,7 @@ _:
 
   # Utility Tools
   "1password"
+  "1password-cli"  # `op`; must be the vendor binary for desktop-app integration
   "blip"
   "karabiner-elements"
   # "claude"  # Managed by nix run .#claude-desktop-update (Homebrew cask lags behind)

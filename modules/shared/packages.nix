@@ -24,7 +24,10 @@ with pkgs; [
   zip
 
   # Encryption and security tools
-  _1password-cli       # `op` — 1Password CLI (GUI installed via cask on macOS, AUR on Omarchy)
+  # `op` is NOT a nix package: desktop-app integration only accepts a CLI binary
+  # the app itself vouches for (setgid `onepassword-cli` on Linux, signed on
+  # macOS). Ships with the vendor install instead — pacman `1password-cli` on
+  # Omarchy, the `1password-cli` cask on macOS.
   age
   age-plugin-yubikey   # YubiKey-backed age identities for agenix
   gnupg
