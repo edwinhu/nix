@@ -21,6 +21,8 @@ SCRIPT_URLS = {
         "https://gist.githubusercontent.com/edwinhu/14c99c2fba85dc519b837c6281506332/raw/lseg-workspace-banner.user.js",
     "vitalsource-readwise-sync.user.js":
         "https://gist.githubusercontent.com/edwinhu/100a4adf3665aa10831a20357d340721/raw/vitalsource-readwise-sync.user.js",
+    "casebookconnect-readwise-sync.user.js":
+        "https://gist.githubusercontent.com/edwinhu/267354686b69f2c1be81027e786259fd/raw/casebookconnect-readwise-sync.user.js",
 }
 
 def _h(x: str) -> str:
