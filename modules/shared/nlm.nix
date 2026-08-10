@@ -11,19 +11,25 @@
 # and copy the "got:" value from the error (src hash first, then vendorHash).
 pkgs.buildGoModule rec {
   pname = "nlm";
-  version = "unstable-2026-06-14";
+  version = "unstable-2026-07-31";
 
   src = pkgs.fetchFromGitHub {
     owner = "tmc";
     repo = "nlm";
-    rev = "c19fbf7942098297615d1dd8d3ea3e34725c175a";
-    hash = "sha256-dKt0U6HzZqrO0xWZaTNtmJbso52JwOL+Mr2gj5yxeQU=";
+    rev = "23a4c4540f8fa6897397b9f688003bb774328914";
+    hash = "sha256-2Ij7VUrCnzg8L7tl0MHa2h3hTj/Bo8ta0TUzwOj7+V4=";
   };
 
-  vendorHash = "sha256-G6CqGSKTwEvJB6CKNLMMgQfA4T5kDzMlQZcU/Xa+BlI=";
+  vendorHash = "sha256-Td8WYx2LnF6F69aZm7LwVGA+Q77bBeUJ4qx3H3gwK7Q=";
 
   # Trim the test/example surface; we only ship the CLI.
   subPackages = [ "cmd/nlm" ];
+
+  # The chat render-cache test mkdirs under $HOME, which is the unwritable
+  # /homeless-shelter in the sandbox.
+  preCheck = ''
+    export HOME=$(mktemp -d)
+  '';
 
   meta = with pkgs.lib; {
     description = "CLI and MCP server for Google NotebookLM";
