@@ -635,6 +635,82 @@ fi
 exit 0
   '';
 
+  # aerc's mail-received hook: a toast carrying sender, subject and a body
+  # preview.
+  #
+  # The hook fires only for the SELECTED folder of the SELECTED account tab, so
+  # this notifies about the two folders aerc actually sits in (accounts.conf
+  # sets `default = Focused` for Work and `[Gmail]/Important` for Personal).
+  # Navigating to Archive or Junk goes quiet rather than notifying about mail
+  # the user is already looking at.
+  #
+  # There is no body variable in the hook environment (only account, folder,
+  # from, subject and message-id), so the preview is fetched back out of the
+  # folder. `--preview` is load-bearing: a plain `message read` sets the seen
+  # flag, which would mean notifying about mail marks it read.
+  aercMailNotify = pkgs.writeShellScript "aerc-mail-notify" ''
+    set -u
+
+    case "$AERC_ACCOUNT/$AERC_FOLDER" in
+        Work/Focused|Personal/\[Gmail\]/Important) ;;
+        *) exit 0 ;;
+    esac
+
+    case "$AERC_ACCOUNT" in
+        Work)     acct=work ;;
+        Personal) acct=personal ;;
+        *)        exit 0 ;;
+    esac
+
+    # The newest envelope in the folder is the arrival that fired the hook. The
+    # Message-ID comparison below is what makes that assumption safe when a
+    # reconnect delivers a batch and the hook fires several times at once.
+    id=$(${pkgs.himalaya}/bin/himalaya envelope list -a "$acct" -f "$AERC_FOLDER" -s 1 -o json 2>/dev/null \
+         | ${pkgs.python3}/bin/python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null)
+
+    body=""
+    if [ -n "$id" ]; then
+        body=$(${pkgs.himalaya}/bin/himalaya message read -a "$acct" -f "$AERC_FOLDER" --preview -H Message-ID "$id" 2>/dev/null)
+    fi
+
+    # The python below must stay flush left: nix strips only the COMMON leading
+    # whitespace from an indented string, so an extra level here would survive
+    # into the source and python would reject it.
+    preview=$(printf '%s' "$body" | AERC_MESSAGE_ID="$AERC_MESSAGE_ID" ${pkgs.python3}/bin/python3 -c '
+import os, re, sys
+raw = sys.stdin.read().splitlines()
+want = os.environ.get("AERC_MESSAGE_ID", "").strip().strip("<>")
+seen, lines = "", []
+for ln in raw:
+    if ln.lower().startswith("message-id:"):
+        seen = ln.split(":", 1)[1].strip().strip("<>")
+        continue
+    if ln.startswith(">"):
+        continue
+    if ln.strip():
+        lines.append(ln.strip())
+# Raced by a burst: no preview beats the wrong message body.
+if want and seen and want != seen:
+    sys.exit(0)
+print(re.sub(r"\s+", " ", " ".join(lines))[:160].strip())
+')
+
+    # mako renders Pango markup by default, so an unescaped & or < in a real
+    # subject swallows the rest of the toast.
+    esc() { printf '%s' "$1" | ${pkgs.gnused}/bin/sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+    if [ -n "$preview" ]; then
+        # Continuation flush left on purpose — leading spaces here would be
+        # literal in the toast body.
+        text="<b>$(esc "$AERC_SUBJECT")</b>
+$(esc "$preview")"
+    else
+        text="<b>$(esc "$AERC_SUBJECT")</b>"
+    fi
+
+    ${pkgs.libnotify}/bin/notify-send -a aerc -i mail-unread "$(esc "$AERC_FROM_NAME")" "$text"
+  '';
+
   # aerc's application/pdf filter: extracted text, not a rendered page.
   #
   # This is a deliberate retreat from a working inline image preview, because
@@ -2046,6 +2122,15 @@ in
       # appends the path.
       [openers]
       application/pdf=hylo
+
+      # aerc runs persistently, so a toast is the only signal new mail gives.
+      # `[triggers]`/`new-email` is the OLD spelling and does nothing on 0.21;
+      # hooks get environment variables, not %-specifiers. Fires only for the
+      # selected folder of the selected account tab — see the script for what
+      # that limits, and note it needs an IMAP server that pushes: owa-bridge
+      # advertises IDLE and Gmail supports it, so both accounts do fire.
+      [hooks]
+      mail-received = ${aercMailNotify}
     '';
   };
 
