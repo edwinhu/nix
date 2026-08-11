@@ -2361,6 +2361,34 @@ in
       };
       Service = {
         Type = "simple";
+        # graphical-session.target is reached long before the CDP browser is up
+        # and the network is usable, so a cold boot fails the token preflight
+        # every 30s for minutes (16 hard failures on 2026-08-11, 17:36–17:44).
+        # Wait for the two preconditions the broker cannot supply for itself.
+        #
+        # Deliberately NOT a check for an outlook.office.com tab. The broker
+        # holds a token cache and opens its own tab when none is there, so it
+        # starts fine with no such tab present — gating on one would fail the
+        # unit in a state where it works. These two probes only assert what was
+        # actually absent at boot. Timing out exits non-zero, leaving the
+        # Restart policy below in charge: this quiets churn, it does not mask a
+        # browser that never comes up.
+        # Loop and sleep are bash builtins / absolute paths on purpose: a unit
+        # gets no useful PATH, so a bare `seq` or `sleep` would abort the probe
+        # before it ever polled.
+        ExecStartPre = "${pkgs.writeShellScript "owa-bridge-await-preconditions" ''
+          for ((i = 0; i < 60; i++)); do
+            if ${pkgs.curl}/bin/curl -fsS --max-time 2 \
+                 http://127.0.0.1:9222/json/version >/dev/null 2>&1 \
+               && ${pkgs.curl}/bin/curl -sS --max-time 5 --head \
+                 https://outlook.office.com/ >/dev/null 2>&1; then
+              exit 0
+            fi
+            ${pkgs.coreutils}/bin/sleep 5
+          done
+          echo "owa-bridge: CDP browser or outlook.office.com unreachable after 5 minutes" >&2
+          exit 1
+        ''}";
         # No CDP_PORT: the token broker discovers its own endpoint, same as
         # every other OWA-backed tool here. The binary is self-contained (bun
         # runtime embedded), so it needs no PATH or working directory either.
