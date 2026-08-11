@@ -90,6 +90,25 @@ let
     fi
     exec uv run ${paperpileSync} "$@"
   '';
+  # Both timer-driven jobs below fire at boot (paperpile's Persistent=true
+  # catch-up, sweep's OnStartupSec=2min) and both died with "Temporary failure
+  # in name resolution" on 2026-08-11 — the user manager reaches timers.target
+  # long before DNS answers.
+  #
+  # `After/Wants = network-online.target` does NOT prevent this: that target is
+  # a SYSTEM unit, and in the user manager it resolves to not-found, so the
+  # ordering is silently inert (`systemctl --user list-units --all
+  # network-online.target` shows it). This waiter is what those two lines were
+  # always meant to be.
+  awaitOnline = pkgs.writeShellScript "await-online" ''
+    for ((i = 0; i < 60; i++)); do
+      ${pkgs.curl}/bin/curl -sS --max-time 5 --head https://readwise.io/ >/dev/null 2>&1 && exit 0
+      ${pkgs.coreutils}/bin/sleep 5
+    done
+    echo "await-online: no DNS/HTTPS after 5 minutes" >&2
+    exit 1
+  '';
+
   # webhook server: uvicorn under pixi, bound to all interfaces on :8000.
   uvicornArgs = [ "run" "uvicorn" "src.webhook:app" "--host" "0.0.0.0" "--port" webhookPort ];
 
@@ -222,6 +241,7 @@ in
       };
       Service = {
         Type = "oneshot";
+        ExecStartPre = "${awaitOnline}";
         WorkingDirectory = readwiseDir;
         Environment = [ "PATH=${linuxPath}" "HOME=${home}" ];
         EnvironmentFile = envFile;
@@ -248,11 +268,10 @@ in
     systemd.user.services.paperpile-readwise-sync = lib.mkIf cfg.enablePaperpile {
       Unit = {
         Description = "Paperpile → Readwise highlight sync (incremental, rclone + PyMuPDF)";
-        After = [ "network-online.target" ];
-        Wants = [ "network-online.target" ];
       };
       Service = {
         Type = "oneshot";
+        ExecStartPre = "${awaitOnline}";
         WorkingDirectory = "%h";
         # %t = XDG_RUNTIME_DIR; agenix drops the decrypted token at %t/agenix/.
         Environment = [ "PATH=${linuxPath}" "HOME=${home}" "READWISE_TOKEN_FILE=%t/agenix/readwise-token" ];
