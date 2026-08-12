@@ -8,6 +8,25 @@
     # that our docbuilder derivation extends). Safe to fold into nixpkgs on
     # the next full lock update.
     nixpkgs-onlyoffice.url = "github:nixos/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
+    # Newer nixpkgs pin for himalaya only: the main lock carries 1.2.0, whose
+    # CLI and config schema v2 removed wholesale (no `template` tree, `-f` →
+    # `-m`, `-o json` → `--json`, `backend.*` → `imap.*`/`smtp.*`). Pinned
+    # rather than folded into nixpkgs so the migration is one deliberate step
+    # instead of a side effect of the next `nix flake update`. Binary-cached.
+    nixpkgs-himalaya.url = "github:nixos/nixpkgs/643809054d65fdd466a63e3155b8c498cb483c04";
+    # mml: the MML template/compile/interpret pipeline himalaya v2 un-bundled.
+    # Not in nixpkgs at any pin, so it comes from upstream's own flake.
+    mml = {
+      url = "github:pimalaya/mml";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # ortie: the OAuth 2.0 broker himalaya v2 un-bundled. Holds the UVA Graph
+    # refresh token and mints access tokens for the work account's msgraph
+    # backend. Not in nixpkgs.
+    ortie = {
+      url = "github:pimalaya/ortie";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -88,7 +107,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, owa-bridge-src, herdr } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, owa-bridge-src, herdr } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -385,6 +404,13 @@
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
+                # himalaya v2 + its un-bundled composer (see the inputs above).
+                # Both are referenced as plain `pkgs.himalaya` / `pkgs.mml` by
+                # the omarchy host module, so the overlay is the only place the
+                # pin appears.
+                himalaya = (import inputs.nixpkgs-himalaya { system = prev.stdenv.hostPlatform.system; }).himalaya;
+                mml = inputs.mml.packages.${info.system}.default;
+                ortie = inputs.ortie.packages.${info.system}.default;
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                 # herdr — terminal multiplexer for agents (see the input above).

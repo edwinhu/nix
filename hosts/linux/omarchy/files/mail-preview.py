@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Render a mail's HTML the way the recipient will see it, inline in the terminal.
 
-    hmail-preview FILE.eml            # or an hmail MML template
-    hmail-preview -a work 1234        # an existing message/draft, -f defaults to drafts
-    hmail-preview --html < body.html  # bare HTML fragment on stdin
+    mail-preview FILE.eml            # or an MML template
+    mail-preview -a work 1234        # an existing message/draft, -m defaults to drafts
+    mail-preview --html < body.html  # bare HTML fragment on stdin
 
 This is a REAL render -- headless Chromium screenshots the HTML, chafa paints
 the PNG into the terminal -- not a text dump. That is the whole point: chawan
@@ -58,7 +58,7 @@ PAGE = """<!doctype html><meta charset="utf-8"><style>
 
 
 def from_mml(text):
-    """Pull headers + the text/html part out of an hmail MML template."""
+    """Pull headers + the text/html part out of an MML template."""
     head, _, body = text.partition("\n\n")
     parts = re.findall(r"<#part type=text/html>\n(.*?)(?:<#/part>|\Z)", body, re.S)
     return head, "\n".join(parts) if parts else body
@@ -78,7 +78,7 @@ def from_eml(raw):
 
 
 def decode_mml_encodings(text):
-    """hmail templates are 7-bit clean, but a fetched draft can come back
+    """MML templates are 7-bit clean, but a fetched draft can come back
     quoted-printable inside the MML wrapper (himalaya does not always decode)."""
     if re.search(r"=[0-9A-F]{2}", text) and "=\n" in text:
         try:
@@ -107,14 +107,14 @@ def escape(s):
 
 def render(head, body, out_png):
     if CHROMIUM is None:
-        sys.exit("hmail-preview: no chromium on PATH — cannot render")
+        sys.exit("mail-preview: no chromium on PATH — cannot render")
     page = PAGE.format(w=WIDTH, headers=header_html(head), body=body)
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False) as fh:
         fh.write(page)
         html_path = fh.name
     # A throwaway profile, or chromium attaches to the running browser's
     # profile (the CDP one on :9222) and the screenshot never happens.
-    profile = tempfile.mkdtemp(prefix="hmail-preview-profile.")
+    profile = tempfile.mkdtemp(prefix="mail-preview-profile.")
     try:
         # Chromium's --screenshot captures EXACTLY the window, not the page: an
         # 800px window over a 300px message yields 500px of empty gray, and over
@@ -151,7 +151,7 @@ def render(head, body, out_png):
         os.unlink(html_path)
         shutil.rmtree(profile, ignore_errors=True)
     if not os.path.exists(out_png) or os.path.getsize(out_png) == 0:
-        sys.exit("hmail-preview: chromium produced no screenshot")
+        sys.exit("mail-preview: chromium produced no screenshot")
     crop_to_content(out_png)
 
 
@@ -185,6 +185,45 @@ def crop_to_content(png):
         pass
 
 
+def show_chawan(head, body):
+    """Text render, for use INSIDE aerc (`:pipe -m`).
+
+    aerc's own text/html filter is chawan, so this is the same renderer the
+    message view uses -- colors, bold, links and table layout survive; images
+    and fonts do not. It exists because no pixel render works in an aerc
+    terminal tab: chafa -f kitty hangs on a /dev/tty probe aerc never answers,
+    and -f sixel draws nothing on this Ghostty build.
+    """
+    cha = os.environ.get("CHA_HTML")
+    cmd = [cha] if cha else ["cha", "-d", "-T", "text/html", "-I", "UTF-8", "-O", "UTF-8"]
+    if not cha and not shutil.which("cha"):
+        sys.exit("mail-preview: no chawan (cha) on PATH")
+    for line in head.split("\n"):
+        name, _, value = line.partition(":")
+        if name.strip().lower() in ("from", "to", "cc", "bcc", "subject") and value.strip():
+            print(f"{name.strip()}: {value.strip()}")
+    print()
+    sys.stdout.flush()
+    subprocess.run(cmd, input=body, text=True, check=False)
+
+
+def show_external(png):
+    """Open the PNG in its own window.
+
+    This is the ONLY preview that works from inside aerc: aerc's embedded
+    terminal parses and DISCARDS kitty graphics escapes, so chafa output piped
+    into an aerc terminal tab is silently blank (same constraint the PDF filter
+    works around via herdr's pane-graphics).
+    """
+    viewer = next((b for b in ("imv", "hylo", "xdg-open") if shutil.which(b)), None)
+    if viewer is None:
+        print(f"rendered: {png}")
+        return
+    subprocess.Popen([viewer, png], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
 def show(png):
     if shutil.which("chafa"):
         # chafa picks kitty/sixel/symbols by probing the terminal; --scale max
@@ -195,28 +234,36 @@ def show(png):
         print(f"(no chafa) rendered: {png}")
 
 
-def fetch(account, folder, msgid):
-    with tempfile.TemporaryDirectory() as d:
-        out = os.path.join(d, "msg.eml")
-        r = subprocess.run(
-            ["himalaya", "message", "export", "-F", "-a", account,
-             "-f", folder, "-d", out, msgid],
-            capture_output=True, text=True, timeout=120,
-        )
-        if not os.path.exists(out):
-            sys.exit(f"hmail-preview: could not export {msgid} from {folder}: "
-                     f"{r.stderr.strip() or r.stdout.strip()}")
-        with open(out, errors="replace") as fh:
-            return fh.read()
+def fetch(account, mailbox, msgid):
+    """The raw RFC 5322 bytes of one message, straight off himalaya's stdout.
+
+    `message read --raw` is the v2 replacement for v1's `message export -F -d
+    <dir>`: it dumps to stdout, so there is no temp dir to manage and no file to
+    wait for. `read` without --raw would render himalaya's own header+text view,
+    which is not parseable as MIME.
+    """
+    r = subprocess.run(
+        ["himalaya", "message", "read", "--raw", "-a", account,
+         "-m", mailbox, msgid],
+        capture_output=True, text=True, errors="replace", timeout=120,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        sys.exit(f"mail-preview: could not read {msgid} from {mailbox}: "
+                 f"{r.stderr.strip() or r.stdout.strip()}")
+    return r.stdout
 
 
 def main():
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument("target", nargs="?", help="file path, or message id with -a")
     ap.add_argument("-a", "--account")
-    ap.add_argument("-f", "--folder", default="drafts")
+    ap.add_argument("-m", "--mailbox", default="drafts")
     ap.add_argument("--html", action="store_true", help="stdin is a bare HTML fragment")
     ap.add_argument("-o", "--out", help="where to write the PNG")
+    ap.add_argument("--open", action="store_true",
+                    help="open in an image viewer instead of painting in the terminal")
+    ap.add_argument("--text", action="store_true",
+                    help="render through chawan instead (works inside aerc)")
     args = ap.parse_args()
 
     if args.html or args.target in (None, "-"):
@@ -224,16 +271,22 @@ def main():
         if not args.html:
             head, body = from_mml(body) if "<#part" in body else from_eml(body)
     elif args.account and not os.path.exists(args.target):
-        head, body = from_eml(fetch(args.account, args.folder, args.target))
+        head, body = from_eml(fetch(args.account, args.mailbox, args.target))
     else:
         with open(args.target, errors="replace") as fh:
             raw = fh.read()
         head, body = from_mml(raw) if "<#part" in raw else from_eml(raw)
 
     body = decode_mml_encodings(body)
-    png = args.out or tempfile.mkstemp(prefix="hmail-preview.", suffix=".png")[1]
+    if args.text:
+        show_chawan(head, body)
+        return
+    png = args.out or tempfile.mkstemp(prefix="mail-preview.", suffix=".png")[1]
     render(head, body, png)
-    show(png)
+    if args.open or not sys.stdout.isatty():
+        show_external(png)
+    else:
+        show(png)
     print(f"\nrendered: {png}", file=sys.stderr)
 
 

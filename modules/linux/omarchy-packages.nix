@@ -73,11 +73,18 @@ let
     # Local Wayland dictation (gh:edwinhu/superwhisper-linux)
     swlinux
 
-    # Mail. The UVA tenant grants no IMAP/SMTP, so both clients read work mail
-    # through owa-bridge's loopback IMAP (a user service brings it up) and send
-    # through its sendmail(1) shim; personal Gmail goes direct. aerc is the TUI,
+    # Mail. The UVA tenant refuses IMAP/SMTP but DOES issue Mail-scoped
+    # Microsoft Graph tokens, so the two clients take different work paths:
+    # himalaya goes direct to Graph (ortie brokers the token), while aerc —
+    # which speaks IMAP only — still reads through owa-bridge's loopback IMAP
+    # (a user service brings it up) and sends through its sendmail(1) shim.
+    # Personal Gmail goes direct for both. aerc is the TUI,
     # himalaya the scriptable one. Configs for both are declared in the omarchy
     # host, which also replaced superhuman-cli for this mailbox.
+    #
+    # himalaya is pinned to v2 by the Linux overlay in flake.nix. v2 is a pure
+    # protocol client: composing and rendering moved out to mml, which is why
+    # the two are listed together.
     #
     # aerc here REPLACES pacman's (`sudo pacman -Rns aerc`): a second copy in
     # /usr/bin would shadow-or-be-shadowed by PATH order, and nix owns the
@@ -85,6 +92,11 @@ let
     # is for tools the base install ships and we defer to.
     aerc
     himalaya
+    mml
+    # ortie brokers the work account's Microsoft Graph token. himalaya calls it
+    # by store path from its config; this entry is for the bootstrap by hand
+    # (`ortie -a msgraph auth get` / `auth resume`).
+    ortie
 
     # chawan renders aerc's text/html (see aercChawanHtml in the omarchy host).
     # w3m stays even though the filter no longer uses it: aerc's OWN shipped

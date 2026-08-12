@@ -1804,7 +1804,7 @@ in
   # third-party OAuth consent behind an admin, so both clients talk to the
   # owa-bridge user service on 127.0.0.1:1143 instead (see systemd.user.services
   # below) and send through its sendmail(1) shim. Credentials there are ignored
-  # by design: the real one is the OWA token the bridge holds.
+  # by design: the real one is the Graph access token the bridge gets from ortie.
   #
   # [Personal] eddyhu@gmail.com — Gmail allows native IMAP/SMTP, so no bridge.
   # The app password comes from agenix (aerc-gmail-app-password.age), decrypted
@@ -1819,10 +1819,11 @@ in
   xdg.configFile."aerc/accounts.conf" = {
     force = true;
     # The default folder on both accounts is the low-noise view of the inbox,
-    # not the inbox: Exchange's Focused (owa-bridge exposes InferenceClassification
-    # as the virtual folders Focused/Other over INBOX) and Gmail's Priority Inbox
-    # importance marker (already an IMAP folder, [Gmail]/Important). The full
-    # INBOX is one `gm`/folder switch away in both cases.
+    # not the inbox: Exchange's Focused (owa-bridge reads Graph's per-message
+    # `inferenceClassification` and exposes Focused/Other as virtual folders over
+    # INBOX's UID space) and Gmail's Priority Inbox importance marker (already an
+    # IMAP folder, [Gmail]/Important). The full INBOX is one `gm`/folder switch
+    # away in both cases.
     text = ''
       [Work]
       from          = Edwin Hu <ehu@law.virginia.edu>
@@ -2189,17 +2190,15 @@ in
       # Mail-scoped Graph token to the first-party Microsoft Office client via
       # the device-code grant (verified 2026-08-12: `Mail.ReadWrite` and
       # `Mail.Send` both granted, `GET /me/messages` → 200). That kills the
-      # reason the bridge existed for himalaya. Two earlier assumptions turned
-      # out wrong and are recorded so they are not re-litigated:
-      #   - "the tenant grants no IMAP/SMTP/OAuth" — it refuses IMAP/SMTP, but
-      #     not Graph.
-      #   - "reuse owa-bridge's harvested token" — impossible: that one is
-      #     `aud = https://outlook.office.com`, and the only Graph-audience
-      #     token in the OWA session carries no Mail scope at all (403).
+      # reason the bridge existed for himalaya. One earlier assumption turned
+      # out wrong and is recorded so it is not re-litigated: "the tenant grants
+      # no IMAP/SMTP/OAuth" — it refuses IMAP/SMTP, but not Graph.
       #
       # aerc still uses owa-bridge (it speaks IMAP, not Graph). The bridge is
       # therefore still installed and still a user service — it is just no
-      # longer on himalaya's path.
+      # longer on himalaya's path. Both sit on the SAME credential: the bridge
+      # calls the identical `ortie -a msgraph token show` broker below and
+      # speaks Graph itself, so work mail has exactly one grant behind it.
       [accounts.work]
       default = true
 
@@ -2464,72 +2463,58 @@ in
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
     # owa-bridge: loopback IMAP bridge for the UVA mailbox, so aerc (and
-    # himalaya, and anything else that speaks IMAP) can read and write work mail.
-    # Native IMAP against that tenant is foreclosed — third-party OAuth consent
-    # is admin-gated, first-party client-id borrowing now fails AADSTS65002 — so
-    # this daemon holds the OWA token scraped from the live Outlook Web tab and
-    # translates IMAP to Outlook REST. Long-running, so no timer.
+    # anything else that speaks IMAP) can read and write work mail. Native IMAP
+    # against that tenant is foreclosed — third-party OAuth consent is
+    # admin-gated, first-party client-id borrowing fails AADSTS65002 — so this
+    # daemon translates IMAP to Microsoft Graph. Long-running, so no timer.
     #
-    # Extracted from superhuman-cli, which it has now fully replaced for this
-    # mailbox — it deliberately depends on nothing in that repo. Built from
-    # the owa-bridge-src flake input (modules/shared/owa-bridge.nix), so this
-    # runs a lock-pinned store path, not the ~/projects working tree. The send
-    # half is `owa-bridge sendmail`, invoked by aerc's `outgoing` and
-    # himalaya's sendmail backend, not by this service.
+    # Auth is brokered: the bridge shells out to ortie for a Graph access token,
+    # which ortie mints from the stored refresh token and refreshes by itself
+    # (same broker and same grant as himalaya's msgraph backend above). Nothing
+    # here depends on a browser, a signed-in web tab, or a desktop session.
+    #
+    # Built from the owa-bridge-src flake input (modules/shared/owa-bridge.nix),
+    # so this runs a lock-pinned store path, not the ~/projects working tree.
+    # The send half is `owa-bridge sendmail`, invoked by aerc's `outgoing`, not
+    # by this service.
     #
     # SECURITY: binds 127.0.0.1:1143 and accepts ANY LOGIN credentials — the
-    # real credential is the process's OWA token. startImapd refuses to bind
-    # anything but loopback, so this cannot accidentally be exposed.
+    # real credential is the Graph token the process holds. startImapd refuses
+    # to bind anything but loopback, so this cannot accidentally be exposed.
     { owa-bridge = {
       Unit = {
         Description = "owa-bridge — loopback IMAP bridge for the UVA mailbox";
-        # Needs the CDP browser signed in to Outlook Web, which comes up with
-        # the graphical session.
-        After = [ "graphical-session.target" ];
-        PartOf = [ "graphical-session.target" ];
+        # Graph is the only external dependency, so the network is the only
+        # precondition. Deliberately not tied to the graphical session: the
+        # bridge must serve mail on a headless boot or over SSH too.
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
       };
       Service = {
         Type = "simple";
-        # graphical-session.target is reached long before the CDP browser is up
-        # and the network is usable, so a cold boot fails the token preflight
-        # every 30s for minutes (16 hard failures on 2026-08-11, 17:36–17:44).
-        # Wait for the two preconditions the broker cannot supply for itself.
+        # ABSOLUTE store path, not a bare `ortie`: a systemd user unit gets no
+        # useful PATH. The bridge spawns this command per token fetch and takes
+        # stdout as the bearer; ortie's auto-refresh owns renewal.
         #
-        # Deliberately NOT a check for an outlook.office.com tab. The broker
-        # holds a token cache and opens its own tab when none is there, so it
-        # starts fine with no such tab present — gating on one would fail the
-        # unit in a state where it works. These two probes only assert what was
-        # actually absent at boot. Timing out exits non-zero, leaving the
-        # Restart policy below in charge: this quiets churn, it does not mask a
-        # browser that never comes up.
-        # Loop and sleep are bash builtins / absolute paths on purpose: a unit
-        # gets no useful PATH, so a bare `seq` or `sleep` would abort the probe
-        # before it ever polled.
-        ExecStartPre = "${pkgs.writeShellScript "owa-bridge-await-preconditions" ''
-          for ((i = 0; i < 60; i++)); do
-            if ${pkgs.curl}/bin/curl -fsS --max-time 2 \
-                 http://127.0.0.1:9222/json/version >/dev/null 2>&1 \
-               && ${pkgs.curl}/bin/curl -sS --max-time 5 --head \
-                 https://outlook.office.com/ >/dev/null 2>&1; then
-              exit 0
-            fi
-            ${pkgs.coreutils}/bin/sleep 5
-          done
-          echo "owa-bridge: CDP browser or outlook.office.com unreachable after 5 minutes" >&2
-          exit 1
-        ''}";
-        # No CDP_PORT: the token broker discovers its own endpoint, same as
-        # every other OWA-backed tool here. The binary is self-contained (bun
-        # runtime embedded), so it needs no PATH or working directory either.
+        # The surrounding double quotes are load-bearing. systemd splits an
+        # unquoted Environment= on whitespace and treats each field as its own
+        # assignment, so `-a msgraph token show` would be dropped with only an
+        # "Invalid environment assignment" log line and the bridge would spawn
+        # a bare `ortie` — verified with systemd-analyze verify.
+        Environment = [
+          ''"OWA_BRIDGE_TOKEN_CMD=${lib.getExe pkgs.ortie} -a msgraph token show"''
+        ];
+        # The binary is self-contained (bun runtime embedded), so it needs no
+        # PATH or working directory of its own.
         ExecStart =
           "${pkgs.owa-bridge}/bin/owa-bridge imapd "
           + "--account ehu@law.virginia.edu";
-        # A wedged or signed-out browser makes startup fail; back off rather
-        # than spin, and give up for a while instead of hammering Exchange.
+        # A revoked or unbootstrapped grant makes startup fail; back off rather
+        # than spin, and give up for a while instead of hammering Graph.
         Restart = "on-failure";
         RestartSec = 30;
       };
-      Install.WantedBy = [ "graphical-session.target" ];
+      Install.WantedBy = [ "default.target" ];
     }; }
     # ydotoold: virtual uinput device daemon that `ydotool` talks to over
     # %t/.ydotool_socket. Runs as the user (not root) — /dev/uinput is reachable

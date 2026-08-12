@@ -9,3 +9,4 @@ result
 # Python bytecode cache (e.g. hosts/linux/omarchy/files/*.py)
 __pycache__/
 *.pyc
+.craft/

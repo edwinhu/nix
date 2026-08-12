@@ -26,14 +26,19 @@ CACHE = os.path.join(
     "aerc", "addressbook.tsv",
 )
 
-# (account, folder, field, weight). An address you have WRITTEN to is a far
+# (account, mailbox, field, weight). An address you have WRITTEN to is a far
 # better completion candidate than one that merely wrote to you, hence 5:1 --
 # strong enough that a one-off reply outranks a mailing list you receive weekly.
+#
+# Mailbox ALIASES, not backend-native names: the two accounts are on different
+# backends (work on Microsoft Graph, personal on Gmail IMAP) and spell their
+# folders differently. `[mailbox.alias]` in the himalaya config is what makes
+# `sent` mean `sentitems` on one and `[Gmail]/Sent Mail` on the other.
 SOURCES = [
-    ("work", "Sent Items", "to", 5.0),
-    ("work", "INBOX", "from", 1.0),
-    ("personal", "[Gmail]/Sent Mail", "to", 5.0),
-    ("personal", "INBOX", "from", 1.0),
+    ("work", "sent", "to", 5.0),
+    ("work", "inbox", "from", 1.0),
+    ("personal", "sent", "to", 5.0),
+    ("personal", "inbox", "from", 1.0),
 ]
 
 PAGE_SIZE = 500
@@ -48,11 +53,11 @@ JUNK = re.compile(
 )
 
 
-def envelopes(account, folder):
+def envelopes(account, mailbox):
     try:
         out = subprocess.run(
-            ["himalaya", "envelope", "list", "-a", account, "-f", folder,
-             "-s", str(PAGE_SIZE), "-o", "json"],
+            ["himalaya", "envelope", "list", "-a", account, "-m", mailbox,
+             "-s", str(PAGE_SIZE), "--json"],
             capture_output=True, text=True, timeout=120,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -60,15 +65,32 @@ def envelopes(account, folder):
     if out.returncode != 0:
         return []
     try:
-        return json.loads(out.stdout)
-    except json.JSONDecodeError:
+        # v2 wraps the list in an object; an error is reported as {"error": ...}
+        # with exit 0 in some paths, and .get returns [] for that too.
+        return json.loads(out.stdout).get("envelopes") or []
+    except (json.JSONDecodeError, AttributeError):
         return []
 
 
+def parties(env, field):
+    """The `from`/`to` of a v2 envelope: a LIST of {name, email}.
+
+    v1 gave a single {name, addr} object per field. Both the arity and the
+    address key changed, so this is not a rename -- a `to` with several
+    recipients now contributes all of them.
+    """
+    for p in env.get(field) or []:
+        addr = ((p or {}).get("email") or "").strip().lower()
+        if addr:
+            yield addr, ((p or {}).get("name") or "").strip()
+
+
 def age_days(stamp):
-    # himalaya emits "2026-08-12 17:25+00:00"; the space is not ISO-8601.
+    # v2 emits RFC 3339, e.g. "2026-08-12T17:39:44Z". `fromisoformat` accepts
+    # the trailing Z only from 3.11; map it to +00:00 so older builds agree.
     try:
-        when = datetime.fromisoformat(stamp.replace(" ", "T"))
+        when = datetime.fromisoformat(
+            stamp.replace(" ", "T").replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return 0.0
     if when.tzinfo is None:
@@ -78,20 +100,18 @@ def age_days(stamp):
 
 def index():
     scores, names, seen_at = {}, {}, {}
-    for account, folder, field, weight in SOURCES:
-        for env in envelopes(account, folder):
-            party = env.get(field) or {}
-            addr = (party.get("addr") or "").strip().lower()
-            if not addr or "@" not in addr or addr in OWN or JUNK.search(addr):
-                continue
+    for account, mailbox, field, weight in SOURCES:
+        for env in envelopes(account, mailbox):
             days = age_days(env.get("date", ""))
-            scores[addr] = scores.get(addr, 0.0) + weight * 0.5 ** (days / HALF_LIFE_DAYS)
-            # Keep the display name from the most recent message that carried
-            # one: names go stale (marriage, title in the display name) and the
-            # newest spelling is the one the recipient currently uses.
-            name = (party.get("name") or "").strip()
-            if name and name.lower() != addr and days <= seen_at.get(addr, 1e9):
-                names[addr], seen_at[addr] = name, days
+            for addr, name in parties(env, field):
+                if "@" not in addr or addr in OWN or JUNK.search(addr):
+                    continue
+                scores[addr] = scores.get(addr, 0.0) + weight * 0.5 ** (days / HALF_LIFE_DAYS)
+                # Keep the display name from the most recent message that carried
+                # one: names go stale (marriage, title in the display name) and the
+                # newest spelling is the one the recipient currently uses.
+                if name and name.lower() != addr and days <= seen_at.get(addr, 1e9):
+                    names[addr], seen_at[addr] = name, days
 
     if not scores:
         return False  # every source failed (offline) -- keep the old cache
