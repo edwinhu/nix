@@ -646,8 +646,13 @@ exit 0
   #
   # There is no body variable in the hook environment (only account, folder,
   # from, subject and message-id), so the preview is fetched back out of the
-  # folder. `--preview` is load-bearing: a plain `message read` sets the seen
-  # flag, which would mean notifying about mail marks it read.
+  # folder. `read --raw` fetches with BODY.PEEK, so notifying about mail does
+  # not mark it read (v1 needed an explicit `--preview` for that).
+  #
+  # v2's `read` prints raw MIME and nothing else -- no `-H` header selection, no
+  # text rendering -- so `mml interpret` does the job the old `-H Message-ID`
+  # did, emitting the Message-ID line, a blank line, then the decoded plain-text
+  # part. That is the exact shape the python below already parses.
   aercMailNotify = pkgs.writeShellScript "aerc-mail-notify" ''
     set -u
 
@@ -656,21 +661,27 @@ exit 0
         *) exit 0 ;;
     esac
 
+    # aerc's folder names come from owa-bridge, which himalaya no longer talks
+    # to for work — the work account is Graph now, and `Focused` is not a Graph
+    # folder (Exchange models the Focused split as a per-message
+    # `inferenceClassification` property, not a folder). So the lookup mailbox
+    # is the account's own `inbox` alias. The Message-ID comparison below is
+    # what keeps that safe: if the newest inbox message is not the one the hook
+    # fired for, no toast is emitted.
     case "$AERC_ACCOUNT" in
-        Work)     acct=work ;;
-        Personal) acct=personal ;;
+        Work)     acct=work;     mbox=inbox ;;
+        Personal) acct=personal; mbox="$AERC_FOLDER" ;;
         *)        exit 0 ;;
     esac
 
-    # The newest envelope in the folder is the arrival that fired the hook. The
-    # Message-ID comparison below is what makes that assumption safe when a
-    # reconnect delivers a batch and the hook fires several times at once.
-    id=$(${pkgs.himalaya}/bin/himalaya envelope list -a "$acct" -f "$AERC_FOLDER" -s 1 -o json 2>/dev/null \
-         | ${pkgs.python3}/bin/python3 -c 'import json,sys; d=json.load(sys.stdin); print(d[0]["id"] if d else "")' 2>/dev/null)
+    # The newest envelope in the mailbox is the arrival that fired the hook.
+    id=$(${pkgs.himalaya}/bin/himalaya envelope list -a "$acct" -m "$mbox" -s 1 --json 2>/dev/null \
+         | ${pkgs.python3}/bin/python3 -c 'import json,sys; d=json.load(sys.stdin).get("envelopes") or []; print(d[0]["id"] if d else "")' 2>/dev/null)
 
     body=""
     if [ -n "$id" ]; then
-        body=$(${pkgs.himalaya}/bin/himalaya message read -a "$acct" -f "$AERC_FOLDER" --preview -H Message-ID "$id" 2>/dev/null)
+        body=$(${pkgs.himalaya}/bin/himalaya message read --raw -a "$acct" -m "$mbox" "$id" 2>/dev/null \
+               | ${pkgs.mml}/bin/mml interpret --include-header Message-ID --include-part text/plain 2>/dev/null)
     fi
 
     # The python below must stay flush left: nix strips only the COMMON leading
@@ -909,26 +920,35 @@ $(esc "$preview")"
     text = ''exec python3 ${./files/vimium-toggle.py} "$@"'';
   };
 
-  # Compose HTML mail through himalaya with the account's REAL signature.
+  # See the message the way the RECIPIENT will: headless Chromium screenshots
+  # the HTML part, chafa paints the PNG inline in the terminal. The existing
+  # text renderers cannot do this job — chawan and w3m confirm the words
+  # survived and say nothing about whether the styling did, which is the only
+  # thing worth reviewing about mail that was composed for you.
   #
-  # himalaya's `signature` config key (set for both accounts above) is plain text
-  # only, and it actively escapes MML inside a signature — `<#part …>` becomes
-  # `<#!part …>` — so the UVA signature's orange Web | SSRN | Bio hyperlinks
-  # cannot be expressed there. MML in a message BODY is not escaped, so hmail
-  # assembles the template by hand and appends an HTML part. It deliberately
-  # never calls `himalaya template write`, which would insert the plain-text
-  # config signature as well and send both.
-  #
-  # owa-bridge posts the exact bytes himalaya composed to Outlook's /sendmail, so
-  # what this builds is what the recipient sees. Verified work -> personal:
-  # anchors live, rgb(233,150,56) preserved, and Exchange adds a plain-text
-  # alternative part on the way through.
-  #
-  # Drafts by default; --send is required to send.
-  hmail = pkgs.writeShellApplication {
-    name = "hmail";
+  # chromium is deliberately NOT a runtimeInput: /usr/bin/chromium (the Omarchy
+  # system browser, already the CDP target) is inherited from PATH, and pulling
+  # a second nixpkgs chromium in would be ~400MB for a screenshot. imagemagick
+  # crops the render (Chromium screenshots the WINDOW, not the page).
+  # --text reuses aercChawanHtml verbatim, so an in-aerc preview is byte-for-byte
+  # what the message view would show for the same part — no second renderer whose
+  # output could disagree with the one you read mail in.
+  mailPreview = pkgs.writeShellApplication {
+    name = "mail-preview";
+    runtimeInputs = [ pkgs.python3 pkgs.chafa pkgs.imagemagick pkgs.himalaya ];
+    text = ''
+      export CHA_HTML=${aercChawanHtml}
+      exec python3 ${./files/mail-preview.py} "$@"
+    '';
+  };
+
+  # Tab-completion for aerc's To/Cc/Bcc fields, ranked by frecency over mail you
+  # have actually exchanged. aerc has no built-in address book at all: without an
+  # address-book-cmd, <C-o> completes nothing, in compose AND in forward.
+  aercAddressBook = pkgs.writeShellApplication {
+    name = "aerc-addressbook";
     runtimeInputs = [ pkgs.himalaya pkgs.python3 ];
-    text = ''exec bash ${./files/hmail} "$@"'';
+    text = ''exec python3 ${./files/aerc-addressbook.py} "$@"'';
   };
 
   # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
@@ -1169,7 +1189,10 @@ in
       # the Linux overlay — the stock binary can't reach Mesa on non-NixOS.
       # Only listed for this host: `alarm` shares omarchy-packages.nix but is
       # a headless aarch64 box with nothing to stream.
-      ++ [ brscan brscanTui vimiumToggle hmail pkgs.ghostty pkgs.sunshine ];
+      ++ [
+        brscan brscanTui vimiumToggle mailPreview aercAddressBook
+        pkgs.ghostty pkgs.sunshine
+      ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
     # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
@@ -1259,11 +1282,13 @@ in
     # nix-profile share where xdg.desktopEntries would place it. TUI.float →
     # Hyprland floats the terminal (see files/.../system.conf). `scanner` is a
     # Papirus icon name.
-    # HTML signatures for `hmail` (see the writeShellApplication above). Kept as
-    # files rather than inlined so they stay editable as HTML, and separate from
-    # the plain-text `signature` in the himalaya config — that one is what a
-    # hand-composed `template write` gets; these are what hmail sends. The work
-    # one was recovered verbatim from sent mail; do not paraphrase it.
+    # HTML signatures, concatenated into the HTML body by the compose pipeline
+    # in the email-handling skill. They have no upstream home: mml's `signature`
+    # key is plain text with an RFC 3676 sig-dash, and the work signature is an
+    # HTML <div> whose orange Web | SSRN | Bio anchors cannot survive that. So
+    # they stay files, and the mml config below deliberately sets no `signature`
+    # — otherwise every message would carry a plain-text one as well.
+    # The work one was recovered verbatim from sent mail; do not paraphrase it.
     file.".local/share/himalaya/signatures/work.html".source =
       ./files/himalaya-signature-work.html;
     file.".local/share/himalaya/signatures/personal.html".source =
@@ -2106,6 +2131,18 @@ in
       # new I/O, and would match Outlook Web's own threading exactly.
       threading-enabled = true
 
+      # Address completion on <C-o> in To/Cc/Bcc, in compose AND in forward.
+      # aerc ships no address book, so without this key the completion popup is
+      # empty everywhere. The backing cache is frecency over sent recipients and
+      # inbox senders on both accounts; the command only ever READS the cache, so
+      # it returns instantly and refreshes in the background when stale.
+      #
+      # Only works while edit-headers stays false (aerc's default): with headers
+      # edited in the text editor, aerc documents address-book-cmd as unsupported
+      # and hands completion to the editor.
+      [compose]
+      address-book-cmd = ${aercAddressBook}/bin/aerc-addressbook %s
+
       [filters]
       text/plain=colorize
       text/calendar=calendar
@@ -2134,94 +2171,176 @@ in
     '';
   };
 
-  # himalaya 1.2.0 config schema (the v2 schema in upstream's master sample does
-  # NOT apply). Written by hand rather than through programs.himalaya, because
-  # that module derives `accounts` from accounts.email.accounts and would
-  # overwrite everything below.
+  # himalaya 2.0.0 config schema. v2 is a pure protocol client: `display-name`,
+  # `signature`, `signature-delim`, the whole `message.*` tree and the
+  # `backend.*` tree are all gone, replaced by `[imap]`/`[smtp]` blocks and
+  # `[mailbox.alias]`. Composition lives in the mml config below. Written by
+  # hand rather than through programs.himalaya, because that module derives
+  # `accounts` from accounts.email.accounts and would overwrite everything here.
   xdg.configFile."himalaya/config.toml" = {
+    force = true;
+    text = ''
+      # v1's `-s/--page-size` default of 10 became this key; the CLI flag wins.
+      envelope.list.page-size = 25
+
+      # WORK GOES DIRECT TO MICROSOFT GRAPH — no owa-bridge in this path.
+      #
+      # v2 ships a native msgraph backend, and the UVA tenant DOES issue a
+      # Mail-scoped Graph token to the first-party Microsoft Office client via
+      # the device-code grant (verified 2026-08-12: `Mail.ReadWrite` and
+      # `Mail.Send` both granted, `GET /me/messages` → 200). That kills the
+      # reason the bridge existed for himalaya. Two earlier assumptions turned
+      # out wrong and are recorded so they are not re-litigated:
+      #   - "the tenant grants no IMAP/SMTP/OAuth" — it refuses IMAP/SMTP, but
+      #     not Graph.
+      #   - "reuse owa-bridge's harvested token" — impossible: that one is
+      #     `aud = https://outlook.office.com`, and the only Graph-audience
+      #     token in the OWA session carries no Mail scope at all (403).
+      #
+      # aerc still uses owa-bridge (it speaks IMAP, not Graph). The bridge is
+      # therefore still installed and still a user service — it is just no
+      # longer on himalaya's path.
+      [accounts.work]
+      default = true
+
+      # Graph's well-known folder names. The entry named `inbox` is v2's
+      # implicit default when `-m` is omitted.
+      mailbox.alias.inbox = "inbox"
+      mailbox.alias.sent = "sentitems"
+      mailbox.alias.drafts = "drafts"
+      mailbox.alias.trash = "deleteditems"
+
+      # ortie mints the access token from the stored refresh token and
+      # auto-refreshes (see the ortie config below). Array form: run the
+      # program directly, no shell.
+      msgraph.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "msgraph", "token", "show"]
+
+      # No [imap] or [smtp] block. Graph both reads and sends, so `himalaya
+      # msgraph message send` is the work send path — and note the shared
+      # `message add` is NOT implemented for Graph; drafts go through
+      # `himalaya msgraph message create`. See the email-handling skill.
+
+      [accounts.personal]
+
+      mailbox.alias.inbox = "INBOX"
+      mailbox.alias.sent = "[Gmail]/Sent Mail"
+      mailbox.alias.drafts = "[Gmail]/Drafts"
+      mailbox.alias.trash = "[Gmail]/Trash"
+
+      imap.server = "imaps://imap.gmail.com:993"
+      imap.sasl.plain.username = "eddyhu@gmail.com"
+      imap.sasl.plain.password.command = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
+
+      smtp.server = "smtps://smtp.gmail.com:465"
+      smtp.sasl.plain.username = "eddyhu@gmail.com"
+      smtp.sasl.plain.password.command = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
+    '';
+  };
+
+  # mml owns everything composition-related that himalaya v2 gave up: the
+  # From identity, the reply/forward quoting, and MML -> MIME compilation.
+  #
+  # No `signature` key, deliberately. mml's signature is plain text prefixed
+  # with an RFC 3676 sig-dash, which cannot express the work signature's HTML
+  # anchors; setting one would also append it to messages that already carry
+  # the HTML signature from ~/.local/share/himalaya/signatures/. The skill
+  # concatenates the right .html file into the body instead.
+  # ortie: OAuth 2.0 broker for the work account's Graph token.
+  #
+  # The refresh token is NOT in agenix: agenix secrets are immutable store
+  # artifacts, and a refresh token rotates on every use. It lives in a 0600
+  # state file that ortie itself rewrites on each refresh.
+  #
+  # Bootstrap (one time, and again if the tenant ever revokes the grant):
+  #   ortie -a msgraph auth get            # prints a user code + URL
+  #   <sign in at the URL with ehu@law.virginia.edu, approve>
+  #   ortie -a msgraph auth resume '<device-code from the line above>'
+  # After that `ortie -a msgraph token show` mints access tokens unattended.
+  #
+  # client-id is Microsoft Office, a first-party public client the tenant
+  # already pre-consents. Third-party client ids (Thunderbird etc.) initiate
+  # fine but are the ones a tenant consent policy is most likely to refuse at
+  # redemption — do not "simplify" this to a generic id without re-testing.
+  xdg.configFile."ortie/config.toml" = {
+    force = true;
+    text = ''
+      [accounts.msgraph]
+      default = true
+      grant = "device"
+      client-id = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
+      endpoints.device-authorization = "https://login.microsoftonline.com/b8a81d5c-5169-4b0c-a890-c4ffc7cf0c85/oauth2/v2.0/devicecode"
+      endpoints.token = "https://login.microsoftonline.com/b8a81d5c-5169-4b0c-a890-c4ffc7cf0c85/oauth2/v2.0/token"
+      scopes = [
+        "https://graph.microsoft.com/Mail.ReadWrite",
+        "https://graph.microsoft.com/Mail.Send",
+        "offline_access",
+      ]
+      # `token show` refreshes an expired access token by itself, so every
+      # consumer (himalaya, a systemd timer) gets a valid one without a
+      # separate refresh step.
+      auto-refresh = true
+
+      storage.read.command = "cat ${config.xdg.stateHome}/ortie/msgraph.token"
+      storage.write.command = "install -D -m600 /dev/stdin ${config.xdg.stateHome}/ortie/msgraph.token"
+
+      # Google, brokered for `gws`, which reads GOOGLE_WORKSPACE_CLI_TOKEN as a
+      # pre-obtained access token ahead of its own credential store:
+      #   GOOGLE_WORKSPACE_CLI_TOKEN=$(ortie -a google token show) gws sheets ...
+      #
+      # WHY NOT JUST `gws auth login`. gws keeps its own encrypted credentials
+      # under ~/.config/gws with a keyring backend, and that layer is what failed
+      # on 2026-08-12 ("Bad Request" on a token it held). Brokering through ortie
+      # removes it: one token store, the same one msgraph already uses, readable
+      # by cron with no keyring in the path.
+      #
+      # THE 7-DAY TRAP, since this WILL look like ortie's fault when it recurs.
+      # An OAuth app whose publishing status is "Testing" gets refresh tokens
+      # that expire 7 days after consent — absolute, not an inactivity timer, so
+      # no amount of refreshing keeps one alive. That is what killed the previous
+      # grant. eddyhu-gws-cli was pushed to "In production" on 2026-08-12, after
+      # which refresh tokens last until revoked or ~6 months unused. If
+      # `invalid_grant` returns, check the publishing status FIRST.
+      #
+      # The client is gws's own installed/desktop client. Its secret stays in
+      # ~/.config/gws/client_secret.json and is read by command — inlining it
+      # here would put a live OAuth secret in the nix store, which is
+      # world-readable.
+      #
+      # Bootstrap (one time):
+      #   ortie -a google auth get      # opens a browser; approve as eddyhu@gmail.com
+      [accounts.google]
+      grant = "authorization-code"
+      # client-id must be a literal — ortie accepts `.command` on the secret but
+      # not on the id. It is not sensitive; the secret is, and stays in a command.
+      client-id = "224133371325-9adlng070ui08l2jidjlsi2n545dj5kv.apps.googleusercontent.com"
+      client-secret.command = "${lib.getExe pkgs.python3} -c \"import json;print(json.load(open('${config.xdg.configHome}/gws/client_secret.json'))['installed']['client_secret'])\""
+      endpoints.authorization = "https://accounts.google.com/o/oauth2/auth"
+      endpoints.token = "https://oauth2.googleapis.com/token"
+      endpoints.redirection = "http://localhost:9871"
+      # Sheets + Drive cover the review-queue workflow. Widen deliberately: every
+      # added scope re-triggers consent and enlarges what a leaked token reaches.
+      scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+      ]
+      auto-refresh = true
+
+      storage.read.command = "cat ${config.xdg.stateHome}/ortie/google.token"
+      storage.write.command = "install -D -m600 /dev/stdin ${config.xdg.stateHome}/ortie/google.token"
+    '';
+  };
+
+  xdg.configFile."mml/config.toml" = {
     force = true;
     text = ''
       [accounts.work]
       default = true
-      email = "ehu@law.virginia.edu"
-      display-name = "Edwin Hu"
-
-      # Plain-text rendering of the Outlook/Superhuman HTML signature that this
-      # mailbox already sends. himalaya's `signature` is plain text only: it is
-      # appended verbatim to the MML template body, and MML markers inside it
-      # are actively escaped (<#part> is rewritten to <#!part>), so the original
-      # HTML — including the Web/SSRN/Bio hyperlinks — cannot be reproduced
-      # here. The link targets are spelled out instead of being hidden behind
-      # anchor text. signature-delim is emptied because the Outlook signature
-      # has no "-- " RFC delimiter above it.
-      signature = """
-      Best,
-
-      Edwin Hu
-      Associate Professor of Law
-      University of Virginia School of Law
-      ehu@law.virginia.edu
-      Web: http://edwinhu.github.io | SSRN: https://papers.ssrn.com/sol3/cf_dev/AbsByAuth.cfm?per_id=1889790 | Bio: https://www.law.virginia.edu/faculty/profile/vwh7mb/3263653
-      """
-      signature-delim = ""
-
-      backend.type = "imap"
-      backend.host = "127.0.0.1"
-      backend.port = 1143
-      backend.encryption.type = "none"
-      backend.login = "owa"
-      # The bridge accepts any credentials — its real one is the OWA token.
-      backend.auth.type = "password"
-      backend.auth.cmd = "echo x"
-
-      # Exchange's folder names, mapped to the names himalaya expects.
-      folder.aliases.inbox = "INBOX"
-      folder.aliases.sent = "Sent Items"
-      folder.aliases.drafts = "Drafts"
-      folder.aliases.trash = "Deleted Items"
-
-      # The sendmail backend hands the raw message to this command on stdin and
-      # names no recipients on argv; owa-bridge reads them from the headers.
-      message.send.backend.type = "sendmail"
-      message.send.backend.cmd = "${lib.getExe pkgs.owa-bridge} sendmail --account ehu@law.virginia.edu"
-      # Exchange saves a MIME send to Sent Items itself; a client copy would dup.
-      message.send.save-copy = false
+      from = "ehu@law.virginia.edu"
+      from-name = "Edwin Hu"
 
       [accounts.personal]
-      email = "eddyhu@gmail.com"
-      display-name = "Edwin Hu"
-
-      # signature-delim defaults to "-- \n" (the RFC 3676 sig delimiter), which
-      # would put a "-- " line above "Best,". Emptied so the signature reads
-      # exactly as the two lines below.
-      signature = """
-      Best,
-      Eddy
-      """
-      signature-delim = ""
-
-      backend.type = "imap"
-      backend.host = "imap.gmail.com"
-      backend.port = 993
-      backend.encryption.type = "tls"
-      backend.login = "eddyhu@gmail.com"
-      backend.auth.type = "password"
-      backend.auth.cmd = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
-
-      folder.aliases.inbox = "INBOX"
-      folder.aliases.sent = "[Gmail]/Sent Mail"
-      folder.aliases.drafts = "[Gmail]/Drafts"
-      folder.aliases.trash = "[Gmail]/Trash"
-
-      message.send.backend.type = "smtp"
-      message.send.backend.host = "smtp.gmail.com"
-      message.send.backend.port = 465
-      message.send.backend.encryption.type = "tls"
-      message.send.backend.login = "eddyhu@gmail.com"
-      message.send.backend.auth.type = "password"
-      message.send.backend.auth.cmd = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
-      # Gmail's SMTP files sent mail itself.
-      message.send.save-copy = false
+      from = "eddyhu@gmail.com"
+      from-name = "Edwin Hu"
     '';
   };
 
@@ -2253,6 +2372,16 @@ in
     # (~/.claude/agents/host-dispatch/, stow-linked); ~/.config/systemd/user is
     # home-manager-managed here, so the unit is declared in nix rather than
     # dropped alongside the dotfiles copy. Mirrors dotfiles' host-dispatch.service.
+    # Keep aerc's completion cache warm out of band. The query path deliberately
+    # never indexes inline (a full index is four IMAP fetches, ~75s), so without
+    # this the first completion after a cold cache returns nothing.
+    { aerc-addressbook = {
+      Unit.Description = "Rebuild the aerc frecency address book";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${aercAddressBook}/bin/aerc-addressbook --index";
+      };
+    }; }
     { host-dispatch = {
       Unit = {
         Description = "Ensure host-dispatch Claude session is running";
@@ -2465,6 +2594,15 @@ in
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
   systemd.user.timers = lib.mkMerge [
     (lib.mapAttrs (_: mkRoutineTimer) claudeRoutines)
+    { aerc-addressbook = {
+      Unit.Description = "Rebuild the aerc address book a few times a day";
+      Timer = {
+        OnBootSec = "3min";       # after the network and owa-bridge are up
+        OnUnitActiveSec = "6h";   # matches the query path's staleness window
+        Persistent = true;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
     { host-dispatch = {
       Unit.Description = "Periodically ensure host-dispatch Claude session is running";
       Timer = {
