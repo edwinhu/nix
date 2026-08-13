@@ -734,6 +734,13 @@ exit 0
   # brscan-pdf: batch-scan the whole ADF into a single PDF (JPEG pages embedded
   # losslessly by img2pdf → small multi-page PDFs). The TUI's PDF engine — not on
   # PATH; driven via env: SCAN_DPI, SCAN_MODE, SCAN_DUPLEX=1. Usage: `brscan-pdf [out.pdf]`.
+  # tel: link handler — opens the number in the Google Voice web app (see the
+  # google-voice desktop entry below, which registers it for x-scheme-handler/tel).
+  # Script lives in files/ rather than inline so its ${…} bash expansions don't
+  # need nix escaping.
+  telGvoice = pkgs.writeShellScriptBin "tel-gvoice" ''
+    exec ${pkgs.bash}/bin/bash ${./files/tel-gvoice} "$@"
+  '';
   brscanPdf = pkgs.writeShellScriptBin "brscan-pdf" ''
     set -uo pipefail
     export LD_LIBRARY_PATH="${brscanBackends}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -1212,7 +1219,7 @@ in
       # Only listed for this host: `alarm` shares omarchy-packages.nix but is
       # a headless aarch64 box with nothing to stream.
       ++ [
-        brscan brscanTui vimiumToggle mailPreview aercAddressBook
+        brscan brscanTui vimiumToggle mailPreview aercAddressBook telGvoice
         pkgs.ghostty pkgs.sunshine
       ];
 
@@ -1266,6 +1273,14 @@ in
     activation.reindexWalker = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD ${pkgs.systemd}/bin/systemctl --user try-restart \
         elephant.service app-walker@autostart.service || true
+    '';
+
+    # tel: -> Google Voice (see the google-voice desktop entry). mimeapps.list is
+    # a plain file here, so this rewrites only this one association and leaves the
+    # rest of the user's imperative choices alone. Idempotent.
+    activation.telHandler = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default google-voice.desktop \
+        x-scheme-handler/tel || true
     '';
 
     # swlinux dictation models (large, non-store) — fetch once to
@@ -1838,6 +1853,83 @@ in
   # client append its own copy would duplicate every sent message.
   #
   # binds.conf is deliberately NOT declared — it stays hand-editable.
+  # neomd — TUI email, reading BOTH mailboxes through mail-bridge's loopback
+  # IMAP. This is what the bridge was generalised for: neomd's own README says
+  # its speed "depends entirely on your IMAP provider" and measures a Gmail
+  # folder switch at ~570ms; through the bridge a cached SELECT is 3-8ms.
+  #
+  # READ-ONLY SHAKEDOWN, deliberately. Two settings keep it that way and both
+  # matter:
+  #
+  #   auto_screen_on_load = false
+  #   bg_sync_interval    = 0
+  #
+  # The screener classifies senders from the list files below, and an UNKNOWN
+  # sender is moved to ToScreen. Those lists start EMPTY, so every sender is
+  # unknown and a first run with auto-screen on would move the entire inbox
+  # into ToScreen -- on the server, for every device. Turn these on only after
+  # the lists are populated and reading is proven.
+  #
+  # The Gmail provider's mutation path (move/copy/flag/append) has only ever
+  # been exercised against stubs; nothing has written to the real Gmail mailbox
+  # yet. neomd is the first thing that would, so it reads first.
+  #
+  # Folder names are the BRIDGE's, per account, and they differ: Exchange says
+  # "Sent Items"/"Deleted Items"/"Junk Email", the Gmail provider maps system
+  # labels to "Sent"/"Trash"/"Spam". neomd takes ONE [folders] block for all
+  # accounts, so it is pinned to the Work spelling and Personal's Sent/Trash
+  # will not resolve until neomd supports per-account folders -- reading the
+  # inbox works on both regardless, which is what this shakedown is for.
+  xdg.configFile."neomd/config.toml" = {
+    force = true;
+    text = ''
+      [[accounts]]
+      name     = "Work"
+      imap     = "127.0.0.1:1143"
+      smtp     = "127.0.0.1:1025"
+      user     = "mail"
+      password = "x"
+      from     = "Edwin Hu <ehu@law.virginia.edu>"
+      starttls = false
+
+      [[accounts]]
+      name     = "Personal"
+      imap     = "127.0.0.1:1144"
+      # Gmail SMTP directly: the bridge's submission path is Graph-only. The
+      # password serves BOTH hops -- the bridge accepts any credentials, Gmail
+      # needs the real app password -- and comes from the wrapper's env export.
+      smtp     = "smtp.gmail.com:587"
+      user     = "eddyhu@gmail.com"
+      password = "$NEOMD_GMAIL_PASS"
+      from     = "Edwin Hu <eddyhu@gmail.com>"
+      starttls = false
+
+      [screener]
+      screened_in  = "~/.config/neomd/lists/screened_in.txt"
+      screened_out = "~/.config/neomd/lists/screened_out.txt"
+      feed         = "~/.config/neomd/lists/feed.txt"
+      papertrail   = "~/.config/neomd/lists/papertrail.txt"
+      spam         = "~/.config/neomd/lists/spam.txt"
+
+      # OFF. See the comment above: empty lists + auto-screen = the whole inbox
+      # moved to ToScreen on the server.
+      auto_screen_on_load = false
+      bg_sync_interval    = 0
+      inbox_count         = 200
+
+      [folders]
+      inbox   = "INBOX"
+      sent    = "Sent Items"
+      trash   = "Deleted Items"
+      drafts  = "Drafts"
+      archive = "Archive"
+      spam    = "Junk Email"
+
+      [ui]
+      theme = "kanagawa"
+    '';
+  };
+
   xdg.configFile."aerc/accounts.conf" = {
     force = true;
     # The default folder on both accounts is the low-noise view of the inbox,
@@ -2582,6 +2674,36 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
+    # mail-bridge-smtpd: SMTP submission for clients that can only send over
+    # SMTP. aerc uses the sendmail(1) shim and does not need this; neomd does,
+    # and validates that an smtp address is present even when only reading.
+    #
+    # WORK ONLY. The send path is Graph-only (sendmail.ts posts to
+    # /me/sendMail), so there is nothing here for the personal account -- that
+    # one sends through smtp.gmail.com directly, as aerc does.
+    #
+    # Loopback and accepts ANY credentials, for the same reason the IMAP
+    # listeners do: the real credential is the brokered Graph token this
+    # process holds. startSmtpd refuses to bind anything but loopback.
+    { mail-bridge-smtpd = {
+      Unit = {
+        Description = "mail-bridge — loopback SMTP submission for the UVA mailbox";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        Type = "simple";
+        Environment = [
+          ''"MAIL_BRIDGE_TOKEN_CMD=${lib.getExe pkgs.ortie} -a msgraph token show"''
+        ];
+        ExecStart =
+          "${pkgs.mail-bridge}/bin/mail-bridge smtpd "
+          + "--account ehu@law.virginia.edu --port 1025";
+        Restart = "on-failure";
+        RestartSec = 30;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     # mail-bridge-personal: the same binary, the Gmail provider, the personal
     # mailbox. A SECOND UNIT rather than a second account in one process: the
     # work bridge is what the user reads all day, and a Gmail fault must not be
@@ -2816,6 +2938,32 @@ in
       terminal = false;
       type = "Application";
       icon = "${iconDir}/Superhuman.png";
+      startupNotify = true;
+    };
+
+    # Makes tel: links open Google Voice instead of Zoom. `exec` must be the
+    # STORE PATH, not a bare `tel-gvoice`: GLib treats a desktop entry whose Exec
+    # binary it cannot resolve as NOT INSTALLED and silently ignores the handler
+    # (`gio mime x-scheme-handler/tel` then reports no default at all, and the
+    # click falls through to a plain browser window).
+    #
+    # tel-gvoice pins --profile-directory. Chromium here has three profiles
+    # (Default=Personal, Profile 1=UVA, Profile 2=NYU); launched without it the
+    # profile picker appears AND the --app request is discarded, so you pick a
+    # profile and get an empty window.
+    #
+    # The association itself is set by the `xdg-mime default` activation below —
+    # ~/.config/mimeapps.list is a plain file here, not home-managed, so only
+    # that one line is rewritten (same approach as hylo/application-pdf).
+    google-voice = {
+      name = "Google Voice";
+      comment = "Place calls via Google Voice";
+      exec = "${telGvoice}/bin/tel-gvoice %u";
+      terminal = false;
+      type = "Application";
+      icon = "call-start";
+      categories = [ "Network" "Telephony" ];
+      mimeType = [ "x-scheme-handler/tel" ];
       startupNotify = true;
     };
 

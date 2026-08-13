@@ -1,0 +1,52 @@
+#!/bin/bash
+# Open a tel: link as a Google Voice call in the web app.
+# Registered as the x-scheme-handler/tel handler via "Google Voice.desktop".
+# Mirrors omarchy-webapp-handler-hey (mailto: -> HEY).
+
+set -uo pipefail
+
+url="${1:-}"
+web_url="https://voice.google.com/u/0/calls"
+
+if [[ $url =~ ^tel: ]]; then
+  raw=${url#tel:}
+  raw=${raw%%\;*}                       # drop RFC 3966 params (;phone-context=…)
+  raw=${raw//\%2B/+}; raw=${raw//\%2b/+}  # a tel: URI may percent-encode the +
+  digits=$(printf '%s' "$raw" | tr -cd '0-9')
+  plus=""; [[ $raw == +* ]] && plus="+"
+
+  # Google Voice needs E.164. A bare 10-digit number is NANP; 11 digits starting
+  # with 1 is NANP with the country code already on. Anything else is passed
+  # through as-is rather than guessed at — a wrong +1 would dial a wrong country.
+  if [[ -z $plus ]]; then
+    if [[ ${#digits} -eq 10 ]]; then
+      number="+1${digits}"
+    elif [[ ${#digits} -eq 11 && $digits == 1* ]]; then
+      number="+${digits}"
+    else
+      number="+${digits}"
+    fi
+  else
+    number="+${digits}"
+  fi
+
+  # ?a=nc,<E.164> prefills the dialer. It does NOT auto-place the call — Google
+  # Voice still requires an explicit click, which is the desired behaviour for a
+  # link you may have clicked by accident.
+  web_url="https://voice.google.com/u/0/calls?a=nc,${number/+/%2B}"
+fi
+
+# Resolve the launcher by path, not by name: a .desktop handler does not inherit
+# the interactive shell's PATH, and omarchy's bin dir is only on PATH there — a
+# bare `omarchy-launch-webapp` dies with "not found" when launched from a tel:
+# link. (omarchy-webapp-handler-hey has the same latent bug.)
+launcher=$(command -v omarchy-launch-webapp 2>/dev/null)
+[ -x "${launcher:-}" ] || launcher="$HOME/.local/share/omarchy/bin/omarchy-launch-webapp"
+
+# --profile-directory is REQUIRED: with more than one Chromium profile (Default=
+# Personal, Profile 1=UVA, Profile 2=NYU) a launch without it shows the profile
+# picker, and Chromium DISCARDS the --app request when the picker intervenes —
+# you pick a profile and get a plain window, no Google Voice. Google Voice is a
+# personal-account service, so pin the personal profile. Extra args after the URL
+# are passed through to the browser by omarchy-launch-webapp.
+exec "$launcher" "$web_url" --profile-directory="${TEL_GVOICE_PROFILE:-Default}"
