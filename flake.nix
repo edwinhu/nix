@@ -400,6 +400,9 @@
                 # exposed under its own name rather than shadowing anything.
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
+                # neomd: TUI email over the mail-bridge loopback IMAP (see the
+                # accounts in hosts/linux/omarchy). Prebuilt release tarball.
+                neomd = prev.callPackage ./modules/shared/neomd.nix {};
                 rv = prev.callPackage ./modules/shared/rv.nix {};
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.

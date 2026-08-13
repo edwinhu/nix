@@ -11,7 +11,7 @@
 # NOTE the release lag: v0.8.7 is 2026-07-20 while master moved 2026-08-07, so
 # this is a few weeks behind the README's newest features. Bump the version and
 # the hash together; `nix-prefetch-url --type sha256 <url>` prints the new one.
-{ lib, stdenv, fetchurl, autoPatchelfHook }:
+{ lib, stdenv, fetchurl, autoPatchelfHook, makeWrapper }:
 
 let
   version = "0.8.7";
@@ -38,11 +38,19 @@ stdenv.mkDerivation {
 
   # A Go binary is static apart from the dynamic loader, which autoPatchelf
   # points at this system's.
-  nativeBuildInputs = [ autoPatchelfHook ];
+  nativeBuildInputs = [ autoPatchelfHook makeWrapper ];
 
   installPhase = ''
     runHook preInstall
     install -Dm755 neomd $out/bin/neomd
+
+    # The Personal account sends through Gmail SMTP directly (the bridge's
+    # submission path is Graph-only), so it needs the same app password aerc
+    # uses. neomd expands `password = "$VAR"` at startup, so the secret is read
+    # from the agenix runtime file HERE rather than being written into the
+    # config -- the config is world-readable in the nix store, the secret is not.
+    wrapProgram $out/bin/neomd \
+      --run 'export NEOMD_GMAIL_PASS="$(cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password" 2>/dev/null)"'
     runHook postInstall
   '';
 
