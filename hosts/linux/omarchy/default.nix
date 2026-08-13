@@ -1856,8 +1856,12 @@ in
 
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
-      source            = imaps://eddyhu%40gmail.com@imap.gmail.com
-      source-cred-cmd   = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
+      # Through mail-bridge on 1144, not Gmail IMAP: the bridge serves SELECT
+      # from its local UID map in single-digit ms where Gmail IMAP took ~0.5s.
+      # Any LOGIN credentials are accepted -- the real credential is the
+      # brokered Google token the bridge process holds -- so no app password is
+      # needed on this path. SENDING still goes out over SMTP below, unchanged.
+      source            = imap+insecure://mail:x@127.0.0.1:1144
       outgoing          = smtps://eddyhu%40gmail.com@smtp.gmail.com
       outgoing-cred-cmd = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
       default           = [Gmail]/Important
@@ -2549,6 +2553,37 @@ in
           + "--account ehu@law.virginia.edu";
         # A revoked or unbootstrapped grant makes startup fail; back off rather
         # than spin, and give up for a while instead of hammering Graph.
+        Restart = "on-failure";
+        RestartSec = 30;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # mail-bridge-personal: the same binary, the Gmail provider, the personal
+    # mailbox. A SECOND UNIT rather than a second account in one process: the
+    # work bridge is what the user reads all day, and a Gmail fault must not be
+    # able to take it down. Separate process, separate port, separate UID map.
+    #
+    # --window 200, not the work bridge's 1000. Gmail's API returns ids from
+    # messages.list and then needs one messages.get PER ID -- there is no batch
+    # -- so a 1000-message window is ~1001 round trips. 200 measured at ~4.7s
+    # cold; the window memo and history.list keep steady state sub-second.
+    { mail-bridge-personal = {
+      Unit = {
+        Description = "mail-bridge — loopback IMAP bridge for the personal Gmail mailbox";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        Type = "simple";
+        # ortie's `google` account, which carries gmail.modify. Same quoting
+        # rule as the work unit: systemd splits an unquoted Environment= on
+        # whitespace and would drop every argument after `ortie`.
+        Environment = [
+          ''"MAIL_BRIDGE_GMAIL_TOKEN_CMD=${lib.getExe pkgs.ortie} -a google token show"''
+        ];
+        ExecStart =
+          "${pkgs.mail-bridge}/bin/mail-bridge imapd "
+          + "--provider gmail --account eddyhu@gmail.com --port 1144 --window 200";
         Restart = "on-failure";
         RestartSec = 30;
       };
