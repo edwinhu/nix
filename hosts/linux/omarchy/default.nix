@@ -897,6 +897,80 @@ exit 0
     "CLAUDE_CONFIG_DIR=%h/.claude"
     "BUN_INSTALL=%h/.bun"
   ];
+  # Spawn a Claude session into a Herdr tab, so the routines' agents show up in
+  # the workspace list the user is actually looking at. `claude --bg` is invisible
+  # to `herdr agent list` — that visibility is the whole point of this helper.
+  # Keeps `-n "$LABEL"` so `agent-msg`/`claude agents` still resolve the session
+  # by name (the wrapup + shutdown routines below depend on that).
+  # usage: claude-herdr-spawn <dir> <tab-label> <agent-name> [prompt]
+  claudeHerdrSpawn = pkgs.writeShellScript "claude-herdr-spawn" ''
+    set -uo pipefail
+    DIR="$1"; LABEL="$2"; AGENT_NAME="$3"; PROMPT="''${4:-}"
+    cd "$DIR" || exit 1
+    command -v herdr >/dev/null 2>&1 || { echo "no herdr on this host" >&2; exit 1; }
+
+    # `herdr server` runs headless in the FOREGROUND — detach and poll for the
+    # socket rather than racing it. A stopped server is startable, not a reason
+    # to fall back to --bg.
+    if ! herdr status server >/dev/null 2>&1; then
+      setsid herdr server >/dev/null 2>&1 &
+      for _ in $(seq 1 20); do
+        herdr status server >/dev/null 2>&1 && break
+        sleep 0.5
+      done
+      herdr status server >/dev/null 2>&1 || { echo "herdr server would not start" >&2; exit 1; }
+    fi
+
+    # A timer has no owning pane, so make a workspace instead of borrowing the
+    # focused one. `workspace create` already yields a root pane at --cwd; calling
+    # `tab create` after it would strand an empty shell tab alongside.
+    WS=$(herdr workspace create --label "$LABEL" --cwd "$DIR") || exit 1
+    PANE=$(printf '%s' "$WS" | jq -r '.result.root_pane.pane_id')
+    TAB=$(printf '%s' "$WS" | jq -r '.result.root_pane.tab_id')
+    [ -n "''${PANE:-}" ] && [ "$PANE" != null ] || { echo "no pane from workspace create" >&2; exit 1; }
+    herdr tab rename "$TAB" "$LABEL" >/dev/null 2>&1 || true
+
+    # `agent start` launches + detects + waits for interactive readiness in ONE
+    # call; pane run + agent wait races and returns agent_not_found.
+    #
+    # A freshly created workspace's root pane is not a live shell yet: starting
+    # immediately fails with `agent_pane_busy: ... is not an available shell`
+    # (reproduced 2026-08-13; the same call succeeded after ~3s). Retry rather
+    # than sleeping a fixed amount, since the delay is load-dependent.
+    STARTED=""
+    for _ in $(seq 1 10); do
+      if STARTED=$(herdr agent start "$AGENT_NAME" --kind claude --pane "$PANE" --timeout 60000 \
+                     -- --rc --effort medium -n "$LABEL" 2>&1); then
+        break
+      fi
+      case "$STARTED" in
+        *agent_pane_busy*) sleep 1; STARTED="" ;;
+        *) break ;;
+      esac
+    done
+    if [ -z "''${STARTED:-}" ] || ! printf '%s' "$STARTED" | jq -e '.result.agent.interactive_ready == true' >/dev/null 2>&1; then
+      herdr tab close "$TAB" >/dev/null 2>&1 || true
+      echo "agent start failed: ''${STARTED:-pane never became an available shell}" >&2; exit 1
+    fi
+
+    if [ -n "$PROMPT" ]; then
+      # Exit 0 without --wait only means "text written to the pane": Claude's TUI
+      # collapses a big paste and intermittently eats the trailing Enter. Verify
+      # with --until working. `timeout` means it DID submit and is still working;
+      # only agent_prompt_stalled means it did not. Never close the tab on a stall.
+      POUT=$(herdr agent prompt "$PANE" "$PROMPT" --wait --until working --timeout 15000 2>&1) || {
+        case "$POUT" in
+          *agent_prompt_stalled*)
+            herdr pane send-keys "$PANE" enter >/dev/null 2>&1
+            sleep 2
+            echo "note: prompt stalled in the input box; sent enter" >&2 ;;
+          *'"code":"timeout"'*) : ;;
+          *) echo "prompt delivery failed: $POUT" >&2 ;;
+        esac
+      }
+    fi
+    echo "spawned '$LABEL' in herdr (pane=$PANE tab=$TAB)"
+  '';
   claudeRoutines = {
     # Daily 08:00. Weekday: spawn the day's long-lived "🦞 assistant" session
     # with the briefing, then poke it for planning an hour later (same session,
@@ -911,12 +985,12 @@ exit 0
         cd "$HOME/areas/assistant" || exit 1
         DOW=$(date +%u)  # 1=Mon … 7=Sun
         if [ "$DOW" -le 5 ]; then
-          printf %s "/morning-briefing" | claude --rc --bg --effort medium -n "🦞 assistant" || true
+          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "/morning-briefing" || true
           # Poke the SAME session for planning 1h later; detached so it survives
           # this oneshot exiting (KillMode=process keeps it out of the cgroup kill).
           nohup bash -c 'sleep 3600; agent-msg send "🦞 assistant" "/morning-planning"' >/dev/null 2>&1 &
         else
-          claude --rc --bg --effort medium -n "🦞 assistant" </dev/null || true
+          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant || true
         fi
       '';
     };
@@ -941,7 +1015,7 @@ exit 0
           exit 0
         fi
         echo "no live assistant session — spawning standalone wrapup"
-        printf %s "/nightly-wrapup" | claude --rc --bg --effort medium -n nightly-wrapup
+        ${claudeHerdrSpawn} "$HOME/areas/assistant" nightly-wrapup nightly-wrapup "/nightly-wrapup"
       '';
     };
     # Daily 03:00, in the Obsidian vault (~/notes on Linux).
@@ -953,7 +1027,7 @@ exit 0
       script = pkgs.writeShellScript "claude-vault-compile" ''
         set -euo pipefail
         cd "$HOME/notes" || exit 1
-        printf %s "/vault-compile" | claude --rc --bg --effort medium -n vault-compile
+        ${claudeHerdrSpawn} "$HOME/notes" vault-compile vault-compile "/vault-compile"
       '';
     };
     # Daily 03:30 — headless BACKSTOP snapshot of the vault's LOCAL-ONLY git repo
@@ -992,15 +1066,31 @@ exit 0
       spawner = false;
       script = pkgs.writeShellScript "claude-assistant-shutdown" ''
         set -uo pipefail
+        stopped=0
+        # Herdr-hosted routines (the normal case since the --bg -> herdr move):
+        # closing the tab ends the foreground `claude --rc` that owns the pane.
+        if command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1; then
+          tabs=$(herdr agent list 2>/dev/null | jq -r '
+            .result.agents[]
+            | select(.terminal_title_stripped
+                     | test("🦞 assistant|morning-briefing|nightly-wrapup"))
+            | .tab_id')
+          for t in ''${tabs:-}; do
+            if herdr tab close "$t" >/dev/null 2>&1; then
+              echo "closed herdr tab $t"; stopped=$((stopped + 1))
+            else
+              echo "FAILED to close herdr tab $t"
+            fi
+          done
+        fi
+        # Any lingering daemon sessions (adopted, or spawned before the move).
         ids=$(claude agents --json 2>/dev/null \
           | jq -r '.[] | select(.name == "🦞 assistant" or .name == "morning-briefing" or .name == "nightly-wrapup") | .id')
-        if [ -z "''${ids:-}" ]; then
-          echo "nothing to stop"
-          exit 0
-        fi
-        for id in $ids; do
-          if claude stop "$id"; then echo "stopped $id"; else echo "FAILED to stop $id"; fi
+        for id in ''${ids:-}; do
+          [ "$id" = null ] && continue
+          if claude stop "$id"; then echo "stopped $id"; stopped=$((stopped + 1)); else echo "FAILED to stop $id"; fi
         done
+        [ "$stopped" -gt 0 ] || echo "nothing to stop"
       '';
     };
   };
