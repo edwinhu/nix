@@ -63,7 +63,7 @@ in
     # Google app password for the personal Gmail account (eddyhu@gmail.com),
     # read by aerc's source-cred-cmd/outgoing-cred-cmd and by himalaya's
     # backend.auth.cmd. The work account needs nothing here — it goes through
-    # the local owa-bridge, which brokers its own short-lived OWA token.
+    # the local mail-bridge, which brokers its own short-lived OWA token.
     aerc-gmail-app-password = {
       file = "${nix-secrets}/aerc-gmail-app-password.age";
       mode = "400";

@@ -76,7 +76,7 @@ let
     # Mail. The UVA tenant refuses IMAP/SMTP but DOES issue Mail-scoped
     # Microsoft Graph tokens, so the two clients take different work paths:
     # himalaya goes direct to Graph (ortie brokers the token), while aerc —
-    # which speaks IMAP only — still reads through owa-bridge's loopback IMAP
+    # which speaks IMAP only — still reads through mail-bridge's loopback IMAP
     # (a user service brings it up) and sends through its sendmail(1) shim.
     # Personal Gmail goes direct for both. aerc is the TUI,
     # himalaya the scriptable one. Configs for both are declared in the omarchy
@@ -105,9 +105,9 @@ let
     chawan
     w3m
 
-    # Outlook mailbox as loopback IMAP + sendmail(1) (gh:edwinhu/owa-bridge).
+    # Outlook mailbox as loopback IMAP + sendmail(1) (gh:edwinhu/mail-bridge).
     # Source-built, so unlike the Bun-release CLIs below it needs no x86_64 gate.
-    owa-bridge
+    mail-bridge
 
     # File managers / PDF reader
     doublecmd

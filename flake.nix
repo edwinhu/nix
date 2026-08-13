@@ -87,10 +87,10 @@
       url = "git+ssh://git@github.com/edwinhu/joycon-pad.git";
       flake = false;
     };
-    # owa-bridge: Outlook mailbox as loopback IMAP + sendmail(1), for aerc and
+    # mail-bridge: Outlook mailbox as loopback IMAP + sendmail(1), for aerc and
     # himalaya (private repo, SSH-fetched like swlinux/joycon-pad).
-    owa-bridge-src = {
-      url = "git+ssh://git@github.com/edwinhu/owa-bridge.git";
+    mail-bridge-src = {
+      url = "git+ssh://git@github.com/edwinhu/mail-bridge.git";
       flake = false;
     };
     # herdr: terminal-native agent multiplexer (replaces limux/cmux). It's a
@@ -107,7 +107,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, owa-bridge-src, herdr } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src, herdr } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -295,8 +295,8 @@
         onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
         # allowUnfree for the same reason as obsidian-cli: private repo, so the
         # module declares license = unfree. Built from the pinned source input.
-        owa-bridge = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/owa-bridge.nix {
-          src = inputs.owa-bridge-src;
+        mail-bridge = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/mail-bridge.nix {
+          src = inputs.mail-bridge-src;
         };
         onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
       });
@@ -663,9 +663,9 @@
                 };
                 # Outlook mailbox as loopback IMAP + sendmail(1) — Linux only,
                 # it's what aerc/himalaya read work mail through here. See
-                # modules/shared/owa-bridge.nix + the omarchy user service.
-                owa-bridge = prev.callPackage ./modules/shared/owa-bridge.nix {
-                  src = inputs.owa-bridge-src;
+                # modules/shared/mail-bridge.nix + the omarchy user service.
+                mail-bridge = prev.callPackage ./modules/shared/mail-bridge.nix {
+                  src = inputs.mail-bridge-src;
                 };
 
                 # Double Commander Qt6 from official releases (aarch64 only; the

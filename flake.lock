@@ -428,6 +428,22 @@
         "url": "ssh://git@github.com/edwinhu/joycon-pad.git"
       }
     },
+    "mail-bridge-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786622385,
+        "narHash": "sha256-oeyQh1asX5gOw6OTD3gZ2PehqdFTn1sypqigBSPFP1A=",
+        "ref": "refs/heads/main",
+        "rev": "814301f57bb5ac25387e3aebb0cbc6f5dcae0d75",
+        "revCount": 12,
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
+      }
+    },
     "mml": {
       "inputs": {
         "fenix": "fenix",
@@ -632,22 +648,6 @@
         "type": "github"
       }
     },
-    "owa-bridge-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1786570140,
-        "narHash": "sha256-/XJVLjNomagwEKHHj8GbqMrVP6fA+4Zn1lx5/+IA7fQ=",
-        "ref": "refs/heads/main",
-        "rev": "f07e88cc40fbe2dc7066e76a43736f1b2de6b6b1",
-        "revCount": 8,
-        "type": "git",
-        "url": "ssh://git@github.com/edwinhu/owa-bridge.git"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/edwinhu/owa-bridge.git"
-      }
-    },
     "pimalaya": {
       "flake": false,
       "locked": {
@@ -707,6 +707,7 @@
         "homebrew-cask": "homebrew-cask",
         "homebrew-core": "homebrew-core",
         "joycon-pad-src": "joycon-pad-src",
+        "mail-bridge-src": "mail-bridge-src",
         "mml": "mml",
         "nix-homebrew": "nix-homebrew",
         "nix-secrets": "nix-secrets",
@@ -715,7 +716,6 @@
         "nixpkgs-himalaya": "nixpkgs-himalaya",
         "nixpkgs-onlyoffice": "nixpkgs-onlyoffice",
         "ortie": "ortie",
-        "owa-bridge-src": "owa-bridge-src",
         "presmihaylov-taps": "presmihaylov-taps",
         "stylix": "stylix",
         "swlinux-src": "swlinux-src",

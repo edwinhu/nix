@@ -635,93 +635,6 @@ fi
 exit 0
   '';
 
-  # aerc's mail-received hook: a toast carrying sender, subject and a body
-  # preview.
-  #
-  # The hook fires only for the SELECTED folder of the SELECTED account tab, so
-  # this notifies about the two folders aerc actually sits in (accounts.conf
-  # sets `default = Focused` for Work and `[Gmail]/Important` for Personal).
-  # Navigating to Archive or Junk goes quiet rather than notifying about mail
-  # the user is already looking at.
-  #
-  # There is no body variable in the hook environment (only account, folder,
-  # from, subject and message-id), so the preview is fetched back out of the
-  # folder. `read --raw` fetches with BODY.PEEK, so notifying about mail does
-  # not mark it read (v1 needed an explicit `--preview` for that).
-  #
-  # v2's `read` prints raw MIME and nothing else -- no `-H` header selection, no
-  # text rendering -- so `mml interpret` does the job the old `-H Message-ID`
-  # did, emitting the Message-ID line, a blank line, then the decoded plain-text
-  # part. That is the exact shape the python below already parses.
-  aercMailNotify = pkgs.writeShellScript "aerc-mail-notify" ''
-    set -u
-
-    case "$AERC_ACCOUNT/$AERC_FOLDER" in
-        Work/Focused|Personal/\[Gmail\]/Important) ;;
-        *) exit 0 ;;
-    esac
-
-    # aerc's folder names come from owa-bridge, which himalaya no longer talks
-    # to for work — the work account is Graph now, and `Focused` is not a Graph
-    # folder (Exchange models the Focused split as a per-message
-    # `inferenceClassification` property, not a folder). So the lookup mailbox
-    # is the account's own `inbox` alias. The Message-ID comparison below is
-    # what keeps that safe: if the newest inbox message is not the one the hook
-    # fired for, no toast is emitted.
-    case "$AERC_ACCOUNT" in
-        Work)     acct=work;     mbox=inbox ;;
-        Personal) acct=personal; mbox="$AERC_FOLDER" ;;
-        *)        exit 0 ;;
-    esac
-
-    # The newest envelope in the mailbox is the arrival that fired the hook.
-    id=$(${pkgs.himalaya}/bin/himalaya envelope list -a "$acct" -m "$mbox" -s 1 --json 2>/dev/null \
-         | ${pkgs.python3}/bin/python3 -c 'import json,sys; d=json.load(sys.stdin).get("envelopes") or []; print(d[0]["id"] if d else "")' 2>/dev/null)
-
-    body=""
-    if [ -n "$id" ]; then
-        body=$(${pkgs.himalaya}/bin/himalaya message read --raw -a "$acct" -m "$mbox" "$id" 2>/dev/null \
-               | ${pkgs.mml}/bin/mml interpret --include-header Message-ID --include-part text/plain 2>/dev/null)
-    fi
-
-    # The python below must stay flush left: nix strips only the COMMON leading
-    # whitespace from an indented string, so an extra level here would survive
-    # into the source and python would reject it.
-    preview=$(printf '%s' "$body" | AERC_MESSAGE_ID="$AERC_MESSAGE_ID" ${pkgs.python3}/bin/python3 -c '
-import os, re, sys
-raw = sys.stdin.read().splitlines()
-want = os.environ.get("AERC_MESSAGE_ID", "").strip().strip("<>")
-seen, lines = "", []
-for ln in raw:
-    if ln.lower().startswith("message-id:"):
-        seen = ln.split(":", 1)[1].strip().strip("<>")
-        continue
-    if ln.startswith(">"):
-        continue
-    if ln.strip():
-        lines.append(ln.strip())
-# Raced by a burst: no preview beats the wrong message body.
-if want and seen and want != seen:
-    sys.exit(0)
-print(re.sub(r"\s+", " ", " ".join(lines))[:160].strip())
-')
-
-    # mako renders Pango markup by default, so an unescaped & or < in a real
-    # subject swallows the rest of the toast.
-    esc() { printf '%s' "$1" | ${pkgs.gnused}/bin/sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
-
-    if [ -n "$preview" ]; then
-        # Continuation flush left on purpose — leading spaces here would be
-        # literal in the toast body.
-        text="<b>$(esc "$AERC_SUBJECT")</b>
-$(esc "$preview")"
-    else
-        text="<b>$(esc "$AERC_SUBJECT")</b>"
-    fi
-
-    ${pkgs.libnotify}/bin/notify-send -a aerc -i mail-unread "$(esc "$AERC_FROM_NAME")" "$text"
-  '';
-
   # aerc's application/pdf filter: extracted text, not a rendered page.
   #
   # This is a deliberate retreat from a working inline image preview, because
@@ -1802,7 +1715,7 @@ in
   #
   # [Work] ehu@law.virginia.edu — the UVA tenant grants no IMAP/SMTP and gates
   # third-party OAuth consent behind an admin, so both clients talk to the
-  # owa-bridge user service on 127.0.0.1:1143 instead (see systemd.user.services
+  # mail-bridge user service on 127.0.0.1:1143 instead (see systemd.user.services
   # below) and send through its sendmail(1) shim. Credentials there are ignored
   # by design: the real one is the Graph access token the bridge gets from ortie.
   #
@@ -1819,7 +1732,7 @@ in
   xdg.configFile."aerc/accounts.conf" = {
     force = true;
     # The default folder on both accounts is the low-noise view of the inbox,
-    # not the inbox: Exchange's Focused (owa-bridge reads Graph's per-message
+    # not the inbox: Exchange's Focused (mail-bridge reads Graph's per-message
     # `inferenceClassification` and exposes Focused/Other as virtual folders over
     # INBOX's UID space) and Gmail's Priority Inbox importance marker (already an
     # IMAP folder, [Gmail]/Important). The full INBOX is one `gm`/folder switch
@@ -1828,7 +1741,7 @@ in
       [Work]
       from          = Edwin Hu <ehu@law.virginia.edu>
       source        = imap+insecure://owa:x@127.0.0.1:1143
-      outgoing      = ${lib.getExe pkgs.owa-bridge} sendmail --account ehu@law.virginia.edu
+      outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
       default       = Focused
       cache-headers = true
 
@@ -2030,7 +1943,7 @@ in
       # issues a plain UID SEARCH (worker/imap/open.go). Verified at runtime on
       # both accounts — the list is in UID order regardless of this line.
       #
-      # That is fine today because owa-bridge keeps UID order and arrival order
+      # That is fine today because mail-bridge keeps UID order and arrival order
       # in agreement (its sync window used to number backfill as if it had just
       # arrived, floating April mail to the top; fixed by the per-folder floor
       # watermark). The line stays so that a future backend advertising SORT
@@ -2072,7 +1985,7 @@ in
       # Folder icons, matched on name because the two accounts disagree about
       # everything: Exchange says "Deleted Items"/"Junk Email"/"Sent Items",
       # Gmail says "[Gmail]/Trash"/"[Gmail]/Spam"/"[Gmail]/Sent Mail". Focused
-      # and Other (owa-bridge's virtual views over INBOX) share the inbox icon —
+      # and Other (mail-bridge's virtual views over INBOX) share the inbox icon —
       # the name beside it is what distinguishes them.
       #
       # compactDir abbreviates parent components to their initial, so Gmail's
@@ -2100,7 +2013,7 @@ in
       msglist-scroll-offset = 3
 
       # Threading ON, client-side on both accounts. Neither backend advertises
-      # the IMAP THREAD extension (owa-bridge: IMAP4rev1 LITERAL+ IDLE NAMESPACE
+      # the IMAP THREAD extension (mail-bridge: IMAP4rev1 LITERAL+ IDLE NAMESPACE
       # UNSELECT MOVE ID AUTH=PLAIN; Gmail answers `BAD Unknown command: UID
       # THREAD` even POST-auth, so this is not a pre-auth artifact), and aerc
       # builds threads itself when the server can't — lib/msgstore.go:138, no
@@ -2126,7 +2039,7 @@ in
       #
       # threading-by-subject stays off: subject-only grouping merges unrelated
       # "Re: Faculty lunch" threads. If the progressive reordering ever grates,
-      # the real fix is server-side — owa-bridge already stores Outlook's
+      # the real fix is server-side — mail-bridge already stores Outlook's
       # ConversationId for every row (backend.ts:16 -> uidmap.ts:106, 991/991
       # populated), so THREAD=REFERENCES is <100 lines in commands.ts with no
       # new I/O, and would match Outlook Web's own threading exactly.
@@ -2161,14 +2074,9 @@ in
       [openers]
       application/pdf=hylo
 
-      # aerc runs persistently, so a toast is the only signal new mail gives.
-      # `[triggers]`/`new-email` is the OLD spelling and does nothing on 0.21;
-      # hooks get environment variables, not %-specifiers. Fires only for the
-      # selected folder of the selected account tab — see the script for what
-      # that limits, and note it needs an IMAP server that pushes: owa-bridge
-      # advertises IDLE and Gmail supports it, so both accounts do fire.
-      [hooks]
-      mail-received = ${aercMailNotify}
+      # No [hooks] block: aerc's new-mail hook only fired while aerc was
+      # running AND sitting in that folder. Nothing replaces it yet — see
+      # the git history for the retired aercMailNotify script.
     '';
   };
 
@@ -2184,7 +2092,7 @@ in
       # v1's `-s/--page-size` default of 10 became this key; the CLI flag wins.
       envelope.list.page-size = 25
 
-      # WORK GOES DIRECT TO MICROSOFT GRAPH — no owa-bridge in this path.
+      # WORK GOES DIRECT TO MICROSOFT GRAPH — no mail-bridge in this path.
       #
       # v2 ships a native msgraph backend, and the UVA tenant DOES issue a
       # Mail-scoped Graph token to the first-party Microsoft Office client via
@@ -2194,7 +2102,7 @@ in
       # out wrong and is recorded so it is not re-litigated: "the tenant grants
       # no IMAP/SMTP/OAuth" — it refuses IMAP/SMTP, but not Graph.
       #
-      # aerc still uses owa-bridge (it speaks IMAP, not Graph). The bridge is
+      # aerc still uses mail-bridge (it speaks IMAP, not Graph). The bridge is
       # therefore still installed and still a user service — it is just no
       # longer on himalaya's path. Both sit on the SAME credential: the bridge
       # calls the identical `ortie -a msgraph token show` broker below and
@@ -2462,7 +2370,7 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # owa-bridge: loopback IMAP bridge for the UVA mailbox, so aerc (and
+    # mail-bridge: loopback IMAP bridge for the UVA mailbox, so aerc (and
     # anything else that speaks IMAP) can read and write work mail. Native IMAP
     # against that tenant is foreclosed — third-party OAuth consent is
     # admin-gated, first-party client-id borrowing fails AADSTS65002 — so this
@@ -2473,17 +2381,17 @@ in
     # (same broker and same grant as himalaya's msgraph backend above). Nothing
     # here depends on a browser, a signed-in web tab, or a desktop session.
     #
-    # Built from the owa-bridge-src flake input (modules/shared/owa-bridge.nix),
+    # Built from the mail-bridge-src flake input (modules/shared/mail-bridge.nix),
     # so this runs a lock-pinned store path, not the ~/projects working tree.
-    # The send half is `owa-bridge sendmail`, invoked by aerc's `outgoing`, not
+    # The send half is `mail-bridge sendmail`, invoked by aerc's `outgoing`, not
     # by this service.
     #
     # SECURITY: binds 127.0.0.1:1143 and accepts ANY LOGIN credentials — the
     # real credential is the Graph token the process holds. startImapd refuses
     # to bind anything but loopback, so this cannot accidentally be exposed.
-    { owa-bridge = {
+    { mail-bridge = {
       Unit = {
-        Description = "owa-bridge — loopback IMAP bridge for the UVA mailbox";
+        Description = "mail-bridge — loopback IMAP bridge for the UVA mailbox";
         # Graph is the only external dependency, so the network is the only
         # precondition. Deliberately not tied to the graphical session: the
         # bridge must serve mail on a headless boot or over SSH too.
@@ -2502,12 +2410,12 @@ in
         # "Invalid environment assignment" log line and the bridge would spawn
         # a bare `ortie` — verified with systemd-analyze verify.
         Environment = [
-          ''"OWA_BRIDGE_TOKEN_CMD=${lib.getExe pkgs.ortie} -a msgraph token show"''
+          ''"MAIL_BRIDGE_TOKEN_CMD=${lib.getExe pkgs.ortie} -a msgraph token show"''
         ];
         # The binary is self-contained (bun runtime embedded), so it needs no
         # PATH or working directory of its own.
         ExecStart =
-          "${pkgs.owa-bridge}/bin/owa-bridge imapd "
+          "${pkgs.mail-bridge}/bin/mail-bridge imapd "
           + "--account ehu@law.virginia.edu";
         # A revoked or unbootstrapped grant makes startup fail; back off rather
         # than spin, and give up for a while instead of hammering Graph.
@@ -2582,7 +2490,7 @@ in
     { aerc-addressbook = {
       Unit.Description = "Rebuild the aerc address book a few times a day";
       Timer = {
-        OnBootSec = "3min";       # after the network and owa-bridge are up
+        OnBootSec = "3min";       # after the network and mail-bridge are up
         OnUnitActiveSec = "6h";   # matches the query path's staleness window
         Persistent = true;
       };

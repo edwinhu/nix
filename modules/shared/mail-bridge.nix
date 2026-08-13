@@ -1,10 +1,10 @@
-# owa-bridge — the UVA Outlook mailbox, spoken as IMAP + sendmail(1).
-# (gh:edwinhu/owa-bridge, PRIVATE; source via the owa-bridge-src flake input,
+# mail-bridge — the UVA Outlook mailbox, spoken as IMAP + sendmail(1).
+# (gh:edwinhu/mail-bridge, PRIVATE; source via the mail-bridge-src flake input,
 # SSH-fetched like nix-secrets/swlinux.)
 #
 # What it is: a loopback IMAP server on 127.0.0.1:1143 that translates IMAP to
 # Outlook REST using the token held by the live Outlook Web tab, plus an
-# `owa-bridge sendmail` shim for the send half. Native IMAP against that tenant
+# `mail-bridge sendmail` shim for the send half. Native IMAP against that tenant
 # is foreclosed (third-party OAuth consent is admin-gated), so this is what
 # makes aerc and himalaya usable for work mail. See the omarchy host for the
 # user service and both clients' configs.
@@ -32,7 +32,7 @@ let
   # since arbitrary scripts would break the fixed output's reproducibility.
   # Only one runtime dep (chrome-remote-interface), so this stays small.
   nodeModules = stdenvNoCC.mkDerivation {
-    pname = "owa-bridge-node-modules";
+    pname = "mail-bridge-node-modules";
     inherit version src;
 
     nativeBuildInputs = [ bun ];
@@ -58,11 +58,11 @@ let
 
     outputHashAlgo = "sha256";
     outputHashMode = "recursive";
-    outputHash = "sha256-AqDROaEnOztl/riLe8tocXhhwL1aa+lZnVVM5xw2XX4=";
+    outputHash = "sha256-ZjhL+bTDuilt0no0fi/3hNU9uCZHRcrXp6HTUrtoo5w=";
   };
 in
 stdenvNoCC.mkDerivation {
-  pname = "owa-bridge";
+  pname = "mail-bridge";
   inherit version src;
 
   nativeBuildInputs = [ bun ];
@@ -78,13 +78,13 @@ stdenvNoCC.mkDerivation {
     export HOME=$TMPDIR
     export BUN_INSTALL_CACHE_DIR=$TMPDIR/cache
     ln -s ${nodeModules} node_modules
-    bun build --compile src/cli.ts --outfile owa-bridge
+    bun build --compile src/cli.ts --outfile mail-bridge
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm755 owa-bridge $out/bin/owa-bridge
+    install -Dm755 mail-bridge $out/bin/mail-bridge
     runHook postInstall
   '';
 
@@ -95,9 +95,9 @@ stdenvNoCC.mkDerivation {
 
   meta = {
     description = "Outlook mailbox served as loopback IMAP + a sendmail(1) shim";
-    homepage = "https://github.com/edwinhu/owa-bridge";
+    homepage = "https://github.com/edwinhu/mail-bridge";
     license = lib.licenses.unfree; # private repo, no declared license
-    mainProgram = "owa-bridge";
+    mainProgram = "mail-bridge";
     platforms = lib.platforms.unix;
   };
 }
