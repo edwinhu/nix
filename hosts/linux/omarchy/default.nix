@@ -921,14 +921,33 @@ exit 0
       herdr status server >/dev/null 2>&1 || { echo "herdr server would not start" >&2; exit 1; }
     fi
 
-    # A timer has no owning pane, so make a workspace instead of borrowing the
-    # focused one. `workspace create` already yields a root pane at --cwd; calling
-    # `tab create` after it would strand an empty shell tab alongside.
-    WS=$(herdr workspace create --label "$LABEL" --cwd "$DIR") || exit 1
-    PANE=$(printf '%s' "$WS" | jq -r '.result.root_pane.pane_id')
-    TAB=$(printf '%s' "$WS" | jq -r '.result.root_pane.tab_id')
-    [ -n "''${PANE:-}" ] && [ "$PANE" != null ] || { echo "no pane from workspace create" >&2; exit 1; }
-    herdr tab rename "$TAB" "$LABEL" >/dev/null 2>&1 || true
+    # Land the agent in the workspace that already belongs to $DIR, so a project's
+    # agents stay together instead of accreting a new workspace every run (a daily
+    # timer would otherwise leave one per day). `workspace list` carries no path,
+    # so resolve through panes — `pane list` reports each pane's cwd — and fall
+    # back to a label match. Never borrow the FOCUSED workspace: focus is wherever
+    # the user happens to be standing and is unrelated to this spawn.
+    WORKSPACE=$(herdr pane list 2>/dev/null \
+      | jq -r --arg d "$DIR" '[.result.panes[] | select(.cwd == $d) | .workspace_id][0] // empty')
+    if [ -z "''${WORKSPACE:-}" ]; then
+      WORKSPACE=$(herdr workspace list 2>/dev/null \
+        | jq -r --arg l "$(basename "$DIR")" \
+            '[.result.workspaces[] | select(.label == $l) | .workspace_id][0] // empty')
+    fi
+
+    if [ -n "''${WORKSPACE:-}" ]; then
+      CREATED=$(herdr tab create --workspace "$WORKSPACE" --cwd "$DIR" --label "$LABEL" --no-focus) || exit 1
+      PANE=$(printf '%s' "$CREATED" | jq -r '.result.root_pane.pane_id')
+      TAB=$(printf '%s' "$CREATED" | jq -r '.result.tab.tab_id')
+    else
+      # Nothing for this project yet. `workspace create` already yields a root pane
+      # at --cwd; calling `tab create` after it would strand an empty shell tab.
+      WS=$(herdr workspace create --label "$(basename "$DIR")" --cwd "$DIR") || exit 1
+      PANE=$(printf '%s' "$WS" | jq -r '.result.root_pane.pane_id')
+      TAB=$(printf '%s' "$WS" | jq -r '.result.root_pane.tab_id')
+      herdr tab rename "$TAB" "$LABEL" >/dev/null 2>&1 || true
+    fi
+    [ -n "''${PANE:-}" ] && [ "$PANE" != null ] || { echo "no pane for $DIR" >&2; exit 1; }
 
     # `agent start` launches + detects + waits for interactive readiness in ONE
     # call; pane run + agent wait races and returns agent_not_found.
