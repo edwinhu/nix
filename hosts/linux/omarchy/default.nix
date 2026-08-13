@@ -1853,6 +1853,17 @@ in
       outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
       default       = Focused
       cache-headers = true
+      # `folders` is a WHITELIST, so INBOX is deliberately absent: Focused and
+      # Other partition it exactly, and showing all three would list every
+      # message twice. `Conversation History` (Teams chat archive) is dropped
+      # for the same reason it is never read.
+      #
+      # folders-sort pins the order; without it aerc sorts alphabetically and
+      # Archive would lead. enable-folders-sort defaults true, so the listed
+      # names come first in this order and anything else follows -- but nothing
+      # else can, because `folders` admits only these.
+      folders       = Focused,Other,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
+      folders-sort  = Focused,Other,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
 
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
@@ -1864,8 +1875,21 @@ in
       source            = imap+insecure://mail:x@127.0.0.1:1144
       outgoing          = smtps://eddyhu%40gmail.com@smtp.gmail.com
       outgoing-cred-cmd = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
-      default           = [Gmail]/Important
-      folders-sort      = INBOX
+      # Important leads and is the default, mirroring Focused on Work.
+      #
+      # Names are the bridge's, NOT Gmail IMAP's: the Gmail provider maps
+      # system labels to IMAP names, so it is `Important`/`Sent`/`Spam`/`Trash`,
+      # never `[Gmail]/Important`. Two gaps against the Work list, and they are
+      # Gmail's model rather than an omission -- Gmail has no Outbox at all, and
+      # archiving is removing the INBOX label rather than a folder, so there is
+      # nothing to point Archive at. User labels are excluded for now.
+      #
+      # `Focused`/`Other` are excluded deliberately: bridge.ts offers them
+      # whenever INBOX exists, but Gmail has no classification, so Focused would
+      # be the whole inbox and Other permanently empty.
+      default           = Important
+      folders           = Important,Drafts,Sent,Spam,Trash
+      folders-sort      = Important,Drafts,Sent,Spam,Trash
       postpone          = [Gmail]/Drafts
       cache-headers     = true
     '';
