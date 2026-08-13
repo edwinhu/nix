@@ -2138,6 +2138,18 @@ in
       imap.sasl.plain.username = "eddyhu@gmail.com"
       imap.sasl.plain.password.command = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
 
+      # Gmail REST backend, alongside the IMAP one above rather than replacing
+      # it: nothing selects it unless a caller passes `-b gmail`, so aerc and
+      # every existing himalaya invocation keep using IMAP untouched. Added so
+      # the Gmail-side surface can be exercised at all -- `himalaya gmail ...`
+      # refuses outright without this block.
+      #
+      # Same brokered-token idiom as the work account's msgraph above: ortie
+      # holds the grant and refreshes it, himalaya just spends the access token.
+      # Requires the gmail.modify scope on ortie's `google` account (consented
+      # 2026-08-13); `gws` shares that grant.
+      gmail.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "google", "token", "show"]
+
       smtp.server = "smtps://smtp.gmail.com:465"
       smtp.sasl.plain.username = "eddyhu@gmail.com"
       smtp.sasl.plain.password.command = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
@@ -2229,6 +2241,15 @@ in
       scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
+        # gmail.modify: mail-bridge's Gmail provider (io-gmail via himalaya).
+        # Read, label add/remove (which is how Gmail expresses move/copy), and
+        # messages.insert for IMAP APPEND. NOT gmail.send -- the send path is
+        # unchanged and still goes out over SMTP.
+        #
+        # This deliberately widens the SAME client gws uses, chosen over a
+        # separate ortie account: one consent and one token store, at the cost
+        # that a leaked gws token now reaches the whole personal mailbox.
+        "https://www.googleapis.com/auth/gmail.modify",
       ]
       auto-refresh = true
 
