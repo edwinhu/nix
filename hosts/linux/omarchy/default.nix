@@ -1916,14 +1916,18 @@ in
   # below) and send through its sendmail(1) shim. Credentials there are ignored
   # by design: the real one is the Graph access token the bridge gets from ortie.
   #
-  # [Personal] eddyhu@gmail.com — Gmail allows native IMAP/SMTP, so no bridge.
-  # The app password comes from agenix (aerc-gmail-app-password.age), decrypted
-  # to $XDG_RUNTIME_DIR/agenix at activation. Only the *command* that reads it
-  # appears here; the secret never enters the nix store.
+  # [Personal] eddyhu@gmail.com — the same shape, over the Gmail provider: read
+  # through the bridge on 1144, send through the shim. NO PASSWORD ANYWHERE ON
+  # THIS ACCOUNT. Both halves spend ortie's brokered `google` token, which
+  # carries gmail.modify — and gmail.modify is enough for users.messages.send,
+  # so no scope widening and no re-consent was needed to retire the app
+  # password. (Gmail IMAP/SMTP would have demanded the full https://mail.google.com/
+  # scope, which is why going direct was the worse trade.)
   #
   # Neither account sets a copy-to / save-copy: Exchange files a MIME /sendmail
-  # in Sent Items server-side and Gmail's SMTP does the same, so having the
-  # client append its own copy would duplicate every sent message.
+  # in Sent Items server-side and Gmail files its own Sent copy on
+  # messages.send, so having the client append one would duplicate every
+  # sent message.
   #
   # binds.conf is deliberately NOT declared — it stays hand-editable.
   xdg.configFile."aerc/accounts.conf" = {
@@ -1955,14 +1959,25 @@ in
 
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
-      # Through mail-bridge on 1144, not Gmail IMAP: the bridge serves SELECT
-      # from its local UID map in single-digit ms where Gmail IMAP took ~0.5s.
+      # Through mail-bridge on 1144, not Gmail IMAP. Measured on THIS operation
+      # -- login, SELECT INBOX, SEARCH, FETCH 200 ENVELOPEs -- the bridge takes
+      # 3ms and Gmail IMAP 1108/6449/1373ms over three runs. What aerc feels is
+      # the per-folder-switch part (SELECT+SEARCH+FETCH): ~3ms against
+      # 758/3269/924ms. The variance is Gmail's, and the bridge does not have it.
+      #
       # Any LOGIN credentials are accepted -- the real credential is the
-      # brokered Google token the bridge process holds -- so no app password is
-      # needed on this path. SENDING still goes out over SMTP below, unchanged.
+      # brokered Google token the bridge process holds.
       source            = imap+insecure://mail:x@127.0.0.1:1144
-      outgoing          = smtps://eddyhu%40gmail.com@smtp.gmail.com
-      outgoing-cred-cmd = cat "$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password"
+      # SENDING is the same shim as Work, with the Gmail provider selected: the
+      # composed bytes are base64url'd into users.messages.send under the same
+      # brokered token. NO APP PASSWORD, and no outgoing-cred-cmd -- gmail-rest
+      # defaults its broker to `ortie -a google token show`.
+      #
+      # Gmail REWRITES the Message-ID on this path (it replaces any whose domain
+      # the account does not own). Harmless -- Gmail files the Sent copy itself
+      # and threads on its own id -- but it is why the send probe reports that
+      # header rather than asserting it.
+      outgoing          = ${lib.getExe pkgs.mail-bridge} sendmail --provider gmail --account eddyhu@gmail.com
       # Important leads and is the default, mirroring Focused on Work.
       #
       # Names are the bridge's, NOT Gmail IMAP's: the Gmail provider maps
@@ -2423,15 +2438,12 @@ in
       mailbox.alias.drafts = "[Gmail]/Drafts"
       mailbox.alias.trash = "[Gmail]/Trash"
 
-      imap.server = "imaps://imap.gmail.com:993"
-      imap.sasl.plain.username = "eddyhu@gmail.com"
-      imap.sasl.plain.password.command = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
-
-      # Gmail REST backend, alongside the IMAP one above rather than replacing
-      # it: nothing selects it unless a caller passes `-b gmail`, so aerc and
-      # every existing himalaya invocation keep using IMAP untouched. Added so
-      # the Gmail-side surface can be exercised at all -- `himalaya gmail ...`
-      # refuses outright without this block.
+      # THE ONLY BACKEND, since the IMAP and SMTP blocks that used to sit here
+      # existed only to carry the Google app password. `--backend auto` (the
+      # default) picks the first configured backend a shared command supports,
+      # so with nothing else configured every `himalaya -a personal ...` now
+      # goes over the REST API under the brokered token. Verified: `envelope
+      # list` and `message read` both work through it.
       #
       # Same brokered-token idiom as the work account's msgraph above: ortie
       # holds the grant and refreshes it, himalaya just spends the access token.
@@ -2439,9 +2451,6 @@ in
       # 2026-08-13); `gws` shares that grant.
       gmail.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "google", "token", "show"]
 
-      smtp.server = "smtps://smtp.gmail.com:465"
-      smtp.sasl.plain.username = "eddyhu@gmail.com"
-      smtp.sasl.plain.password.command = "cat \"$XDG_RUNTIME_DIR/agenix/aerc-gmail-app-password\""
     '';
   };
 
