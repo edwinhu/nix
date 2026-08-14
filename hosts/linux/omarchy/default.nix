@@ -1086,7 +1086,7 @@ exit 0
           ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "/morning-briefing" || true
           # Poke the SAME session for planning 1h later; detached so it survives
           # this oneshot exiting (KillMode=process keeps it out of the cgroup kill).
-          nohup bash -c 'sleep 3600; agent-msg send "🦞 assistant" "/morning-planning"' >/dev/null 2>&1 &
+          nohup bash -c 'sleep 3600; agent-msg send --as-user "🦞 assistant" "/morning-planning"' >/dev/null 2>&1 &
         else
           ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant || true
         fi
@@ -1104,11 +1104,19 @@ exit 0
         cd "$HOME/areas/assistant" || exit 1
         # Resolve the day's 🦞 assistant to a cloud control-plane id (cse_…) that
         # `agent-msg send` accepts — the LOCAL section of `agent-msg list`.
+        #
+        # --as-user is REQUIRED, not cosmetic. A default (peer) send arrives
+        # wrapped in "Another Claude session sent a message" framing with SLASH
+        # COMMANDS DISABLED, so "/nightly-wrapup" lands as inert text and the
+        # skill never loads; worse, a peer send can be held by crossSessionInbound
+        # awaiting approval and never reach the model at all, while the sender
+        # still sees exit 0. This is a self-send of a slash command into the
+        # user's own session — exactly what --as-user is for.
         target=$(agent-msg list 2>/dev/null \
           | sed -n '/LOCAL/,/CLOUD/p' \
           | grep -F '🦞 assistant' \
           | grep -oE 'cse_[A-Za-z0-9]+' | head -1)
-        if [ -n "''${target:-}" ] && agent-msg send "$target" "/nightly-wrapup"; then
+        if [ -n "''${target:-}" ] && agent-msg send --as-user "$target" "/nightly-wrapup"; then
           echo "wrapup routed into assistant session ($target)"
           exit 0
         fi
