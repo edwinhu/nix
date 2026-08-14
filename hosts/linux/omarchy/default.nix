@@ -862,6 +862,78 @@ exit 0
     '';
   };
 
+  # Markdown is the ONLY hand-written form of a message body in this setup; HTML
+  # is generated on the way out and destroyed on the way in. These two scripts
+  # are that pair, and both are on PATH (not just referenced by store path)
+  # because three unrelated callers need them: aerc's [multipart-converters],
+  # aerc's reply/forward templates, and the nvim mail ftplugin.
+  #
+  # gfm-raw_html, not plain gfm: without `-raw_html` pandoc passes through every
+  # tag it has no Markdown equivalent for, so an Outlook message — which is
+  # nested tables and inline-styled spans — comes back as Markdown-flavoured
+  # HTML soup, i.e. exactly the thing being converted away from.
+  #
+  # $1 is a wrap width, and 0 (the default) means do not wrap: one paragraph
+  # comes back as one line, matching the soft-wrap-only editor. The nvim
+  # ftplugin passes its own textwidth, so the two agree by construction --
+  # set textwidth there and the conversion follows it.
+  #
+  # Unwrapped output can exceed the 998-octet line limit of RFC 5322. That is
+  # safe here only because aerc encodes the body quoted-printable, which soft-
+  # breaks long lines on the wire.
+  mailHtmlToMd = pkgs.writeShellApplication {
+    name = "mail-html2md";
+    runtimeInputs = [ pkgs.pandoc ];
+    text = ''
+      columns="''${1:-0}"
+      if [ "$columns" -gt 0 ]; then
+        exec pandoc -f html -t gfm-raw_html --columns="$columns"
+      fi
+      exec pandoc -f html -t gfm-raw_html --wrap=none
+    '';
+  };
+
+  # Standalone documents, not fragments: Outlook and Gmail both accept a bare
+  # fragment, but a <head> is the only place to put the CSS below, and mail
+  # clients strip <style> far less often than they honour a stylesheet link.
+  # The palette is GitHub's, chosen because the Markdown was written expecting
+  # GitHub's rendering of it.
+  #
+  # --no-highlight: pandoc's syntax highlighter emits a <div class="sourceCode">
+  # wrapper full of per-token <span>s and anchor links, which no mail client
+  # styles and every mail client's quoting mangles. Plain <pre><code> survives.
+  mailMdToHtmlTemplate = pkgs.writeText "mail-md2html.html" ''
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta charset="utf-8">
+    <style>
+    body{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1f2328}
+    blockquote{margin:0 0 0 .8em;padding:0 0 0 .8em;border-left:3px solid #d0d7de;color:#57606a}
+    pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+    pre{background:#f6f8fa;padding:.6em .8em;border-radius:6px;overflow-x:auto}
+    code{background:#f6f8fa;padding:.1em .3em;border-radius:4px}
+    pre code{background:none;padding:0}
+    table{border-collapse:collapse}th,td{border:1px solid #d0d7de;padding:.3em .6em}
+    img{max-width:100%}
+    a{color:#0969da}
+    </style>
+    </head>
+    <body>
+    $body$
+    </body>
+    </html>
+  '';
+
+  mailMdToHtml = pkgs.writeShellApplication {
+    name = "mail-md2html";
+    runtimeInputs = [ pkgs.pandoc ];
+    text = ''
+      exec pandoc -f gfm -t html5 --standalone --no-highlight \
+        --email-obfuscation=none --template=${mailMdToHtmlTemplate}
+    '';
+  };
+
   # Tab-completion for aerc's To/Cc/Bcc fields, ranked by frecency over mail you
   # have actually exchanged. aerc has no built-in address book at all: without an
   # address-book-cmd, <C-o> completes nothing, in compose AND in forward.
@@ -1220,6 +1292,7 @@ in
       # a headless aarch64 box with nothing to stream.
       ++ [
         brscan brscanTui vimiumToggle mailPreview aercAddressBook telGvoice
+        mailHtmlToMd mailMdToHtml
         pkgs.ghostty pkgs.sunshine
       ];
 
@@ -2286,6 +2359,19 @@ in
       [compose]
       address-book-cmd = ${aercAddressBook}/bin/aerc-addressbook %s
 
+      # Bodies are written in Markdown and never hard-wrapped: nvim's
+      # after/ftplugin/mail.lua sets textwidth 0 and soft-wraps to the window,
+      # so one paragraph stays one line all the way out.
+      #
+      # The converted part is added by :multipart, which the `y` bind in
+      # binds.conf runs immediately before :send. The text/plain part keeps the
+      # Markdown source verbatim, so :postpone stores Markdown and :recall
+      # reopens Markdown — aerc's recall picks the text/plain part
+      # (lib.FindPlaintext), so the HTML alternative is never what lands in the
+      # editor.
+      [multipart-converters]
+      text/html=mail-md2html
+
       [filters]
       text/plain=colorize
       text/calendar=calendar
@@ -2306,6 +2392,57 @@ in
       # No [hooks] block: aerc's new-mail hook only fired while aerc was
       # running AND sitting in that folder. Nothing replaces it yet — see
       # the git history for the retired aercMailNotify script.
+    '';
+  };
+
+  # Reply/forward templates. No template-dirs key is needed: aerc falls back
+  # through ~/.config/aerc/templates before its own share dir, so dropping a
+  # file with the stock name here shadows the stock one.
+  #
+  # Both differ from aerc's defaults in the same way — the quoted original is
+  # converted to MARKDOWN rather than to the flat text `exec html` produces.
+  # The stock quoted_reply already branches on OriginalMIMEType and calls the
+  # shipped `html` filter (w3m), which returns a rendered PAGE: centred text,
+  # [1]-style link footnotes, table rules drawn in dashes. That reads fine and
+  # edits terribly, and none of it round-trips back through mail-md2html.
+  # forward_as_body has no branch at all upstream, so a forwarded HTML message
+  # arrives in the editor as raw tags; that is the bug this file fixes.
+  #
+  # trimSignature runs on the MARKDOWN, after conversion, because it matches on
+  # a "-- " line that does not survive as its own line inside HTML.
+  xdg.configFile."aerc/templates/quoted_reply" = {
+    force = true;
+    text = ''
+      X-Mailer: aerc {{version}}
+
+      On {{dateFormat (.OriginalDate | toLocal) "Mon Jan 2, 2006 at 3:04 PM MST"}}, {{.OriginalFrom | names | join ", "}} wrote:
+      {{ if eq .OriginalMIMEType "text/html" -}}
+      {{- exec `mail-html2md` .OriginalText | trimSignature | quote -}}
+      {{- else -}}
+      {{- trimSignature .OriginalText | quote -}}
+      {{- end}}
+      {{- with .Signature }}
+
+      {{.}}
+      {{- end }}
+    '';
+  };
+
+  xdg.configFile."aerc/templates/forward_as_body" = {
+    force = true;
+    text = ''
+      X-Mailer: aerc {{version}}
+
+      Forwarded message from {{.OriginalFrom | names | join ", "}} on {{dateFormat (.OriginalDate | toLocal) "Mon Jan 2, 2006 at 3:04 PM MST"}}:
+      {{ if eq .OriginalMIMEType "text/html" -}}
+      {{- exec `mail-html2md` .OriginalText -}}
+      {{- else -}}
+      {{- .OriginalText -}}
+      {{- end}}
+      {{- with .Signature }}
+
+      {{.}}
+      {{- end }}
     '';
   };
 
