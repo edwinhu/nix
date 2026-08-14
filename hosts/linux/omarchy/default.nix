@@ -943,13 +943,8 @@ exit 0
     text = ''exec python3 ${./files/aerc-addressbook.py} "$@"'';
   };
 
-  # Morgen ships no usable icon (its iconDir entry was a Superhuman placeholder),
-  # so pull the real one from the web app's apple-touch-icon (a real 180px PNG).
-  # Superhuman uses the committed iconDir Superhuman.png — a 512px raster rendered
-  # from the brand SVG (rsvg-convert -w 512). The SVG itself has only a 23px
-  # viewBox in a <symbol>+<use>, which icon loaders rasterize at that low res ->
-  # blurry on a 2x HiDPI display; the 512px PNG stays crisp at any launcher size.
-  # (The mail.superhuman.com apple-touch-icon URL returns HTML, not an image.)
+  # Morgen ships no usable icon, so pull the real one from the web app's
+  # apple-touch-icon (a real 180px PNG).
   morgenIcon = pkgs.fetchurl {
     url = "https://web.morgen.so/apple-touch-icon.png";
     hash = "sha256-MiLXn1LrP/9idaof4t2fAAADyh3+qw9bdqMva2h7LPE=";
@@ -969,9 +964,9 @@ exit 0
     # global dir on-PATH despite XDG_CACHE_HOME (see dotfiles/.shell_path).
     #
     # No CDP_PORT: the CLIs discover their endpoint themselves (the Electron
-    # desktop app's port, then Chrome/Chromium), so the routines' morgen/
-    # superhuman calls find the browser-wide :9222 without being told — and stay
-    # correct if a desktop app ever lands on this host.
+    # desktop app's port, then Chrome/Chromium), so the routines' morgen calls
+    # find the browser-wide :9222 without being told — and stay correct if a
+    # desktop app ever lands on this host.
     "PATH=%h/.local/bin:%h/.bun/bin:%h/.pixi/bin:%h/.nix-profile/bin:/usr/bin:/bin"
     "CLAUDE_CONFIG_DIR=%h/.claude"
     "BUN_INSTALL=%h/.bun"
@@ -1489,9 +1484,6 @@ in
     # Install desktop entry icons
     file.".local/share/applications/icons/OpenCode.svg".source = "${iconDir}/OpenCode.svg";
     file.".local/share/applications/icons/Docker.svg".source = "${iconDir}/Docker.svg";
-    file.".local/share/applications/icons/Morgen.svg".source = "${iconDir}/Superhuman.svg";  # Using similar icon
-    file.".local/share/applications/icons/Beeper.svg".source = "${iconDir}/Superhuman.svg";  # Using similar icon
-    file.".local/share/applications/icons/Superhuman.svg".source = "${iconDir}/Superhuman.svg";
     file.".local/share/applications/icons/Tailscale.svg".source = "${iconDir}/Tailscale.svg";
     file.".local/share/applications/icons/Tailscale Admin Console.png".source = "${iconDir}/Tailscale Admin Console.png";
     file.".local/share/applications/icons/YouTube Music.png".source = "${iconDir}/YouTube Music.png";
@@ -1516,7 +1508,7 @@ in
   #
   # Was: home.sessionVariables.CDP_PORT = "9222", whose own comment named the
   # bug — "morgen-cli defaults to 9253" — it was working around. Fixed properly
-  # in morgen-cli v0.10.2 / superhuman-cli v0.38.5.
+  # in morgen-cli v0.10.2.
   #
   # Per-invocation overrides remain: CDP_PORT pins one port and skips probing;
   # ELECTRON_CDP_PORT and CHROME_CDP_PORT move the candidates.
@@ -1652,9 +1644,9 @@ in
   # Chromium flags (Arch's chromium wrapper appends every line to each launch).
   # Reproduces the Omarchy defaults and adds browser-wide CDP: the main Default
   # profile (already logged in) owns the debug endpoint on :9222, and every
-  # app window (Superhuman, Morgen, etc. launched via omarchy-launch-webapp)
-  # is a page on that one endpoint — so superhuman-cli and morgen-cli, both of
-  # which probe here after finding no Electron app, read tokens from the live
+  # app window (Morgen, etc. launched via omarchy-launch-webapp) is a page on
+  # that one endpoint — so morgen-cli, which probes here after finding no
+  # Electron app, reads tokens from the live
   # session (this host has no desktop apps, so Chromium is the only route), no per-app
   # profile or manual re-login. force = it seeds a real file at install time.
   #
@@ -1674,8 +1666,9 @@ in
   # /etc scope, so not declarative here) — Chromium sync is off, so this is the
   # only way the profile's extensions come back on a fresh machine. They
   # auto-install + auto-update from the Web Store and can't be removed by hand
-  # while the policy is present. IDs = 1Password, Paperpile, Vimium, Superhuman,
-  # Readwise, Perma.cc (copy-url is separate — loaded unpacked via --load-extension below):
+  # while the policy is present. IDs = 1Password, Paperpile, Vimium, Tampermonkey,
+  # Readwise, AdGuard, Perma.cc, Claude (copy-url is separate — loaded unpacked
+  # via --load-extension below):
   #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-extensions-policy.json \
   #     /etc/chromium/policies/managed/extensions.json
   # Verify: chrome://policy (Reload policies) shows ExtensionInstallForcelist.
@@ -1749,7 +1742,38 @@ in
       # If a second unpacked extension is ever added here it MUST be appended
       # comma-separated to this same flag -- Chromium honours only the LAST
       # --load-extension, so a second line would silently drop copy-url.
-      --load-extension=${config.home.homeDirectory}/.local/share/omarchy/default/chromium/extensions/copy-url
+      #
+      # Paths are /usr/share/omarchy, NOT ~/.local/share/omarchy. Quattro made
+      # /usr/share/omarchy canonical and ~/.local/share/omarchy a symlink to it.
+      # Both resolve, but omarchy-upgrade-to-quattro's
+      # repair_chromium_copy_url_extension_flags rewrites the legacy spelling to
+      # the canonical one -- and since this file is a read-only /nix/store
+      # symlink, that write dies with PermissionError and aborts the entire user
+      # transition. It is guarded by a grep for the legacy path, so emitting the
+      # canonical path makes the upgrade skip this file untouched.
+      #
+      # yt-dlp and whatsapp-slim are declared for the same reason: migrations
+      # 1780517689 and 1785543725 otherwise `sed -i --follow-symlinks` them in
+      # and fail the migration queue. Each greps its own extensions/ path first,
+      # so declaring them here makes those migrations no-ops. Any FUTURE Omarchy
+      # migration that edits this file needs the same treatment.
+      --load-extension=/usr/share/omarchy/default/chromium/extensions/copy-url,/usr/share/omarchy/default/chromium/extensions/yt-dlp,/usr/share/omarchy/default/chromium/extensions/whatsapp-slim
+      # Google account sign-in. Arch's chromium ships without Google's OAuth
+      # credentials, so signing in silently does nothing; these are the ones
+      # omarchy-install-chromium-google-account appends. That script writes with
+      # a bare `>>` and has no `set -e`, so against this read-only /nix/store
+      # symlink it fails with "Permission denied" and STILL prints "Now you can
+      # login" -- declaring the flags here is the only thing that actually works.
+      # It guards each line with `grep -qxF`, so these exact strings make it a
+      # no-op. Keep them byte-identical to the script's if it ever changes them.
+      --oauth2-client-id=77185425430.apps.googleusercontent.com
+      --oauth2-client-secret=OTJgUOQcT7lO7GsGZq2G4IlT
+      # Pin the os_crypt backend (Omarchy migration 1784508556). On Hyprland the
+      # xdg-desktop-portal Secret backend has no provider, so Chromium can fall
+      # back to the 'basic' v10 store; that makes cookies and passwords encrypted
+      # under the gnome-libsecret v11 key undecryptable and silently logs you out
+      # of everything.
+      --password-store=gnome-libsecret
       --remote-debugging-port=9222
       --remote-allow-origins=*
       # Keep the visible-but-unfocused browser window's ACTIVE tab reachable. In
@@ -1780,14 +1804,13 @@ in
   };
 
   # Autostart the CDP web apps on login (Hyprland sources this user autostart
-  # slot; Omarchy's own defaults live in a separate file). Guarantees Superhuman
-  # + Morgen — and thus the browser-wide :9222 endpoint the morgen/superhuman
-  # CLIs attach to — are up for the 08:00 scheduled briefing even after a reboot.
+  # slot; Omarchy's own defaults live in a separate file). Guarantees Morgen —
+  # and thus the browser-wide :9222 endpoint morgen-cli attaches to — is up for
+  # the 08:00 scheduled briefing even after a reboot.
   # launch-or-focus (not launch) won't duplicate the windows you keep open all day.
   xdg.configFile."hypr/autostart.conf" = {
     force = true;
     text = ''
-      exec-once = omarchy-launch-or-focus-webapp superhuman https://mail.superhuman.com
       exec-once = omarchy-launch-or-focus-webapp morgen https://web.morgen.so
     '';
   };
@@ -2441,10 +2464,14 @@ in
 
       [accounts.personal]
 
+      # Gmail LABEL IDS, not IMAP folder paths — the REST API rejects
+      # `[Gmail]/Sent Mail` with `HTTP 400: Invalid label`.
       mailbox.alias.inbox = "INBOX"
-      mailbox.alias.sent = "[Gmail]/Sent Mail"
-      mailbox.alias.drafts = "[Gmail]/Drafts"
-      mailbox.alias.trash = "[Gmail]/Trash"
+      mailbox.alias.sent = "SENT"
+      mailbox.alias.drafts = "DRAFT"
+      mailbox.alias.trash = "TRASH"
+      mailbox.alias.starred = "STARRED"
+      mailbox.alias.important = "IMPORTANT"
 
       # THE ONLY BACKEND, since the IMAP and SMTP blocks that used to sit here
       # existed only to carry the Google app password. `--backend auto` (the
@@ -2939,7 +2966,7 @@ in
     };
 
     # LSEG Workspace as a Chromium app on the shared Default profile, same shape
-    # as superhuman below: one browser process, so the browser-wide :9222 from
+    # as morgen above: one browser process, so the browser-wide :9222 from
     # chromium-flags.conf already covers it and lseg tooling can drive the live
     # session with no per-app profile and no re-login.
     #
@@ -2971,20 +2998,6 @@ in
       type = "Application";
       icon = "${iconDir}/LSEG Workspace.png";
       categories = [ "Office" "Finance" ];
-      startupNotify = true;
-    };
-
-    # Superhuman as a Chromium app on the shared Default profile (where you're
-    # already logged in). CDP is enabled browser-wide via chromium-flags.conf
-    # below (one endpoint on :9222), so superhuman-cli attaches there — no
-    # per-app profile or hardcoded --app-id needed.
-    superhuman = {
-      name = "Superhuman";
-      comment = "Superhuman email client";
-      exec = "omarchy-launch-or-focus-webapp superhuman https://mail.superhuman.com";
-      terminal = false;
-      type = "Application";
-      icon = "${iconDir}/Superhuman.png";
       startupNotify = true;
     };
 
