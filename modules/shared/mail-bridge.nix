@@ -20,7 +20,7 @@
   src,
 }:
 let
-  version = "0.2.0";
+  version = "0.3.0";
 
   # Bun's resolver needs the network, which the build sandbox forbids — so the
   # dependency tree is its own fixed-output derivation, the standard shape for
