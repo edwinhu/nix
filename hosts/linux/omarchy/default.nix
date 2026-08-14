@@ -868,10 +868,15 @@ exit 0
   # because three unrelated callers need them: aerc's [multipart-converters],
   # aerc's reply/forward templates, and the nvim mail ftplugin.
   #
-  # gfm-raw_html, not plain gfm: without `-raw_html` pandoc passes through every
-  # tag it has no Markdown equivalent for, so an Outlook message — which is
-  # nested tables and inline-styled spans — comes back as Markdown-flavoured
-  # HTML soup, i.e. exactly the thing being converted away from.
+  # Plain gfm, NOT gfm-raw_html. `-raw_html` reads as "keep the Markdown clean",
+  # but it is a silent-deletion switch: pandoc's gfm writer emits the literal
+  # placeholder `[TABLE]` for any table it cannot express as a pipe table, and
+  # with raw HTML disabled there is no fallback, so the content is dropped. A
+  # 29KB table-layout message converted to 100 bytes reading `[TABLE]` and a
+  # tracking pixel, and was forwarded that way. Raw-HTML passthrough is the
+  # lesser evil: soup in the composer beats a body that isn't there.
+  # For third-party HTML whose layout matters, don't convert at all — `:forward
+  # -F` attaches the original as message/rfc822 (bound to F in binds.conf).
   #
   # $1 is a wrap width, and 0 (the default) means do not wrap: one paragraph
   # comes back as one line, matching the soft-wrap-only editor. The nvim
@@ -887,9 +892,9 @@ exit 0
     text = ''
       columns="''${1:-0}"
       if [ "$columns" -gt 0 ]; then
-        exec pandoc -f html -t gfm-raw_html --columns="$columns"
+        exec pandoc -f html -t gfm --columns="$columns"
       fi
-      exec pandoc -f html -t gfm-raw_html --wrap=none
+      exec pandoc -f html -t gfm --wrap=none
     '';
   };
 
@@ -1416,29 +1421,6 @@ in
       Icon=scanner
       Terminal=false
       Categories=Utility;
-      StartupNotify=true
-    '';
-
-    # OpenWhispr launcher entry. MUST live here under ~/.local/share/applications
-    # (XDG_DATA_HOME), NOT via xdg.desktopEntries: like the scanner above,
-    # omarchy's walker only indexes this dir, not the nix-profile share where
-    # xdg.desktopEntries would place it. Exec is a bare `openwhispr` so it
-    # resolves to the nixGL-wrapped binary on PATH (the AppImage's bundled
-    # `Exec=AppRun --no-sandbox` would bypass the wrapper). Icon is an absolute
-    # store path to the PNG recovered from the AppImage, so it resolves without
-    # depending on icon-theme indexing of the nix profile. StartupWMClass matches
-    # the Electron window's app_id for Hyprland window association.
-    file.".local/share/applications/openwhispr.desktop".text = ''
-      [Desktop Entry]
-      Type=Application
-      Name=OpenWhispr
-      Comment=Local dictation and AI meeting notes
-      Exec=openwhispr %U
-      Icon=${pkgs.openwhispr}/share/icons/hicolor/256x256/apps/openwhispr.png
-      Terminal=false
-      Categories=Utility;AudioVideo;
-      MimeType=x-scheme-handler/openwhispr;
-      StartupWMClass=OpenWhispr
       StartupNotify=true
     '';
 
