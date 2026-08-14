@@ -1,13 +1,18 @@
 { pkgs }:
 
 let
-  version = "0.1.3";
+  version = "0.1.4";
   
   systemMap = {
     "x86_64-linux" = {
       os = "linux";
       arch = "x64";
       hash = "sha256-O3ZzJtv9dqFStMNHm1ORM0JsBFra168IgGH4Kk5TvjU=";
+    };
+    "aarch64-linux" = {
+      os = "linux";
+      arch = "arm64";
+      hash = "sha256-w+WGoykvY++tXe3cqYL1ob32cKZovGfanTMQKdbD40s=";
     };
     "aarch64-darwin" = {
       os = "darwin";
@@ -44,6 +49,6 @@ in pkgs.stdenv.mkDerivation {
     description = "Google Scholar CLI";
     homepage = "https://github.com/edwinhu/google-scholar-cli";
     mainProgram = "scholar";
-    platforms = [ "x86_64-linux" "aarch64-darwin" ];
+    platforms = builtins.attrNames systemMap;
   };
 }

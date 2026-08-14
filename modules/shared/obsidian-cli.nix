@@ -34,17 +34,21 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.1.0";
+  version = "0.1.1";
 
   # Per-platform release asset ids + hashes (all attached to the v${version}
   # release).
   platforms = {
     x86_64-linux = {
-      assetId = "493189125"; # obsidian-linux-x64
+      assetId = "514739306"; # obsidian-linux-x64
       hash = "sha256-lbmC/HTcbgSjhdvuk4RJcbkIRPHlIXJwM+7hSgWNpy4=";
     };
+    aarch64-linux = {
+      assetId = "514739307"; # obsidian-linux-arm64
+      hash = "sha256-HABcZT9CHQ2k3Ioxvm66KSg3NKigr8es74uChhgIKMU=";
+    };
     aarch64-darwin = {
-      assetId = "493189124"; # obsidian-darwin-arm64
+      assetId = "514739308"; # obsidian-darwin-arm64
       hash = "sha256-FBDgijmWC0ESlNy1fZxDwqXqWNojPiwC6EmS8pVp/Tc=";
     };
   };

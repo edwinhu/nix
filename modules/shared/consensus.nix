@@ -1,13 +1,18 @@
 { pkgs }:
 
 let
-  version = "0.1.2";
+  version = "0.1.3";
   
   systemMap = {
     "x86_64-linux" = {
       os = "linux";
       arch = "x64";
       hash = "sha256-Xn8d/ZOrDDEqTquRs75WluDIAMsEctiuLqo1J9rfNnM=";
+    };
+    "aarch64-linux" = {
+      os = "linux";
+      arch = "arm64";
+      hash = "sha256-wg2yYvw3Aq3+ymZhEV9yzDPSi9tr/agVd8/4iH5pa3A=";
     };
     "aarch64-darwin" = {
       os = "darwin";
@@ -44,6 +49,6 @@ in pkgs.stdenv.mkDerivation {
     description = "Consensus CLI";
     homepage = "https://github.com/edwinhu/consensus-cli";
     mainProgram = "consensus";
-    platforms = [ "x86_64-linux" "aarch64-darwin" ];
+    platforms = builtins.attrNames systemMap;
   };
 }

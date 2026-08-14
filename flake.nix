@@ -409,8 +409,8 @@
                 # the omarchy host module, so the overlay is the only place the
                 # pin appears.
                 himalaya = (import inputs.nixpkgs-himalaya { system = prev.stdenv.hostPlatform.system; }).himalaya;
-                mml = inputs.mml.packages.${info.system}.default;
-                ortie = inputs.ortie.packages.${info.system}.default;
+                mml = prev.callPackage ./modules/shared/mml-release.nix {};
+                ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                 # herdr — terminal multiplexer for agents (see the input above).
