@@ -54,8 +54,6 @@ let
 
     # Tailscale TUI (source build). Terminal workspaces are herdr's job now —
     # it's cross-platform, so it lives in modules/shared/packages.nix.
-    # TUI email, reading both mailboxes through mail-bridge on 1143/1144.
-    neomd
     tsui
 
     # Bluetooth CLI. The Omarchy/Arch base ships only the bluez *daemon*
