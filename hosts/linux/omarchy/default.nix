@@ -2734,38 +2734,6 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
-    # mail-bridge-smtpd: SMTP submission for clients that can only send over
-    # SMTP. NOTHING USES IT TODAY -- aerc sends through the sendmail(1) shim on
-    # both accounts, and neomd, which required it, is gone. It stays because it
-    # is the same code path the shim drives and the cost is one idle loopback
-    # listener; delete it if a second client never appears.
-    #
-    # WORK ONLY. The send path is Graph-only (sendmail.ts posts to
-    # /me/sendMail), so there is nothing here for the personal account -- that
-    # one sends through smtp.gmail.com directly, as aerc does.
-    #
-    # Loopback and accepts ANY credentials, for the same reason the IMAP
-    # listeners do: the real credential is the brokered Graph token this
-    # process holds. startSmtpd refuses to bind anything but loopback.
-    { mail-bridge-smtpd = {
-      Unit = {
-        Description = "mail-bridge — loopback SMTP submission for the UVA mailbox";
-        After = [ "network-online.target" ];
-        Wants = [ "network-online.target" ];
-      };
-      Service = {
-        Type = "simple";
-        Environment = [
-          ''"MAIL_BRIDGE_TOKEN_CMD=${lib.getExe pkgs.ortie} -a msgraph token show"''
-        ];
-        ExecStart =
-          "${pkgs.mail-bridge}/bin/mail-bridge smtpd "
-          + "--account ehu@law.virginia.edu --port 1025";
-        Restart = "on-failure";
-        RestartSec = 30;
-      };
-      Install.WantedBy = [ "default.target" ];
-    }; }
     # mail-bridge-personal: the same binary, the Gmail provider, the personal
     # mailbox. A SECOND UNIT rather than a second account in one process: the
     # work bridge is what the user reads all day, and a Gmail fault must not be
