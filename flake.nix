@@ -546,45 +546,6 @@
                   meta = base.meta or {};
                   passthru = { unwrapped = base; inherit cli; };
                 };
-                # openwhispr — local dictation + AI meeting notes, the Linux
-                # stand-in for the macOS-only granola cask. Fetched as the
-                # upstream release AppImage (see modules/shared/openwhispr.nix).
-                # Same GL story as hylo/beeper: wrap bin/openwhispr in nixGLIntel
-                # so Chromium/Mesa resolve against system GL on non-NixOS, and
-                # force --no-sandbox (the store chrome-sandbox is not setuid).
-                # The wrapped `openwhispr` on PATH is what the launcher invokes
-                # via xdg.desktopEntries.openwhispr.
-                #
-                # Vulkan for llama.cpp GPU offload: OpenWhispr's bundled
-                # llama-server-vulkan uses a Vulkan loader for local-LLM cleanup,
-                # but nixGLIntel only sets up GL (LIBGL/EGL/GBM), NOT a Vulkan
-                # ICD — so the loader finds no device and llama.cpp silently
-                # falls back to CPU even with --n-gpu-layers 99 (cleanup crawls).
-                # Point the loader at Mesa's RADV ICD so it offloads to the AMD
-                # iGPU (Strix Halo). The ICD json + libvulkan_radeon.so live in
-                # the store (bind-mounted into the AppImage FHS), and /dev/dri is
-                # already reachable (GL works). VK_DRIVER_FILES is the modern var,
-                # VK_ICD_FILENAMES the legacy fallback; set both.
-                openwhispr = let
-                  owPkg = prev.callPackage ./modules/shared/openwhispr.nix {};
-                  radvIcd = "${prev.mesa}/share/vulkan/icd.d/radeon_icd.x86_64.json";
-                in prev.symlinkJoin {
-                  name = "openwhispr-nixgl-${owPkg.version or "unknown"}";
-                  paths = [
-                    (prev.writeShellScriptBin "openwhispr" ''
-                      export VK_DRIVER_FILES="${radvIcd}"
-                      export VK_ICD_FILENAMES="${radvIcd}"
-                      # OpenWhispr 1.8 forces XWayland for overlay positioning.
-                      # XWayland reports this 2x 4K display at 1x, so explicitly
-                      # restore the compositor's device scale for a correctly
-                      # sized, pixel-sharp UI.
-                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${owPkg}/bin/openwhispr --no-sandbox --force-device-scale-factor=2 "$@"
-                    '')
-                    owPkg
-                  ];
-                  meta = owPkg.meta or {};
-                  passthru = { unwrapped = owPkg; };
-                };
                 # Sunshine — Moonlight streaming host (the remote-desktop path
                 # into this box from the Mac, over Tailscale). Same GL story as
                 # hylo/beeper on non-NixOS: the VAAPI encoder builds its frames

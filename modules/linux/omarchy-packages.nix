@@ -135,7 +135,6 @@ let
   # to linuxOnly, unless you have confirmed an aarch64-linux artifact exists.
   #
   #   zoom-us        Zoom ships no ARM64 Linux client; use app.zoom.us instead.
-  #   openwhispr     GH releases are x86_64 only.
   #   hylo           GH release is an x86_64 AppImage only.
   #   morgen-cli     \  own repos; Bun release CI publishes darwin-arm64 and
   #   paperpile-cli  /  linux-x64 but no linux-arm64. Bun CAN target
@@ -144,7 +143,6 @@ let
   #                     back into linuxOnly.
   x86_64Only = with pkgs; [
     zoom-us
-    openwhispr
     hylo
     morgen-cli
     paperpile-cli
