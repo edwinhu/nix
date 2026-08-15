@@ -2610,6 +2610,28 @@ in
     # Keep aerc's completion cache warm out of band. The query path deliberately
     # never indexes inline (a full index is four IMAP fetches, ~75s), so without
     # this the first completion after a cold cache returns nothing.
+    # atuin-ai-server: the OSS backend `atuin ai` talks to, which translates
+    # atuin's own /api/cli/chat SSE protocol onto cli-proxy-api's OpenAI API —
+    # so history prompts never reach Atuin's hosted service. Model + endpoint
+    # config is ~/.config/atuin-ai/config.toml (dotfiles).
+    #
+    # --network host so that config's endpoint is plain loopback to :8317; the
+    # upstream docs' host.docker.internal is a Docker-Desktop-ism. Foreground
+    # (no -d) so systemd owns the lifecycle, --rm so a restart is not blocked
+    # by the old container's name.
+    { atuin-ai = {
+      Unit = {
+        Description = "Atuin AI server (self-hosted, backed by cli-proxy-api)";
+        After = [ "docker.service" ];
+      };
+      Service = {
+        ExecStart = ''/usr/bin/docker run --rm --name atuin-ai --network host -v %h/.config/atuin-ai/config.toml:/etc/atuin-ai/config.toml ghcr.io/atuinsh/atuin-ai-server:latest'';
+        ExecStop = "/usr/bin/docker stop atuin-ai";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     { aerc-addressbook = {
       Unit.Description = "Rebuild the aerc frecency address book";
       Service = {

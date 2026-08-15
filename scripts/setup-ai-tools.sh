@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Bootstrap installer for AI CLI tools.
 #
-# Tools that ship prebuilt binaries (claude, codex, opencode, agy) install
-# through mise: this writes a small stub into ~/.local/bin that resolves and
+# Tools that ship prebuilt binaries (claude, codex, opencode, agy, atuin)
+# install through mise: this writes a small stub into ~/.local/bin that resolves and
 # updates the tool on every run, so nothing here pins a version and nothing
 # fights the tools' own release cadence. Same mechanism Omarchy 4 uses
 # (omarchy-mise-install), reimplemented so it also works on macOS and
@@ -39,7 +39,7 @@ for arg in "$@"; do
       sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|gemini|agy|qmd|readwise) TOOLS+=("$arg") ;;
+    claude|codex|opencode|gemini|agy|qmd|readwise|atuin) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -47,7 +47,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode agy qmd readwise)
+  TOOLS=(claude codex opencode agy qmd readwise atuin)
   # Per-host opt-out. AI_TOOLS_SKIP is a space-separated tool list, set from
   # `userInfo.aiToolsSkip` in flake.nix, for hosts that don't want part of the
   # default set (e.g. rjds has no use for readwise, and installing it there
@@ -141,6 +141,19 @@ install_agy() {
 }
 # `gemini` subcommand kept for muscle memory; installs Antigravity CLI now.
 install_gemini() { install_agy; }
+
+# atuin — here rather than in nix's packages.nix because self-hosted Atuin AI
+# (the local atuin-ai-server fronting cli-proxy-api; see
+# ~/.config/atuin-ai/config.toml) landed in 18.19.0, and nixpkgs-unstable is
+# still on 18.18.1. Upstream ships prebuilt binaries for every platform here,
+# so mise's aqua:atuinsh/atuin resolves it directly.
+#
+# The nix profile precedes ~/.local/bin on PATH, so this only wins once atuin
+# is gone from packages.nix — which it is. bash-preexec stays in nix.
+install_atuin() {
+  purge_nix_wrapper atuin
+  mise_stub atuin
+}
 
 find_bun() {
   for p in "$HOME/.bun/bin/bun" "$HOME/.nix-profile/bin/bun"; do
@@ -270,6 +283,7 @@ for t in "${TOOLS[@]}"; do
     agy)          install_agy ;;
     qmd)          install_qmd ;;
     readwise)     install_readwise ;;
+    atuin)        install_atuin ;;
   esac
 done
 

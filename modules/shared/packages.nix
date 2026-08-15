@@ -70,7 +70,9 @@ with pkgs; [
 
   # Text and terminal utilities
   ast-grep
-  atuin
+  # atuin is NOT here: it comes from mise via scripts/setup-ai-tools.sh.
+  # nixpkgs-unstable sits at 18.18.1, and self-hosted Atuin AI (the local
+  # atuin-ai-server fronting cli-proxy-api) needs >= 18.19.0.
   # atuin's bash integration registers precmd/preexec hooks that only run if
   # bash-preexec is sourced first; without it atuin records nothing in bash.
   # Sourced from ~/.nix-profile/share/bash/bash-preexec.sh in dotfiles/.shell_common.
