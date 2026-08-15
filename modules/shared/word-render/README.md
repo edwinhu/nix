@@ -1,14 +1,30 @@
-# word-render — faithful docx → PDF via real Microsoft Word in a QEMU guest
+# word-render — faithful docx → PDF via real Microsoft Word in a Windows guest
 
 Renders `.docx` to PDF through the **real Word engine** so fields
 (`REF`/`NOTEREF`/`PAGEREF`/`TOC`/`TOF`/`TOA`) are recomputed faithfully — the one
-thing LibreOffice and ONLYOFFICE x2t get wrong. Word runs in a QEMU Windows guest
-and is driven over SSH, so the same host scripts work on:
+thing LibreOffice and ONLYOFFICE x2t get wrong. Word runs in a Windows guest and
+is driven over SSH; the host scripts never learn which hypervisor is underneath,
+so only `WINVM_SSH` differs between machines.
 
-- **Apple Silicon Mac** — Win11 **ARM64** guest (QEMU + HVF) — *verified end-to-end*.
-- **x86_64 Linux** — Win11 **x64** guest (QEMU + KVM) — *same shape, unverified*.
+## Which guest to build
 
-Only the SSH target changes between machines.
+**Linux → `vm/docker/` (default).** dockur/windows, the same image Omarchy 4's
+`omarchy-windows-vm` uses. One compose file plus an `/oem` folder rebuilds the
+whole guest unattended in ~30 min, so it is disposable rather than precious.
+Start at [vm/docker/](vm/docker/): run `vm/docker/provision.sh`, then
+`docker compose -f ~/.config/windows/docker-compose.yml up -d`.
+
+**Mac → `vm/` (QEMU).** dockur/windows needs `/dev/kvm`, which macOS does not
+have, so Apple Silicon keeps the QEMU + HVF path below. It is provisioned by
+hand once per machine — a snowflake, but the only option there.
+
+Verified on the Docker path (2026-08-14, x86_64): 66-page article with 20 TOC
+entries and 19 PAGEREFs rendered in 18s with zero field errors, and Latin Modern
+documents embed `LMRoman10-*` rather than substituting Calibri.
+
+**Do not follow the QEMU instructions on Linux** unless Docker is unavailable.
+They still work, but they rebuild a machine-local artifact that no repo can
+reproduce.
 
 ## What Nix ships (`programs.wordRender`)
 
@@ -26,6 +42,19 @@ Only the SSH target changes between machines.
 
 Options (set per host): `sshTarget` (default `word@winvm`), `guestDir`,
 `guestScript`.
+
+## Fonts (both guests)
+
+`vm/install-guest-fonts.sh` pushes the Latin Modern faces built by
+`mk_winfonts.py`. **This step is silent when skipped and silent when broken** —
+Word simply substitutes Calibri, producing a plausible PDF with the wrong
+typeface and pagination. Verify after provisioning:
+
+    word-render some-latin-modern.docx /tmp/t.pdf && pdffonts /tmp/t.pdf
+    # expect LMRoman10-* / LMMono10-*, NOT Calibri
+
+(The script tars with `-h` because home-manager stows those fonts as symlinks
+into the nix store; without it the guest gets 0-byte fonts that still register.)
 
 ## Reproducing the guest on a new machine
 
