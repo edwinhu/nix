@@ -95,7 +95,8 @@ with pkgs; [
   haskellPackages.pandoc-crossref
   ripgrep
   ripgrep-all
-  herdr  # agent multiplexer TUI (replaces limux/cmux); flake input, see flake.nix
+  # herdr is NOT here: mise via scripts/setup-ai-tools.sh, which also
+  # regenerates its agent skill from the same binary.
   starship
   tabiew
   tailspin

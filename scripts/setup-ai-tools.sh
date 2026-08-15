@@ -2,7 +2,7 @@
 # Bootstrap installer for AI CLI tools.
 #
 # Tools that ship prebuilt binaries (claude, codex, opencode, agy, atuin,
-# cli-proxy-api) install through mise: this writes a small stub into
+# cli-proxy-api, herdr) install through mise: this writes a small stub into
 # ~/.local/bin that resolves and updates the tool on every run, so nothing here
 # pins a version and nothing fights the tools' own release cadence. Same
 # mechanism Omarchy 4 uses (omarchy-mise-install), reimplemented so it also
@@ -39,7 +39,7 @@ for arg in "$@"; do
       sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy) TOOLS+=("$arg") ;;
+    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy|herdr) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -47,7 +47,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy)
+  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy herdr)
   # Per-host opt-out. AI_TOOLS_SKIP is a space-separated tool list, set from
   # `userInfo.aiToolsSkip` in flake.nix, for hosts that don't want part of the
   # default set (e.g. rjds has no use for readwise, and installing it there
@@ -166,6 +166,46 @@ install_atuin() {
 install_cliproxy() {
   purge_nix_wrapper cli-proxy-api
   mise_stub github:router-for-me/CLIProxyAPI cli-proxy-api
+}
+
+# herdr — the agent multiplexer. Was a pinned flake input (v0.8.0); mise's
+# registry points at the same repo, so it tracks releases instead.
+#
+# It also owns the agent skill, which used to be a build-time
+# `pkgs.herdr --skill > $out` in modules/shared/herdr-skill.nix. The invariant
+# that file exists to protect is that the doc describes the SAME ARTIFACT as
+# the binary, not merely the same version — so the skill is regenerated here,
+# from whichever herdr mise just resolved, rather than from a separate pin.
+#
+# Written as real files: the old home.file entries were store symlinks, and
+# redirecting into one writes through to a read-only store path. rm first.
+#
+# Caveat: the stub self-updates herdr on any run, so the skill can lag until
+# the next switch. Regenerate by hand with: setup-ai-tools.sh herdr
+install_herdr() {
+  purge_nix_wrapper herdr
+  mise_stub herdr
+  # Resolve the real binary rather than going through the ~/.local/bin stub:
+  # the stub's `mise use -g` prints its "tools: herdr@x.y.z" line on STDOUT,
+  # which lands in the captured skill and corrupts the frontmatter.
+  local hb
+  hb=$("$MISE" which herdr 2>/dev/null) || hb=$(command -v herdr 2>/dev/null) || return 0
+  [ -x "$hb" ] || return 0
+  local out
+  out=$("$hb" --skill 2>/dev/null) || {
+    echo "${YELLOW}⚠ herdr --skill failed; leaving the existing skill in place.${NC}"
+    return 0
+  }
+  [ -n "$out" ] || { echo "${YELLOW}⚠ herdr --skill was empty; keeping the existing skill.${NC}"; return 0; }
+  local p
+  # ~/.claude is what Claude Code scans; ~/.agents is the shared location the
+  # other agents (codex, agy, copilot) read.
+  for p in "$HOME/.claude/skills/herdr/SKILL.md" "$HOME/.agents/skills/herdr/SKILL.md"; do
+    mkdir -p "$(dirname "$p")"
+    rm -f "$p"
+    printf '%s\n' "$out" > "$p"
+  done
+  echo "${GREEN}✓${NC} herdr skill regenerated from $hb"
 }
 
 find_bun() {
@@ -298,6 +338,7 @@ for t in "${TOOLS[@]}"; do
     readwise)     install_readwise ;;
     atuin)        install_atuin ;;
     cliproxy)     install_cliproxy ;;
+    herdr)        install_herdr ;;
   esac
 done
 

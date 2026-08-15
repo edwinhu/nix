@@ -17,6 +17,10 @@ services:
     image: dockurr/windows
     container_name: omarchy-windows
     environment:
+      # Consumer media, not LTSC: dockur's `11l` is LTSC *Evaluation*, which
+      # stops working at 90 days with hourly shutdowns. Consumer Windows runs
+      # indefinitely unactivated, and activates permanently with the UVA
+      # Education key (slmgr /ipk switches the edition Pro -> Education).
       VERSION: "11"
       RAM_SIZE: "16G"
       CPU_CORES: "8"

@@ -93,21 +93,9 @@
       url = "git+ssh://git@github.com/edwinhu/mail-bridge.git";
       flake = false;
     };
-    # herdr: terminal-native agent multiplexer (replaces limux/cmux). It's a
-    # single Rust TUI binary that runs INSIDE the terminal — no GTK/GL, so no
-    # nixGL wrap and no .desktop/launcher plumbing. Upstream ships a flake with
-    # packages.<system>.default for all four linux/darwin systems; pin the
-    # release tag (upstream's own install docs recommend it over master).
-    #
-    # Deliberately NOT `inputs.nixpkgs.follows = "nixpkgs"`: herdr's flake
-    # composes oxalica/rust-overlay against its own nixpkgs pin, and forcing
-    # ours risks a toolchain mismatch for no benefit — it's one small package.
-    herdr = {
-      url = "github:ogulcancelik/herdr/v0.8.0";
-    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src, herdr } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -178,7 +166,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Write mise stubs for claude, codex, opencode, agy, qmd, readwise (idempotent)";
+        meta.description = "Write mise stubs for the AI CLIs + atuin, cli-proxy-api, herdr (idempotent)";
         program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
@@ -323,8 +311,6 @@
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
-                  # herdr — terminal multiplexer for agents (see the input above).
-                  herdr = inputs.herdr.packages.${info.system}.default;
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
                   elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
@@ -413,10 +399,6 @@
                 ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
-                # herdr — terminal multiplexer for agents (see the input above).
-                # Replaces limux: it's a plain TUI binary, so unlike limux it
-                # needs no nixGL wrap, no GDK_SCALE fix, and no .desktop patching.
-                herdr = inputs.herdr.packages.${info.system}.default;
                 # ghostty is the default terminal on Omarchy (xdg-terminals.list,
                 # host module). It's a GTK4 + libghostty renderer, so on this
                 # non-NixOS host, unwrapped, it dies with "failed to make

@@ -1232,9 +1232,6 @@ in
     # Faithful docx->PDF via real Word in a QEMU Win11 x64 + KVM guest; also a
     # host for Windows-only tools (e.g. BenQ Display QuicKit). Enabled below.
     ../../../modules/shared/word-render.nix
-    # herdr's agent skill, sourced from the same flake input as the binary so the
-    # doc can never describe a different version than the CLI it documents.
-    ../../../modules/shared/herdr-skill.nix
   ];
 
   # Ships qemu + swtpm + xorriso + the VM provisioning kit (word-render-provision,
