@@ -28,7 +28,10 @@ count=$(find "$FONTS" -name '*.ttf' | wc -l)
 [ "$count" -gt 0 ] || { echo "no .ttf in $FONTS" >&2; exit 1; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-tar czf "$tmp/lm-winfonts.tgz" -C "$FONTS" .
+# -h dereferences: home-manager stows these fonts as symlinks into the nix
+# store, and Windows cannot follow them -- without -h they extract as 0-byte
+# files that still get registered, so Word silently substitutes Calibri.
+tar czhf "$tmp/lm-winfonts.tgz" -C "$FONTS" .
 
 ssh "$WINVM_SSH" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '$GUEST_DIR' | Out-Null\""
 scp -q "$tmp/lm-winfonts.tgz" "$WINVM_SSH:$GUEST_DIR/"

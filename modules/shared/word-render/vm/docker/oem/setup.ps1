@@ -74,4 +74,91 @@ try {
   Log 'install by hand: winget install --id Microsoft.Office, or portal.office.com'
 }
 
+# --- 5. Turn off the consumer surface ---------------------------------------
+# Nobody looks at this desktop. Everything here is either background CPU that
+# competes with a render, or something that can reboot the box mid-job.
+Log 'disabling background services'
+# WSearch indexes the filesystem continuously; SysMain prefetches for
+# interactive use; DiagTrack is telemetry; the Xbox stack has no purpose here.
+foreach ($svc in 'WSearch','SysMain','DiagTrack','dmwappushservice','XblAuthManager','XblGameSave','XboxNetApiSvc','XboxGipSvc','MapsBroker','RetailDemo','WalletService') {
+  $s = Get-Service -Name $svc -ErrorAction SilentlyContinue
+  if ($s) { Stop-Service $svc -Force -ErrorAction SilentlyContinue; Set-Service $svc -StartupType Disabled -ErrorAction SilentlyContinue }
+}
+
+Log 'blocking silently-installed consumer apps'
+$cdm = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent'
+New-Item -Path $cdm -Force | Out-Null
+Set-ItemProperty $cdm -Name 'DisableWindowsConsumerFeatures' -Value 1 -Type DWord
+Set-ItemProperty $cdm -Name 'DisableCloudOptimizedContent' -Value 1 -Type DWord
+
+Log 'removing inbox store apps'
+# Keep nothing: no Store app is reachable over ssh. Failures are expected for
+# packages Windows refuses to remove, hence SilentlyContinue.
+Get-AppxPackage -AllUsers |
+  Where-Object { $_.Name -notmatch 'VCLibs|NET\.Native|UI\.Xaml|WindowsStore' } |
+  Remove-AppxPackage -ErrorAction SilentlyContinue
+Get-AppxProvisionedPackage -Online |
+  Where-Object { $_.DisplayName -notmatch 'VCLibs|NET\.Native|UI\.Xaml|WindowsStore' } |
+  Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Out-Null
+
+Log 'disabling telemetry'
+$dc = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'
+New-Item -Path $dc -Force | Out-Null
+Set-ItemProperty $dc -Name 'AllowTelemetry' -Value 0 -Type DWord
+
+Log 'stopping Windows Update from rebooting mid-render'
+# Not disabled outright -- set to manual, so `usoclient StartScan` still works
+# when you deliberately want patches, but nothing reboots on its own.
+Set-Service wuauserv -StartupType Manual -ErrorAction SilentlyContinue
+$au = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+New-Item -Path $au -Force | Out-Null
+Set-ItemProperty $au -Name 'NoAutoRebootWithLoggedOnUsers' -Value 1 -Type DWord
+Set-ItemProperty $au -Name 'AUOptions' -Value 2 -Type DWord
+
+Log 'excluding the render dir from Defender'
+# Real-time scanning of every docx/pdf write adds latency to each render.
+# An exclusion is used rather than disabling Defender: Tamper Protection
+# blocks the registry kill-switch anyway, so it would fail silently.
+Add-MpPreference -ExclusionPath "C:\Users\$User\render" -ErrorAction SilentlyContinue
+Add-MpPreference -ExclusionProcess 'WINWORD.EXE' -ErrorAction SilentlyContinue
+
+Log 'disabling scheduled maintenance'
+foreach ($t in '\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser',
+               '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator',
+               '\Microsoft\Windows\Windows Error Reporting\QueueReporting',
+               '\Microsoft\Windows\Feedback\Siuf\DmClient') {
+  Disable-ScheduledTask -TaskPath (Split-Path $t) -TaskName (Split-Path $t -Leaf) -ErrorAction SilentlyContinue | Out-Null
+}
+
+# --- 6. Slim the guest -------------------------------------------------------
+# On a 16 GB VM the big consumers are not Windows itself: hiberfil.sys is
+# RAM-sized, and the pagefile grows to match. A container guest never
+# hibernates and only ever runs Word behind ssh, so both are dead weight.
+Log 'slimming: hibernation off'
+powercfg /h off 2>&1 | Out-Null
+
+Log 'slimming: fixed 2 GB pagefile'
+$cs = Get-WmiObject Win32_ComputerSystem
+if ($cs.AutomaticManagedPagefile) {
+  $cs.AutomaticManagedPagefile = $false
+  $cs.Put() | Out-Null
+}
+$pf = Get-WmiObject -Query "SELECT * FROM Win32_PageFileSetting WHERE Name='C:\\\\pagefile.sys'"
+if ($pf) { $pf.InitialSize = 2048; $pf.MaximumSize = 2048; $pf.Put() | Out-Null }
+
+Log 'slimming: System Restore off'
+Disable-ComputerRestore -Drive 'C:\' 2>&1 | Out-Null
+
+Log 'slimming: CompactOS'
+compact /compactos:always 2>&1 | Select-Object -Last 2 | ForEach-Object { Log $_ }
+
+# Runs last: after Word is installed, so superseded components from both the
+# OS install and the Office install are collapsed in one pass.
+Log 'slimming: component store cleanup (slow)'
+Dism /Online /Cleanup-Image /StartComponentCleanup /ResetBase /Quiet 2>&1 | Out-Null
+
+$free = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
+$used = [math]::Round((Get-PSDrive C).Used / 1GB, 1)
+Log "disk after slimming: ${used} GB used, ${free} GB free"
+
 Log 'done'
