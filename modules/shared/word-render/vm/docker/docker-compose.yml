@@ -1,0 +1,43 @@
+# Windows guest for word-render, on dockur/windows -- the same image Omarchy 4's
+# `omarchy-windows-vm` uses, so its launch/stop/status wrappers drive this file.
+#
+# Differences from what omarchy-windows-vm install writes:
+#   USERNAME word   matches the `winvm` ssh alias (User word) so word-render
+#                   needs no reconfiguration.
+#   2222:22         the ssh alias already points at localhost:2222.
+#   /oem            post-install automation: OpenSSH, the host key, fonts,
+#                   render_docx.ps1, and Word via the Office Deployment Tool.
+#   bigger box      rendering a long docx with a table of authorities is not a
+#                   2-core job.
+#
+# Re-running `omarchy-windows-vm install` OVERWRITES this file. Re-copy it from
+# the nix repo afterwards (word-render-docker-provision does that).
+services:
+  windows:
+    image: dockurr/windows
+    container_name: omarchy-windows
+    environment:
+      VERSION: "11"
+      RAM_SIZE: "16G"
+      CPU_CORES: "8"
+      DISK_SIZE: "128G"
+      USERNAME: "word"
+      PASSWORD: "word"
+      TZ: "America/New_York"
+      ARGUMENTS: "-rtc base=localtime,clock=host,driftfix=slew"
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 127.0.0.1:8006:8006
+      - 127.0.0.1:3389:3389/tcp
+      - 127.0.0.1:3389:3389/udp
+      - 127.0.0.1:2222:22
+    volumes:
+      - ${HOME}/.windows:/storage
+      - ${HOME}/Windows:/shared
+      - ${HOME}/.local/share/word-render/vm-docker/oem:/oem
+    restart: "no"
+    stop_grace_period: 2m

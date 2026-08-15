@@ -1,0 +1,24 @@
+<!-- Word only. No Teams, no OneDrive, no Outlook: this guest exists to run
+     ExportAsFixedFormat over COM, nothing else. AUTOACTIVATE is off because
+     rendering does not need a licence. -->
+<Configuration>
+  <Add OfficeClientEdition="64" Channel="Current">
+    <Product ID="O365ProPlusRetail">
+      <Language ID="MatchOS" />
+      <ExcludeApp ID="Access" />
+      <ExcludeApp ID="Excel" />
+      <ExcludeApp ID="Groove" />
+      <ExcludeApp ID="Lync" />
+      <ExcludeApp ID="OneDrive" />
+      <ExcludeApp ID="OneNote" />
+      <ExcludeApp ID="Outlook" />
+      <ExcludeApp ID="PowerPoint" />
+      <ExcludeApp ID="Publisher" />
+      <ExcludeApp ID="Teams" />
+    </Product>
+  </Add>
+  <Display Level="None" AcceptEULA="TRUE" />
+  <Property Name="AUTOACTIVATE" Value="0" />
+  <Property Name="FORCEAPPSHUTDOWN" Value="TRUE" />
+  <Updates Enabled="FALSE" />
+</Configuration>
