@@ -2595,6 +2595,18 @@ in
   # systemd.user.services (a plain attrset literal can't assign the same path
   # twice; mkMerge combines them into one definition).
   systemd.user.services = lib.mkMerge [
+    # Ages out ~/.tmp per ~/dotfiles/.config/user-tmpfiles.d/scratch.conf (7d).
+    # Defined here rather than `systemctl --user enable
+    # systemd-tmpfiles-clean.timer`: that enable is a wants/ symlink no repo
+    # tracks, so the rule file would land on a new machine and never run.
+    { tmp-scratch-clean = {
+      Unit.Description = "Age out stale files in ~/.tmp";
+      Service = {
+        Type = "oneshot";
+        # Distro binary, to match the running systemd version.
+        ExecStart = "/usr/bin/systemd-tmpfiles --user --clean";
+      };
+    }; }
     (lib.mapAttrs (_: mkRoutineService) claudeRoutines)
     { hintsd = {
     Unit = {
@@ -2854,6 +2866,14 @@ in
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
   systemd.user.timers = lib.mkMerge [
     (lib.mapAttrs (_: mkRoutineTimer) claudeRoutines)
+    { tmp-scratch-clean = {
+      Unit.Description = "Daily ~/.tmp cleanup";
+      Timer = {
+        OnCalendar = "daily";
+        Persistent = true;        # catch up after the laptop was asleep
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
     { aerc-addressbook = {
       Unit.Description = "Rebuild the aerc address book a few times a day";
       Timer = {
