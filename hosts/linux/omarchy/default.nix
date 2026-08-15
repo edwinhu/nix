@@ -1336,26 +1336,6 @@ in
         ${pkgs.bash}/bin/bash "$HOME/dotfiles/scripts/setup-claude-symlinks.sh" || true
     '';
 
-    # Reindex the app launcher after a switch, so newly installed nix GUI apps
-    # actually appear in Walker.
-    #
-    # elephant (Walker's data provider) indexes desktop entries at startup and
-    # then watches for changes. Two properties of the nix profile defeat that:
-    # every store file has mtime 1969-12-31, so an mtime comparison never looks
-    # stale; and a switch REPLACES ~/.nix-profile/share/applications with a new
-    # store path rather than writing into the old one, so an inotify watch on
-    # the previous directory never fires. Net effect: a nix-installed app is
-    # present on disk and resolvable by desktop ID, but invisible in the
-    # launcher until elephant is restarted by hand — which is exactly what kept
-    # happening (ghostty, and every GUI app added before it).
-    #
-    # try-restart is a no-op when the units aren't running (e.g. switching from
-    # a TTY with no graphical session), so this is safe outside Hyprland.
-    activation.reindexWalker = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD ${pkgs.systemd}/bin/systemctl --user try-restart \
-        elephant.service app-walker@autostart.service || true
-    '';
-
     # tel: -> Google Voice (see the google-voice desktop entry). mimeapps.list is
     # a plain file here, so this rewrites only this one association and leaves the
     # rest of the user's imperative choices alone. Idempotent.
@@ -1395,9 +1375,9 @@ in
     file.".local/state/brother/brscan-skey".source =
       "${brscanSkey}/opt/brother/scanner/brscan-skey";
 
-    # Scanner launcher entry. MUST live under ~/.local/share/applications
-    # (XDG_DATA_HOME): omarchy's walker only indexes that dir, not the
-    # nix-profile share where xdg.desktopEntries would place it. TUI.float →
+    # Scanner launcher entry, written to ~/.local/share/applications
+    # (XDG_DATA_HOME) rather than via xdg.desktopEntries, so the Exec below can
+    # name the wrapper script directly. TUI.float →
     # Hyprland floats the terminal (see files/.../system.conf). `scanner` is a
     # Papirus icon name.
     # HTML signatures, concatenated into the HTML body by the compose pipeline
@@ -1428,7 +1408,7 @@ in
     # (XDG_DATA_HOME), NOT via xdg.desktopEntries: if the Arch obsidian package is
     # ever present it ships /usr/share/applications/obsidian.desktop, and on this
     # host /usr/share precedes the nix-profile share in XDG_DATA_DIRS — so a
-    # profile entry loses. Also, omarchy's walker only indexes this dir.
+    # profile entry loses. XDG_DATA_HOME wins over both.
     #
     # Exec is the nix-managed, nixGL-wrapped `obsidian` (flake overlay), NOT the
     # Arch `/usr/bin/obsidian`: the distro's electron39 blocks Obsidian's `app://`

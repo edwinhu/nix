@@ -95,7 +95,7 @@
     };
     # herdr: terminal-native agent multiplexer (replaces limux/cmux). It's a
     # single Rust TUI binary that runs INSIDE the terminal — no GTK/GL, so no
-    # nixGL wrap and no .desktop/Walker plumbing. Upstream ships a flake with
+    # nixGL wrap and no .desktop/launcher plumbing. Upstream ships a flake with
     # packages.<system>.default for all four linux/darwin systems; pin the
     # release tag (upstream's own install docs recommend it over master).
     #
