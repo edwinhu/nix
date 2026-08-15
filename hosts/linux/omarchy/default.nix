@@ -1312,14 +1312,14 @@ in
     file.".claude/agents/host-dispatch".source =
       config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/.claude/agents/host-dispatch";
 
-    # Install the AI CLIs (claude, codex, opencode, agy) idempotently on every
-    # build-switch. They self-update after install, so this only fills in missing
-    # installs (mirrors the macOS installAITools). PATH includes curl (installer
-    # downloads) + the user bin dirs so already-installed tools are detected and
-    # skipped. setup-ai-tools.sh lives in this flake, hence ${self}.
+    # Install the AI CLIs idempotently on every build-switch, as mise stubs in
+    # ~/.local/bin (mirrors the macOS installAITools). Same mechanism as
+    # Omarchy's own install/user/mise.sh, so the two agree on any tool they
+    # both name; this one additionally covers agy/qmd/readwise, which Omarchy
+    # doesn't install. setup-ai-tools.sh lives in this flake, hence ${self}.
     activation.installAITools = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD env \
-        PATH="$HOME/.local/bin:$HOME/.bun/bin:$HOME/.opencode/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
+        PATH="$HOME/.local/bin:$HOME/.bun/bin:${pkgs.mise}/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
         AI_TOOLS_SKIP="${lib.concatStringsSep " " (userInfo.aiToolsSkip or [])}" \
         ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
     '';

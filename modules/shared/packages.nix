@@ -57,8 +57,11 @@ with pkgs; [
   semtools  # search "query" files... — no indexing needed
 
   # AI tools
-  # claude, codex, opencode: installed via ~/nix/scripts/setup-ai-tools.sh
-  # (each tool manages its own auto-updates; nix just bundles the bootstrap script)
+  # claude, codex, opencode, agy, qmd, readwise: installed via
+  # ~/nix/scripts/setup-ai-tools.sh, which writes mise stubs into ~/.local/bin
+  # (no nix-tracked version pins; each tool self-updates on run).
+  mise
+
   # omniwm: copied to /Applications via modules/darwin/defaults.nix postActivation
   (import ./nlm.nix { inherit pkgs; })
   (import ./scholar.nix { inherit pkgs; })

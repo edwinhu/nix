@@ -178,7 +178,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Bootstrap-install claude, codex, opencode, agy (idempotent)";
+        meta.description = "Write mise stubs for claude, codex, opencode, agy, qmd, readwise (idempotent)";
         program = "${(pkgs.writeScriptBin "setup-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh "$@"
@@ -189,7 +189,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in {
         type = "app";
-        meta.description = "Force-reinstall claude, codex, opencode, agy to latest";
+        meta.description = "Bump every mise-managed AI tool to latest (past mise's release cooldown)";
         program = "${(pkgs.writeScriptBin "update-ai-tools" ''
           #!/usr/bin/env bash
           exec ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh --force "$@"
