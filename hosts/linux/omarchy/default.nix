@@ -2610,6 +2610,29 @@ in
     # Keep aerc's completion cache warm out of band. The query path deliberately
     # never indexes inline (a full index is four IMAP fetches, ~75s), so without
     # this the first completion after a cold cache returns nothing.
+    # cli-proxy-api: the local OpenAI-compatible front end for the
+    # Claude/Codex/Antigravity accounts on :8317. It was started by hand in a
+    # terminal, so it lived in a transient ghostty scope and died with that
+    # window — precarious for something claude-code, codex and atuin-ai all
+    # depend on.
+    #
+    # ExecStart is the mise SHIM, not the ~/.local/bin stub: the stub runs
+    # `mise use -g` first and exits non-zero if that fails, so a boot with no
+    # network yet would fail the unit. The shim just execs the installed
+    # version. Binary comes from scripts/setup-ai-tools.sh.
+    { cli-proxy-api = {
+      Unit = {
+        Description = "CLIProxyAPI (OpenAI-compatible front end for CLI agent accounts)";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStart = "%h/.local/share/mise/shims/cli-proxy-api --config %h/.config/cli-proxy-api/config.yaml";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     # atuin-ai-server: the OSS backend `atuin ai` talks to, which translates
     # atuin's own /api/cli/chat SSE protocol onto cli-proxy-api's OpenAI API —
     # so history prompts never reach Atuin's hosted service. Model + endpoint
@@ -2622,7 +2645,10 @@ in
     { atuin-ai = {
       Unit = {
         Description = "Atuin AI server (self-hosted, backed by cli-proxy-api)";
-        After = [ "docker.service" ];
+        # Wants, not Requires: if the proxy is down this should still start and
+        # fail per-request rather than refuse to run.
+        After = [ "docker.service" "cli-proxy-api.service" ];
+        Wants = [ "cli-proxy-api.service" ];
       };
       Service = {
         ExecStart = ''/usr/bin/docker run --rm --name atuin-ai --network host -v %h/.config/atuin-ai/config.toml:/etc/atuin-ai/config.toml ghcr.io/atuinsh/atuin-ai-server:latest'';
