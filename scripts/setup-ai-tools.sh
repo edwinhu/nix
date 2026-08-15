@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Bootstrap installer for AI CLI tools.
 #
-# Tools that ship prebuilt binaries (claude, codex, opencode, agy, atuin)
-# install through mise: this writes a small stub into ~/.local/bin that resolves and
-# updates the tool on every run, so nothing here pins a version and nothing
-# fights the tools' own release cadence. Same mechanism Omarchy 4 uses
-# (omarchy-mise-install), reimplemented so it also works on macOS and
-# non-Omarchy Linux, where that binary doesn't exist.
+# Tools that ship prebuilt binaries (claude, codex, opencode, agy, atuin,
+# cli-proxy-api) install through mise: this writes a small stub into
+# ~/.local/bin that resolves and updates the tool on every run, so nothing here
+# pins a version and nothing fights the tools' own release cadence. Same
+# mechanism Omarchy 4 uses (omarchy-mise-install), reimplemented so it also
+# works on macOS and non-Omarchy Linux, where that binary doesn't exist.
 #
 # qmd and readwise stay on `bun install -g`: mise's npm backend installs via
 # aube, which skips native postinstall — qmd's better-sqlite3 binding then
@@ -39,7 +39,7 @@ for arg in "$@"; do
       sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|gemini|agy|qmd|readwise|atuin) TOOLS+=("$arg") ;;
+    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -47,7 +47,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode agy qmd readwise atuin)
+  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy)
   # Per-host opt-out. AI_TOOLS_SKIP is a space-separated tool list, set from
   # `userInfo.aiToolsSkip` in flake.nix, for hosts that don't want part of the
   # default set (e.g. rjds has no use for readwise, and installing it there
@@ -153,6 +153,19 @@ install_gemini() { install_agy; }
 install_atuin() {
   purge_nix_wrapper atuin
   mise_stub atuin
+}
+
+# cli-proxy-api (router-for-me/CLIProxyAPI) — the local OpenAI-compatible
+# front end for the Claude/Codex/Antigravity accounts, on :8317. Everything
+# that needs an OpenAI API locally goes through it, including atuin-ai-server.
+# Not in mise's registry, so the github backend addresses the repo directly;
+# it picks the plain linux/darwin tarball over the no-plugin variant.
+#
+# Was a hand-downloaded binary under ~/.local/share/cli-proxy-api, which is
+# how it ended up 20 releases behind.
+install_cliproxy() {
+  purge_nix_wrapper cli-proxy-api
+  mise_stub github:router-for-me/CLIProxyAPI cli-proxy-api
 }
 
 find_bun() {
@@ -284,6 +297,7 @@ for t in "${TOOLS[@]}"; do
     qmd)          install_qmd ;;
     readwise)     install_readwise ;;
     atuin)        install_atuin ;;
+    cliproxy)     install_cliproxy ;;
   esac
 done
 
