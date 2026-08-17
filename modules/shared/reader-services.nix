@@ -67,6 +67,31 @@ let
     systemctl --user restart chrome-cdp.service || true
   '';
 
+  # chrome-cdp clean stop (Linux). The browser process self-registers into its own
+  # app-org.chromium.Chromium-*.scope and so leaves the service cgroup, while every
+  # helper (zygotes, gpu-process, network service, renderers) stays in it. systemd's
+  # cgroup kill therefore reaches the children but NOT the browser, which then fails
+  # to respawn the GPU process through the dead zygote and CHECK-crashes ("FATAL …
+  # GPU process isn't usable. Goodbye.", SIGTRAP + a 21MB core) on every single stop.
+  # KillMode/KillSignal can't help — systemd has no handle on that PID. TERM the
+  # browser first and wait for it; the helpers then exit as its children, and the
+  # daemon wrapper's `wait` returns 0.
+  cdpStopScript = pkgs.writeShellScript "chrome-cdp-stop" ''
+    set -u
+    profile="${home}/.config/chrome-cdp"
+    for pid in $(${pkgs.procps}/bin/pgrep -f -- "--user-data-dir=$profile" 2>/dev/null); do
+      # Every helper carries --type=; the browser is the one process that doesn't.
+      ${pkgs.coreutils}/bin/tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null \
+        | ${pkgs.gnugrep}/bin/grep -q -- '--type=' && continue
+      kill -TERM "$pid" 2>/dev/null || true
+      for _ in {1..100}; do
+        kill -0 "$pid" 2>/dev/null || break
+        ${pkgs.coreutils}/bin/sleep 0.1
+      done
+    done
+    exit 0
+  '';
+
   # pixi (nix-profile) + user local bin + system dirs. curl/python3 live in /usr/bin.
   linuxPath = "${home}/.nix-profile/bin:${home}/.local/bin:/usr/local/bin:/usr/bin:/bin";
   darwinPath = "${home}/.nix-profile/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
@@ -169,6 +194,11 @@ in
         # would inherit 9222 and collide with that instance.
         Environment = [ "CDP_PORT=${cdpPort}" ];
         ExecStart = "${chromeCdpBin} daemon";
+        # See cdpStopScript above: without this the browser CHECK-crashes on every
+        # stop. Timeout outlives the script's 10s drain so systemd doesn't SIGKILL
+        # mid-shutdown.
+        ExecStop = "${cdpStopScript}";
+        TimeoutStopSec = 15;
         Restart = "on-failure";
         RestartSec = 5;
         Nice = 5;
