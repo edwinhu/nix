@@ -1968,21 +1968,31 @@ in
       # and threads on its own id -- but it is why the send probe reports that
       # header rather than asserting it.
       outgoing          = ${lib.getExe pkgs.mail-bridge} sendmail --provider gmail --account eddyhu@gmail.com
-      # Important leads and is the default, mirroring Focused on Work.
+      # Gmail's five inbox tabs, as mail-bridge >= 0.4.0 offers them: virtual
+      # folders over INBOX's UID space, exactly as Focused/Other are on Work.
+      # Primary is the default because it is correspondence -- 43 of a
+      # 300-message window, measured live 2026-08-17.
+      #
+      # INBOX is deliberately ABSENT for the same reason it is on Work: the
+      # five partition it exactly, so listing it too would show every message
+      # twice. That partition is the bridge's doing, not Gmail's -- Gmail's
+      # own categories left 96 of 5,902 inbox messages unlabelled, so the
+      # provider defines Primary as the REMAINDER rather than as
+      # `CATEGORY_PERSONAL`. Nothing can fall between the tabs.
+      #
+      # `Important` stays as a filtered view and must never be a default: it
+      # is a SUBSET of the inbox (532 of 5,902) and pointing aerc at it hid
+      # 90% of this mailbox until 2026-08-17.
       #
       # Names are the bridge's, NOT Gmail IMAP's: the Gmail provider maps
       # system labels to IMAP names, so it is `Important`/`Sent`/`Spam`/`Trash`,
       # never `[Gmail]/Important`. Two gaps against the Work list, and they are
       # Gmail's model rather than an omission -- Gmail has no Outbox at all, and
       # archiving is removing the INBOX label rather than a folder, so there is
-      # nothing to point Archive at. User labels are excluded for now.
-      #
-      # `Focused`/`Other` are excluded deliberately: bridge.ts offers them
-      # whenever INBOX exists, but Gmail has no classification, so Focused would
-      # be the whole inbox and Other permanently empty.
-      default           = Important
-      folders           = Important,Drafts,Sent,Spam,Trash
-      folders-sort      = Important,Drafts,Sent,Spam,Trash
+      # nothing to point Archive at.
+      default           = Primary
+      folders           = Primary,Social,Promotions,Updates,Forums,Important,Drafts,Sent,Spam,Trash
+      folders-sort      = Primary,Social,Promotions,Updates,Forums,Important,Drafts,Sent,Spam,Trash
       postpone          = [Gmail]/Drafts
       cache-headers     = true
     '';
@@ -2182,6 +2192,10 @@ in
       [ui]
       sort = -r date
       styleset-name = catppuccin-mocha
+
+      # Click and wheel-scroll in the ui. aerc then owns mouse events, so
+      # terminal text selection needs the shift modifier.
+      mouse-enabled = true
 
       # Fixed 22 for the sender rather than the default 20%: at this terminal
       # width 20% is ~26 columns, which is more than any real display name needs
