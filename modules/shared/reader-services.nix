@@ -156,6 +156,10 @@ in
         # services, which chromium needs even headless.
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
+        # Rate limiting belongs in [Unit]; systemd ignores these under [Service]
+        # ("Unknown key … in section [Service]") and the limit silently vanishes.
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 5;
       };
       Service = {
         Type = "simple";
@@ -167,8 +171,6 @@ in
         ExecStart = "${chromeCdpBin} daemon";
         Restart = "on-failure";
         RestartSec = 5;
-        StartLimitIntervalSec = 120;
-        StartLimitBurst = 5;
         Nice = 5;
         StandardOutput = "append:${logDir}/chrome-cdp.log";
         StandardError = "append:${logDir}/chrome-cdp.err";
@@ -213,6 +215,9 @@ in
         Requires = [ "chrome-cdp.service" ];
         After = [ "chrome-cdp.service" "graphical-session.target" ];
         PartOf = [ "graphical-session.target" ];
+        # [Unit], not [Service] — systemd ignores them there.
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 5;
       };
       Service = {
         Type = "simple";
@@ -223,8 +228,6 @@ in
         ExecStart = "${pixiBin} ${lib.concatStringsSep " " uvicornArgs}";
         Restart = "on-failure";
         RestartSec = 10;
-        StartLimitIntervalSec = 120;
-        StartLimitBurst = 5;
         Nice = 5;
         StandardOutput = "append:${readwiseLogDir}/webhook.log";
         StandardError = "append:${readwiseLogDir}/webhook.err";
@@ -321,6 +324,9 @@ in
         After = [ "network-online.target" "readwise-webhook.service" "graphical-session.target" ];
         Wants = [ "network-online.target" ];
         PartOf = [ "graphical-session.target" ];
+        # [Unit], not [Service] — systemd ignores them there.
+        StartLimitIntervalSec = 120;
+        StartLimitBurst = 5;
       };
       Service = {
         Type = "simple";
@@ -329,8 +335,6 @@ in
         ExecStart = "${cloudflaredBin} tunnel --no-autoupdate --config ${cloudflaredConfig} run";
         Restart = "on-failure";
         RestartSec = 5;
-        StartLimitIntervalSec = 120;
-        StartLimitBurst = 5;
         StandardOutput = "append:${logDir}/cloudflared.log";
         StandardError = "append:${logDir}/cloudflared.err";
       };
