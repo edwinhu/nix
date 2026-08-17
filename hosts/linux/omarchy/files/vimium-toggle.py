@@ -267,11 +267,25 @@ def enabled_for_url(rules, url):
 
 def toggle_rule(tab, ctx):
     """Flip the global disable rule in chrome.storage.sync.
-    Returns (state, new_rules)."""
+    Returns (state, new_rules).
+
+    Vimium stores every setting JSON-ENCODED (a string) in chrome.storage.sync
+    and JSON.parses it on load, so this reads and writes the encoded form. A raw
+    array round-trips through storage fine but makes Vimium's own loader throw
+    `SyntaxError: … is not valid JSON` and abandon the ENTIRE settings load --
+    the failure mode is silent, and leaves Vimium acting as if no rules exist
+    (so vim mode appears stuck ON no matter what this writes). The read still
+    accepts an unencoded array so a profile written by the older, broken version
+    self-heals on the next toggle.
+    """
     raw = tab.eval(
-        "chrome.storage.sync.get('exclusionRules').then(r=>JSON.stringify(r.exclusionRules||[]))",
+        "chrome.storage.sync.get('exclusionRules').then(r=>JSON.stringify(r.exclusionRules??[]))",
         ctx=ctx, await_promise=True)
     rules = json.loads(raw)
+    if isinstance(rules, str):          # normal case: JSON-encoded by Vimium
+        rules = json.loads(rules or "[]")
+    if not isinstance(rules, list):
+        rules = []
     off = any(r.get("pattern") == "*" and r.get("passKeys", "") == "" for r in rules)
     if off:  # remove the global disable rule -> vim mode ON
         rules = [r for r in rules if not (r.get("pattern") == "*" and r.get("passKeys", "") == "")]
@@ -279,7 +293,8 @@ def toggle_rule(tab, ctx):
     else:    # add the global disable rule -> vim mode OFF
         rules = rules + [{"pattern": "*", "passKeys": ""}]
         state = "OFF"
-    ok = tab.eval("chrome.storage.sync.set({exclusionRules:%s}).then(()=>'ok')" % json.dumps(rules),
+    ok = tab.eval("chrome.storage.sync.set({exclusionRules:%s}).then(()=>'ok')"
+                  % json.dumps(json.dumps(rules)),
                   ctx=ctx, await_promise=True)
     if ok != "ok":
         raise RuntimeError("storage.set failed")
