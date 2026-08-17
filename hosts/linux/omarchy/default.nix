@@ -2179,19 +2179,15 @@ in
       [viewer]
       alternatives = text/html,text/plain
 
-      # `sort` is a NO-OP on both accounts and is kept only as a declaration of
-      # intent. aerc's sort needs the IMAP SORT extension, which neither backend
-      # advertises, and it does NOT sort client-side as a fallback: without SORT
-      # it warns "SORT is not supported but requested: list messages by UID" and
-      # issues a plain UID SEARCH (worker/imap/open.go). Verified at runtime on
-      # both accounts — the list is in UID order regardless of this line.
+      # `sort` is LIVE as of mail-bridge 0.5.0, which advertises the IMAP SORT
+      # extension both accounts run through. It was a no-op before that: aerc
+      # needs SORT and does not sort client-side as a fallback -- it warns
+      # "SORT is not supported but requested: list messages by UID" and issues a
+      # plain UID SEARCH (worker/imap/open.go), leaving the list in UID order.
       #
-      # That is fine today because mail-bridge keeps UID order and arrival order
-      # in agreement (its sync window used to number backfill as if it had just
-      # arrived, floating April mail to the top; fixed by the per-folder floor
-      # watermark). The line stays so that a future backend advertising SORT
-      # sorts on the field we actually mean rather than inheriting UID order by
-      # accident — but do not read it as currently doing anything.
+      # `-r date` is REVERSE DATE, i.e. the `Date:` header newest-first, which
+      # is deliberately not the same key as arrival: the bridge keeps both
+      # SentDateTime and ReceivedDateTime and sorts on the one named here.
       [ui]
       sort = -r date
       styleset-name = catppuccin-mocha
