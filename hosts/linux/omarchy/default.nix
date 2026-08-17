@@ -2951,7 +2951,11 @@ in
     opencode = {
       name = "OpenCode";
       comment = "The open source AI coding agent";
-      exec = "${pkgs.opencode}/bin/opencode";
+      # TUI: needs a terminal like the docker/scanner entries below, or the
+      # launcher spawns it with no tty and it exits instantly. Bare `opencode`
+      # (not ${pkgs.opencode}) so the launcher gets the same mise-managed build
+      # as the shell — see packages.nix.
+      exec = "xdg-terminal-exec --app-id=TUI.tile -e opencode";
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/OpenCode.svg";

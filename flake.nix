@@ -423,12 +423,27 @@
                   # including xdg-terminal-exec, i.e. SUPER+RETURN — would bypass
                   # the nixGL wrap and hit the EGL error. Repoint both at the
                   # wrapped $out/bin/ghostty.
+                  # The entry also sets DBusActivatable=true, so launchers
+                  # activate com.mitchellh.ghostty over the session bus and
+                  # ignore Exec entirely — but the bus does not see the
+                  # profile's share/dbus-1/services (ServiceUnknown), so
+                  # launching Ghostty from the app launcher does nothing. Drop
+                  # the flag; --gtk-single-instance in Exec still gives single
+                  # instance. Repoint the .service file at the wrapper too, in
+                  # case some other bus does activate it.
                   postBuild = ''
                     d=$out/share/applications/com.mitchellh.ghostty.desktop
                     if [ -e "$d" ]; then
                       rm -f "$d"
                       sed "s|${ghosttyPkg}/bin/ghostty|$out/bin/ghostty|g" \
-                        ${ghosttyPkg}/share/applications/com.mitchellh.ghostty.desktop > "$d"
+                        ${ghosttyPkg}/share/applications/com.mitchellh.ghostty.desktop \
+                        | grep -v '^DBusActivatable=' > "$d"
+                    fi
+                    s=$out/share/dbus-1/services/com.mitchellh.ghostty.service
+                    if [ -e "$s" ]; then
+                      rm -f "$s"
+                      sed "s|${ghosttyPkg}/bin/ghostty|$out/bin/ghostty|g" \
+                        ${ghosttyPkg}/share/dbus-1/services/com.mitchellh.ghostty.service > "$s"
                     fi
                   '';
                   meta = ghosttyPkg.meta or {};
@@ -449,6 +464,30 @@
                     '')
                     base
                   ];
+                  # com.stremio.Stremio.desktop sets DBusActivatable=true, so
+                  # launchers activate com.stremio.Stremio over the session bus
+                  # instead of running Exec. The bus does not see the profile's
+                  # share/dbus-1/services (ServiceUnknown, even after
+                  # ReloadConfig), so launching from the Omarchy launcher does
+                  # nothing at all. Activation would also run the UNWRAPPED
+                  # binary from the .service file, bypassing nixGL. Drop the
+                  # flag so Exec=stremio (the wrapper on PATH) is used, and
+                  # repoint the .service file at $out/bin/stremio in case some
+                  # other bus does activate it.
+                  postBuild = ''
+                    d=$out/share/applications/com.stremio.Stremio.desktop
+                    if [ -e "$d" ]; then
+                      rm -f "$d"
+                      grep -v '^DBusActivatable=' \
+                        ${base}/share/applications/com.stremio.Stremio.desktop > "$d"
+                    fi
+                    s=$out/share/dbus-1/services/com.stremio.Stremio.service
+                    if [ -e "$s" ]; then
+                      rm -f "$s"
+                      sed "s|${base}/bin/stremio|$out/bin/stremio|g" \
+                        ${base}/share/dbus-1/services/com.stremio.Stremio.service > "$s"
+                    fi
+                  '';
                   meta = base.meta or {};
                   passthru = { unwrapped = base; };
                 };
@@ -553,6 +592,18 @@
                     '')
                     base
                   ];
+                  # The main entry uses a bare `Exec=sunshine` (so it hits the
+                  # wrapper on PATH), but the KWin screencast-permission helper
+                  # hard-codes ${base}/bin/sunshine and would bypass nixGL.
+                  # Inert on Hyprland (NoDisplay, KDE-only), repointed anyway.
+                  postBuild = ''
+                    k=$out/share/applications/dev.lizardbyte.app.Sunshine.kwin.desktop
+                    if [ -e "$k" ]; then
+                      rm -f "$k"
+                      sed "s|${base}/bin/sunshine|$out/bin/sunshine|g" \
+                        ${base}/share/applications/dev.lizardbyte.app.Sunshine.kwin.desktop > "$k"
+                    fi
+                  '';
                   meta = base.meta or {};
                   passthru = { unwrapped = base; };
                 };

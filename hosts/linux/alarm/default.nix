@@ -180,7 +180,9 @@ in
     opencode = {
       name = "OpenCode";
       comment = "The open source AI coding agent";
-      exec = "${pkgs.opencode}/bin/opencode";
+      # TUI: needs a terminal, or the launcher spawns it with no tty and it
+      # exits instantly. Bare `opencode` = the mise-managed build on PATH.
+      exec = "xdg-terminal-exec --app-id=TUI.tile -e opencode";
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/OpenCode.svg";
