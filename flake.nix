@@ -405,6 +405,13 @@
                 himalaya = (import inputs.nixpkgs-himalaya { system = prev.stdenv.hostPlatform.system; }).himalaya;
                 mml = prev.callPackage ./modules/shared/mml-release.nix {};
                 ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
+                # chawan from upstream's prebuilt release: nixpkgs is stuck at
+                # 0.3.3, which segfaults rendering some HTML mail via aerc's
+                # text/html filter (nil Client.document). x86_64-linux only, so
+                # other systems keep the nixpkgs build.
+                chawan = if prev.stdenv.hostPlatform.system == "x86_64-linux"
+                  then prev.callPackage ./modules/shared/chawan-release.nix {}
+                  else prev.chawan;
                 onlyoffice-x2t = prev.callPackage ./modules/shared/onlyoffice-x2t.nix {};
                 onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
                 # ghostty is the default terminal on Omarchy (xdg-terminals.list,
