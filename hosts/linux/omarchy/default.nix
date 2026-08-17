@@ -817,8 +817,10 @@ exit 0
     '';
   };
 
-  # vimium-toggle: GLOBAL Vimium on/off, resting state OFF (opt-in "vim mode"),
-  # bound to SUPER+SHIFT+V in dotfiles' hypr bindings.conf (plain SUPER+V is
+  # vimium-toggle: GLOBAL Vimium on/off, resting state ON (the per-app
+  # exclusion rules in dotfiles' .config/vimium/ hand each keyboard-driven app
+  # its own keys back, so vim mode no longer needs to be opt-in), bound to
+  # SUPER+SHIFT+V in dotfiles' hypr bindings.conf (plain SUPER+V is
   # omarchy's Universal paste). Chrome exposes no
   # enable/disable shortcut and Vimium's only command is its popup, so an
   # external toggle drives this). It flips Vimium's OWN mechanism: a `{pattern:"*", passKeys:""}`
