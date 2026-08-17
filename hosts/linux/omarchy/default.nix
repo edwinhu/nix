@@ -1980,19 +1980,22 @@ in
       # provider defines Primary as the REMAINDER rather than as
       # `CATEGORY_PERSONAL`. Nothing can fall between the tabs.
       #
-      # `Important` stays as a filtered view and must never be a default: it
-      # is a SUBSET of the inbox (532 of 5,902) and pointing aerc at it hid
-      # 90% of this mailbox until 2026-08-17.
+      # `Starred` is the one filtered view kept, and like any subset it must
+      # never be a default: starring is a deliberate act, so it is a shortlist
+      # the user built, where `Important` was Gmail's classifier guessing --
+      # 532 of 5,902, and pointing aerc at it hid 90% of this mailbox until
+      # 2026-08-17. Starred is `\Flagged`, so it is also the same set aerc
+      # already shows a flag column for.
       #
       # Names are the bridge's, NOT Gmail IMAP's: the Gmail provider maps
-      # system labels to IMAP names, so it is `Important`/`Sent`/`Spam`/`Trash`,
-      # never `[Gmail]/Important`. Two gaps against the Work list, and they are
+      # system labels to IMAP names, so it is `Starred`/`Sent`/`Spam`/`Trash`,
+      # never `[Gmail]/Starred`. Two gaps against the Work list, and they are
       # Gmail's model rather than an omission -- Gmail has no Outbox at all, and
       # archiving is removing the INBOX label rather than a folder, so there is
       # nothing to point Archive at.
       default           = Primary
-      folders           = Primary,Social,Promotions,Updates,Forums,Important,Drafts,Sent,Spam,Trash
-      folders-sort      = Primary,Social,Promotions,Updates,Forums,Important,Drafts,Sent,Spam,Trash
+      folders           = Primary,Social,Promotions,Updates,Forums,Starred,Drafts,Sent,Spam,Trash
+      folders-sort      = Primary,Social,Promotions,Updates,Forums,Starred,Drafts,Sent,Spam,Trash
       postpone          = [Gmail]/Drafts
       cache-headers     = true
     '';
@@ -2816,10 +2819,21 @@ in
     # work bridge is what the user reads all day, and a Gmail fault must not be
     # able to take it down. Separate process, separate port, separate UID map.
     #
-    # --window 200, not the work bridge's 1000. Gmail's API returns ids from
-    # messages.list and then needs one messages.get PER ID -- there is no batch
-    # -- so a 1000-message window is ~1001 round trips. 200 measured at ~4.7s
-    # cold; the window memo and history.list keep steady state sub-second.
+    # --window 500, and 500 is the CEILING, not a preference: the Gmail
+    # provider issues ONE messages.list capped at Gmail's own maxResults of 500
+    # and never follows nextPageToken, so a larger number is silently
+    # truncated (measured: --window 1500 yields INBOX 500).
+    #
+    # It is 500 rather than the old 200 because the window is over INBOX and
+    # the five tabs each filter it. Primary is ~13% of this inbox, so a
+    # 200-message window left Primary showing ~26 messages. At 500 it shows
+    # ~113. Raising it further needs paging in the provider, not a bigger
+    # number here.
+    #
+    # Cost: messages.list gives ids only and each needs one messages.get --
+    # there is no batch -- so the window is a round-trip count. 500 measured
+    # at 12.4s cold; the window memo and history.list keep steady state
+    # sub-second (warm SELECT 0.00s).
     { mail-bridge-personal = {
       Unit = {
         Description = "mail-bridge — loopback IMAP bridge for the personal Gmail mailbox";
@@ -2836,7 +2850,7 @@ in
         ];
         ExecStart =
           "${pkgs.mail-bridge}/bin/mail-bridge imapd "
-          + "--provider gmail --account eddyhu@gmail.com --port 1144 --window 200";
+          + "--provider gmail --account eddyhu@gmail.com --port 1144 --window 500";
         Restart = "on-failure";
         RestartSec = 30;
       };
