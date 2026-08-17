@@ -14,6 +14,14 @@
     # rather than folded into nixpkgs so the migration is one deliberate step
     # instead of a side effect of the next `nix flake update`. Binary-cached.
     nixpkgs-himalaya.url = "github:nixos/nixpkgs/643809054d65fdd466a63e3155b8c498cb483c04";
+    # Newer nixpkgs pin for stremio-linux-shell only: the main lock (2026-07-05)
+    # predates the 1.1.x series, so it carries 1.0.2. 1.1.4 fixes the server
+    # process outliving the shell (a stale `node server.js` keeps :11470 and the
+    # next launch dies with EADDRINUSE) and idle-inhibit during playback; 1.1.3
+    # fixes a freeze on playback change. The UI itself is remote
+    # (web.stremio.com through the local server's proxy), so this is strictly
+    # the shell. Binary-cached — nixos-unstable head.
+    nixpkgs-stremio.url = "github:nixos/nixpkgs/e5bdc4a41d4c072fe1e3787eaa0320a384741d44";
     # mml: the MML template/compile/interpret pipeline himalaya v2 un-bundled.
     # Not in nixpkgs at any pin, so it comes from upstream's own flake.
     mml = {
@@ -95,7 +103,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, nixpkgs-stremio, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -455,7 +463,11 @@
                 # --no-window-decorations: the app's client-side titlebar adds
                 # nothing under Hyprland's tiling.
                 stremio-linux-shell = let
-                  base = prev.stremio-linux-shell;
+                  # From the nixpkgs-stremio pin, not prev — see the input.
+                  base = (import inputs.nixpkgs-stremio {
+                    system = prev.stdenv.hostPlatform.system;
+                    config.allowUnfree = true;
+                  }).stremio-linux-shell;
                 in prev.symlinkJoin {
                   name = "stremio-linux-shell-nixgl-${base.version or "unknown"}";
                   paths = [
