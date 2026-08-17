@@ -36,6 +36,7 @@ in
     file.".local/share/applications/icons/Strem.io.svg".source = "${iconDir}/Strem.io.svg";
     file.".local/share/applications/icons/Readwise Reader.png".source = "${iconDir}/Readwise Reader.png";
     file.".local/share/applications/icons/Calculator.svg".source = "${iconDir}/Calculator.svg";
+    file.".local/share/applications/icons/Zoom.svg".source = "${iconDir}/Zoom.svg";
   };
 
   # Allow unfree packages
@@ -140,6 +141,14 @@ in
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
+
+  # zoommtg:/zoomus: -> the Zoom web app (see the Zoom desktop entry).
+  # mimeapps.list is a plain file here, so this rewrites only these two
+  # associations and leaves the rest of the imperative choices alone. Idempotent.
+  home.activation.zoomHandler = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default Zoom.desktop \
+      x-scheme-handler/zoommtg x-scheme-handler/zoomus || true
+  '';
 
   # swlinux dictation: fetch the (large, non-store) models once, then run the
   # daemon as a graphical-session service. Keybinds live in the user's Hyprland
@@ -290,6 +299,30 @@ in
       terminal = false;
       type = "Application";
       icon = "${config.home.homeDirectory}/.local/share/applications/icons/Calculator.svg";
+      startupNotify = true;
+    };
+
+    # Zoom ships no ARM64 Linux client (see modules/linux/omarchy-packages.nix),
+    # so this host runs the web client as a Chromium web app. Omarchy's
+    # omarchy-webapp-handler-zoom rewrites zoommtg://…?confno=N&pwd=P join links
+    # to https://app.zoom.us/wc/join/N?pwd=P, and opens /wc/home with no arg.
+    #
+    # exec is the ABSOLUTE path, not a bare command: a .desktop scheme handler
+    # does not inherit PATH, and GLib treats an Exec it cannot resolve as NOT
+    # INSTALLED — it then silently drops the handler (same trap as tel-gvoice on
+    # the x86 host). The attr is capitalised so the desktop ID stays
+    # Zoom.desktop, which is what the pre-existing zoommtg association already
+    # names; this entry replaces the imperative omarchy-webapp-install one that
+    # home-manager displaced to Zoom.desktop.pre-nix-backup.
+    Zoom = {
+      name = "Zoom";
+      comment = "Zoom (web client)";
+      exec = "${config.home.homeDirectory}/.local/share/omarchy/bin/omarchy-webapp-handler-zoom %u";
+      terminal = false;
+      type = "Application";
+      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Zoom.svg";
+      categories = [ "Network" "AudioVideo" ];
+      mimeType = [ "x-scheme-handler/zoommtg" "x-scheme-handler/zoomus" ];
       startupNotify = true;
     };
   };

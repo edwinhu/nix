@@ -134,7 +134,8 @@ let
   # rather than just skipping itself. Add new prebuilt-binary packages HERE, not
   # to linuxOnly, unless you have confirmed an aarch64-linux artifact exists.
   #
-  #   zoom-us        Zoom ships no ARM64 Linux client; use app.zoom.us instead.
+  #   zoom-us        Zoom ships no ARM64 Linux client; aarch64 hosts get the
+  #                  app.zoom.us web app instead (Zoom entry in hosts/linux/alarm).
   #   openwhispr     GH releases are x86_64 only.
   #   hylo           GH release is an x86_64 AppImage only.
   #   morgen-cli     \  own repos; Bun release CI publishes darwin-arm64 and
