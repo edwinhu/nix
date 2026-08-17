@@ -105,6 +105,12 @@ purge_nix_wrapper() {
 # withholds a new version for days after it ships — wrong for tools that
 # release daily. Exported, not set on the `use` line alone, so the version
 # resolved to execute agrees with the one just installed.
+#
+# `mise use -g` prints "tools: <pkg>@x.y.z" on STDOUT, so it must be redirected
+# to stderr: the stub wins on PATH in systemd units (which lack the mise shims
+# dir), and that banner otherwise prepends itself to the tool's own stdout —
+# breaking any caller that pipes it (jq in claude-herdr-spawn, the captured
+# herdr skill below).
 mise_stub() {
   local package=$1 command=${2:-$1} bin=${3:-${2:-$1}}
   local stub="$HOME/.local/bin/$command"
@@ -113,7 +119,7 @@ mise_stub() {
   cat >"$stub" <<EOF
 #!/usr/bin/env bash
 export MISE_MINIMUM_RELEASE_AGE=0
-mise use -g "$package" || exit 1
+mise use -g "$package" >&2 || exit 1
 exec mise x "$package" -- "$bin" "\$@"
 EOF
   chmod +x "$stub"
