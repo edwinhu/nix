@@ -64,7 +64,14 @@ let
       exit 0  # healthy — silent, so the log stays quiet
     fi
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) chrome-cdp-watchdog: CDP probe failed (${cdpUrl}/json/version); restarting chrome-cdp.service" >&2
-    systemctl --user restart chrome-cdp.service || true
+    # NOT `|| true`: the restart IS this watchdog's purpose. If chrome-cdp is
+    # wedged or has tripped its StartLimitBurst, masking the failure means the
+    # watchdog logs "restarting", exits 0, and records success every 2 minutes
+    # while CDP stays down.
+    if ! systemctl --user restart chrome-cdp.service; then
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) chrome-cdp-watchdog: restart of chrome-cdp.service FAILED" >&2
+      exit 1
+    fi
   '';
 
   # chrome-cdp clean stop (Linux). The browser process self-registers into its own
