@@ -101,7 +101,7 @@ let
 
   # pixi (nix-profile) + user local bin + system dirs. curl/python3 live in /usr/bin.
   linuxPath = "${home}/.nix-profile/bin:${home}/.local/bin:/usr/local/bin:/usr/bin:/bin";
-  darwinPath = "${home}/.nix-profile/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+  darwinPath = "${home}/.nix-profile/bin:${home}/.local/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 
   pixiBin = "${home}/.nix-profile/bin/pixi";
 
@@ -459,8 +459,8 @@ in
         # Once daily ~8am (matches the Linux OnCalendar); RunAtLoad covers login.
         StartCalendarInterval = [ { Hour = 8; Minute = 0; } ];
         RunAtLoad = true;
-        StandardOutPath = "/tmp/paperpile-readwise.log";
-        StandardErrorPath = "/tmp/paperpile-readwise.log";
+        StandardOutPath = "${logDir}/paperpile-readwise.log";
+        StandardErrorPath = "${logDir}/paperpile-readwise.log";
         EnvironmentVariables = {
           PATH = darwinPath;
           HOME = home;

@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, user, ... }:
 let
   bordersStart = pkgs.writeShellApplication {
     name = "borders-start";
@@ -24,8 +24,8 @@ in
       RunAtLoad = true;
       KeepAlive = true;
       ProcessType = "Interactive";
-      StandardOutPath = "/Users/vwh7mb/Library/Logs/jankyborders.log";
-      StandardErrorPath = "/Users/vwh7mb/Library/Logs/jankyborders.log";
+      StandardOutPath = "/Users/${user}/Library/Logs/jankyborders.log";
+      StandardErrorPath = "/Users/${user}/Library/Logs/jankyborders.log";
     };
   };
 }

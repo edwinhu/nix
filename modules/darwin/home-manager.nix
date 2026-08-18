@@ -176,8 +176,8 @@
             "${config.home.homeDirectory}/Applications/Dia (CDP).app"
           ];
           RunAtLoad = true;
-          StandardOutPath = "/tmp/dia-cdp.out.log";
-          StandardErrorPath = "/tmp/dia-cdp.err.log";
+          StandardOutPath = "${config.home.homeDirectory}/.local/log/dia-cdp.out.log";
+          StandardErrorPath = "${config.home.homeDirectory}/.local/log/dia-cdp.err.log";
         };
       };
 
@@ -325,9 +325,15 @@
         # mise's release cooldown. mise must be on PATH explicitly — the
         # activation PATH doesn't include the nix profile.
         activation.installAITools = lib.hm.dag.entryAfter ["writeBoundary"] ''
-          $DRY_RUN_CMD env \
+          # Not a silent `|| true`: this installs the ~/.local/bin stubs the
+          # launchd scheduled tasks launch through, so a network/rate-limit
+          # failure here surfaces much later as a job that cannot exec, with
+          # nothing tying it back to the switch that broke it.
+          if ! $DRY_RUN_CMD env \
             PATH="$HOME/.local/bin:$HOME/.bun/bin:${pkgs.mise}/bin:${pkgs.curl}/bin:${pkgs.coreutils}/bin:/usr/bin:/bin" \
-            ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh || true
+            ${pkgs.bash}/bin/bash ${self}/scripts/setup-ai-tools.sh; then
+            echo "WARNING: setup-ai-tools.sh failed — AI CLI stubs in ~/.local/bin may be missing or stale" >&2
+          fi
         '';
 
         # claude-stable: a stable HARDLINK to the live `claude` worker inode.
@@ -362,7 +368,7 @@
               $DRY_RUN_CMD ln -f "$worker" "$CLAUDE_STABLE" && echo "claude-stable -> $worker"
             fi
           else
-            echo "claude-stable: $CLAUDE_LINK not present, skipping (install claude, then re-run build-switch)"
+            echo "WARNING: claude-stable: $CLAUDE_LINK not present — scheduled tasks that launch through claude-stable will fail to exec (install claude, then re-run build-switch)" >&2
           fi
         '');
 
@@ -376,7 +382,15 @@
         # interactive use, and (2) installs the com.chrome-cdp-watchdog agent,
         # which has no HM equivalent — it restarts chrome-cdp when the CDP port
         # hangs while the process is still alive, a mode KeepAlive can't catch.
-        activation.installChromeCdp = lib.hm.dag.entryAfter ["writeBoundary"] ''
+        # ~/.local/log must exist regardless of the chrome-cdp repo: dia-cdp,
+        # dia-cdp-watchdog and paperpile-readwise all write there, and launchd
+        # cannot set up a job's stdio into a missing directory — the job then
+        # fails to start with the reason going nowhere.
+        activation.ensureLocalDirs = lib.hm.dag.entryAfter ["writeBoundary"] ''
+          $DRY_RUN_CMD mkdir -p "$HOME/.local/bin" "$HOME/.local/log"
+        '';
+
+        activation.installChromeCdp = lib.hm.dag.entryAfter ["ensureLocalDirs"] ''
           CHROME_CDP_REPO="$HOME/projects/chrome-cdp"
           if [ ! -d "$CHROME_CDP_REPO" ]; then
             echo "chrome-cdp: $CHROME_CDP_REPO not present, skipping (clone repo then re-run build-switch)"
@@ -391,11 +405,20 @@
             label=com.chrome-cdp-watchdog
             SRC="$CHROME_CDP_REPO/LaunchAgents/$label.plist"
             DST="$HOME/Library/LaunchAgents/$label.plist"
-            if [ ! -f "$DST" ] || ! cmp -s "$SRC" "$DST"; then
+            # Condition on LOADED STATE, not file content. Gating on `cmp` alone
+            # meant a bootstrap that failed once (EPERM over SSH, a stale job of
+            # the same label, activation before the Aqua session exists) was
+            # never retried: the next switch found the plist identical and
+            # skipped the block, leaving the watchdog on disk but not running.
+            if ! launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1 \
+               || [ ! -f "$DST" ] || ! cmp -s "$SRC" "$DST"; then
               $DRY_RUN_CMD install -m 644 "$SRC" "$DST"
-              # bootout may fail if not loaded yet — hence || true.
+              # bootout is genuinely optional — it fails when not yet loaded.
               $DRY_RUN_CMD launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-              $DRY_RUN_CMD launchctl bootstrap "gui/$(id -u)" "$DST" 2>/dev/null || true
+              if ! $DRY_RUN_CMD launchctl bootstrap "gui/$(id -u)" "$DST"; then
+                echo "WARNING: failed to bootstrap $label — CDP will not self-heal." >&2
+                echo "  retry with: launchctl bootstrap gui/\$(id -u) $DST" >&2
+              fi
             fi
           fi
         '';

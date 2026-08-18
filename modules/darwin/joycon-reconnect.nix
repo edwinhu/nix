@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, user, ... }:
 let
   # Reconnects paired Nintendo Joy-Cons over Bluetooth.
   # Joy-Cons don't reliably re-establish their HID link after macOS sleep —
@@ -79,8 +79,8 @@ in
       RunAtLoad = true;
       KeepAlive = true;
       ProcessType = "Background";
-      StandardOutPath = "/Users/vwh7mb/Library/Logs/joycon-reconnect.log";
-      StandardErrorPath = "/Users/vwh7mb/Library/Logs/joycon-reconnect.log";
+      StandardOutPath = "/Users/${user}/Library/Logs/joycon-reconnect.log";
+      StandardErrorPath = "/Users/${user}/Library/Logs/joycon-reconnect.log";
     };
   };
 }

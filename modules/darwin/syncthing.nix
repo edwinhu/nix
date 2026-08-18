@@ -13,7 +13,13 @@
     # rebuild (grant is pinned to the binary hash), and macOS then hangs
     # Syncthing's open() of ~/Documents instead of denying it. The app also
     # needs Full Disk Access in System Settings (one-time, survives signing).
-    /usr/bin/codesign --force --deep -s - /Applications/Syncthing.app 2>/dev/null || true
+    # Not silenced: per the note above, a failed signing does not stop the agent
+    # from launching — Syncthing then HANGS on open() of ~/Documents rather than
+    # erroring, so it looks healthy while syncing nothing. `--deep` is deprecated
+    # and can hard-fail on recent macOS, so it is gone.
+    if ! /usr/bin/codesign --force -s - /Applications/Syncthing.app; then
+      echo "WARNING: codesign of Syncthing.app failed — the TCC Documents grant will be broken and Syncthing will hang on ~/Documents" >&2
+    fi
   '';
 
   # Create launchd service to start syncthing on login (from stable path)

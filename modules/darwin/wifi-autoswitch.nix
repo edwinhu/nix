@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, user, ... }:
 let
   # Auto-switch from a weak Wi-Fi network to a stronger preferred one.
   # Polls current SSID via networksetup; on match, compares RSSI from the
@@ -78,8 +78,8 @@ in
       ProcessType = "Background";
       LowPriorityIO = true;
       Nice = 10;
-      StandardOutPath = "/Users/vwh7mb/Library/Logs/wifi-autoswitch.log";
-      StandardErrorPath = "/Users/vwh7mb/Library/Logs/wifi-autoswitch.log";
+      StandardOutPath = "/Users/${user}/Library/Logs/wifi-autoswitch.log";
+      StandardErrorPath = "/Users/${user}/Library/Logs/wifi-autoswitch.log";
     };
   };
 }
