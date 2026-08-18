@@ -2721,6 +2721,18 @@ in
         '');
       };
     }; }
+    # Omarchy's agents panel ships collectors for claude/codex/fireworks only,
+    # and omarchy-agent-usage-update finds them by globbing $OMARCHY_PATH/bin —
+    # root-owned and replaced on every omarchy update, so a user collector
+    # cannot live there. The panel is looser and renders any record dropped in
+    # ~/.local/state/omarchy/agents/usage, so this writes its own.
+    { omarchy-agent-usage-antigravity = {
+      Unit.Description = "Write the Antigravity usage record for Omarchy's agents panel";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "%h/.local/bin/omarchy-agent-usage-antigravity --write";
+      };
+    }; }
     { tmp-scratch-clean = {
       Unit.Description = "Age out stale files in ~/.tmp";
       Service = {
@@ -3053,6 +3065,18 @@ in
         OnBootSec = "2min";        # after the network is up
         OnUnitActiveSec = "1h";    # one small HTTP call; timezone changes rarely
         Persistent = true;         # catch up after a flight with the lid shut
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
+    # Quota exists only while the Antigravity IDE is running (its language
+    # server is the only source; `agy` has no usage subcommand and starts no
+    # server). The collector no-ops rather than blanking a good record when the
+    # server is down, so polling on a plain interval is safe.
+    { omarchy-agent-usage-antigravity = {
+      Unit.Description = "Refresh the Antigravity usage record";
+      Timer = {
+        OnBootSec = "3min";
+        OnUnitActiveSec = "10min";
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
