@@ -2580,18 +2580,34 @@ in
       storage.read.command = "cat ${config.xdg.stateHome}/ortie/msgraph.token"
       storage.write.command = "install -D -m600 /dev/stdin ${config.xdg.stateHome}/ortie/msgraph.token"
 
-      # NO `flow` ACCOUNT: ortie cannot broker a Power Automate token, and both
-      # ways in are closed by Entra rather than by configuration (2026-08-18).
-      #   - the portal's own client 6204c1d1-4712-4c46-a7d9-3ed63d992682 is
-      #     CONFIDENTIAL: the device grant issues a code, then redemption fails
-      #     AADSTS7000218 demanding client_secret, which a public CLI has none of.
-      #   - the Office client d3590ed6 (used by msgraph above) is refused at
-      #     consent with AADSTS65002 -- not preauthorized for the Flow resource
-      #     7df0a125-d3be-4c96-aa54-591f83ff541c, and only the API owner can
-      #     change that.
-      # The power-automate skill therefore scrapes a live token from the signed-in
-      # make.powerautomate.com session over CDP. Do not re-add an account here
-      # without a tenant app registration that lists a localhost redirect.
+      # Power Automate / Logic Apps, brokered for the `power-automate` skill:
+      #   ortie -a flow token show
+      #
+      # SEPARATE ACCOUNT, not a scope added to msgraph: Entra issues one audience
+      # per token, so one account cannot serve both Graph and Flow.
+      #
+      # THE CLIENT ID IS THE WHOLE TRICK, and the two obvious candidates both
+      # fail (measured 2026-08-18) -- do not "simplify" this to either:
+      #   6204c1d1 (the portal's own client) is CONFIDENTIAL: the device grant
+      #     issues a code, then redemption fails AADSTS7000218 wanting a secret.
+      #   d3590ed6 (Microsoft Office, what msgraph uses) is refused at consent,
+      #     AADSTS65002 -- not preauthorized for Flow resource 7df0a125-....
+      # The Azure CLI client below is a public client that IS preauthorized for
+      # that resource: it redeems with no secret and returns a refresh token, so
+      # the grant survives unattended.
+      [accounts.flow]
+      grant = "device"
+      client-id = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+      endpoints.device-authorization = "https://login.microsoftonline.com/b8a81d5c-5169-4b0c-a890-c4ffc7cf0c85/oauth2/v2.0/devicecode"
+      endpoints.token = "https://login.microsoftonline.com/b8a81d5c-5169-4b0c-a890-c4ffc7cf0c85/oauth2/v2.0/token"
+      scopes = [
+        "https://service.flow.microsoft.com/user_impersonation",
+        "offline_access",
+      ]
+      auto-refresh = true
+
+      storage.read.command = "cat ${config.xdg.stateHome}/ortie/flow.token"
+      storage.write.command = "install -D -m600 /dev/stdin ${config.xdg.stateHome}/ortie/flow.token"
 
       # Google, brokered for `gws`, which reads GOOGLE_WORKSPACE_CLI_TOKEN as a
       # pre-obtained access token ahead of its own credential store:
