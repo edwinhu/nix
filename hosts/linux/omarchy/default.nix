@@ -1037,20 +1037,32 @@ exit 0
     # immediately fails with `agent_pane_busy: ... is not an available shell`
     # (reproduced 2026-08-13; the same call succeeded after ~3s). Retry rather
     # than sleeping a fixed amount, since the delay is load-dependent.
+    #
+    # stdout and stderr must stay SEPARATE. herdr prints the success payload on
+    # stdout and its error JSON on stderr, but `herdr` here is a mise shim whose
+    # activation banner ("mise ~/.config/mise/config.toml tools: herdr@0.8.0")
+    # also goes to stderr. Merged with 2>&1 that banner prefixes the payload, jq
+    # rejects the whole thing, and a spawn that actually SUCCEEDED is reported as
+    # a failure and torn down by the tab close below.
     STARTED=""
+    START_ERR=""
+    ERR_FILE=$(mktemp "''${TMPDIR:-/tmp}/claude-herdr-spawn.XXXXXX")
     for _ in $(seq 1 10); do
       if STARTED=$(herdr agent start "$AGENT_NAME" --kind claude --pane "$PANE" --timeout 60000 \
-                     -- --rc --effort medium -n "$LABEL" 2>&1); then
+                     -- --rc --effort medium -n "$LABEL" 2>"$ERR_FILE"); then
         break
       fi
-      case "$STARTED" in
-        *agent_pane_busy*) sleep 1; STARTED="" ;;
+      STARTED=""
+      START_ERR=$(cat "$ERR_FILE")
+      case "$START_ERR" in
+        *agent_pane_busy*) sleep 1 ;;
         *) break ;;
       esac
     done
+    rm -f "$ERR_FILE"
     if [ -z "''${STARTED:-}" ] || ! printf '%s' "$STARTED" | jq -e '.result.agent.interactive_ready == true' >/dev/null 2>&1; then
       herdr tab close "$TAB" >/dev/null 2>&1 || true
-      echo "agent start failed: ''${STARTED:-pane never became an available shell}" >&2; exit 1
+      echo "agent start failed: ''${START_ERR:-pane never became an available shell}" >&2; exit 1
     fi
 
     if [ -n "$PROMPT" ]; then
@@ -1072,13 +1084,15 @@ exit 0
     echo "spawned '$LABEL' in herdr (pane=$PANE tab=$TAB)"
   '';
   claudeRoutines = {
-    # Daily 08:00. Weekday: spawn the day's long-lived "🦞 assistant" session
-    # with the briefing, then poke it for planning an hour later (same session,
-    # so it inherits context). Weekend: spawn an idle session, no briefing.
+    # Daily 07:00. Weekday: spawn the day's long-lived "🦞 assistant" session
+    # with the briefing. Weekend: spawn an idle session, no briefing.
+    # Planning is its own timer (below) rather than a detached sleep from here:
+    # a `sleep 3600` dies with a suspend/reboot and leaves no trace, so planning
+    # would silently not happen on exactly the mornings the machine was busy.
     "claude-morning-briefing" = {
       desc = "Claude morning briefing — spawn the day's 🦞 assistant session";
       cwd = "%h/areas/assistant";
-      onCalendar = "*-*-* 08:00:00";
+      onCalendar = "*-*-* 07:00:00";
       spawner = true;
       script = pkgs.writeShellScript "claude-morning-briefing" ''
         set -uo pipefail
@@ -1086,20 +1100,46 @@ exit 0
         DOW=$(date +%u)  # 1=Mon … 7=Sun
         if [ "$DOW" -le 5 ]; then
           ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "/morning-briefing" || true
-          # Poke the SAME session for planning 1h later; detached so it survives
-          # this oneshot exiting (KillMode=process keeps it out of the cgroup kill).
-          nohup bash -c 'sleep 3600; agent-msg send --as-user "🦞 assistant" "/morning-planning"' >/dev/null 2>&1 &
         else
           ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant || true
         fi
       '';
     };
-    # Mon–Fri 23:00. Route /nightly-wrapup into the live 🦞 assistant session so
+    # Mon–Fri 08:00, an hour after the briefing. Routes /morning-planning into
+    # the SAME 🦞 assistant session so it inherits the briefing's context and
+    # the /tmp/morning-briefing/*.json the planning skill reads.
+    #
+    # No standalone-session fallback, unlike the wrapup: planning consumes what
+    # the briefing cached, so a session spawned here after a failed briefing
+    # would plan the day off missing data. Better to skip and say so.
+    "claude-morning-planning" = {
+      desc = "Claude morning planning — route into the day's 🦞 assistant session";
+      cwd = "%h/areas/assistant";
+      onCalendar = "Mon-Fri 08:00:00";
+      spawner = true;
+      script = pkgs.writeShellScript "claude-morning-planning" ''
+        set -uo pipefail
+        cd "$HOME/areas/assistant" || exit 1
+        # Same resolution and --as-user rationale as the wrapup below: a peer
+        # send arrives with slash commands disabled, so "/morning-planning"
+        # would land as inert text and the skill would never load.
+        target=$(agent-msg list 2>/dev/null \
+          | sed -n '/LOCAL/,/CLOUD/p' \
+          | grep -F '🦞 assistant' \
+          | grep -oE 'cse_[A-Za-z0-9]+' | head -1)
+        if [ -n "''${target:-}" ] && agent-msg send --as-user "$target" "/morning-planning"; then
+          echo "planning routed into assistant session ($target)"
+          exit 0
+        fi
+        echo "no live assistant session — skipping planning (briefing likely did not run)"
+      '';
+    };
+    # Mon–Fri 22:00. Route /nightly-wrapup into the live 🦞 assistant session so
     # it inherits the day's context; fall back to a standalone session if none.
     "claude-nightly-wrapup" = {
       desc = "Claude nightly wrapup — route into the day's 🦞 assistant session";
       cwd = "%h/areas/assistant";
-      onCalendar = "Mon-Fri 23:00:00";
+      onCalendar = "Mon-Fri 22:00:00";
       spawner = true;
       script = pkgs.writeShellScript "claude-nightly-wrapup" ''
         set -uo pipefail
@@ -2557,6 +2597,11 @@ in
         # separate ortie account: one consent and one token store, at the cost
         # that a leaked gws token now reaches the whole personal mailbox.
         "https://www.googleapis.com/auth/gmail.modify",
+        # youtube.readonly: cliamp's YouTube / YouTube Music provider. cliamp
+        # stores only a refresh token and refreshes it with the client id and
+        # secret from its own config, so brokering the grant here replaces its
+        # interactive flow and its bundled fallback OAuth client.
+        "https://www.googleapis.com/auth/youtube.readonly",
       ]
       auto-refresh = true
 
