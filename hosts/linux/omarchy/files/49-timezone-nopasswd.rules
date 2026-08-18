@@ -1,0 +1,9 @@
+// Let the desktop user set the system timezone without a password, so the
+// tzupdate user timer can follow travel unattended. Scoped to set-timezone
+// only — set-time and set-ntp still prompt.
+polkit.addRule(function (action, subject) {
+  if (action.id == "org.freedesktop.timedate1.set-timezone" &&
+      subject.user == "eh" && subject.local && subject.active) {
+    return polkit.Result.YES;
+  }
+});

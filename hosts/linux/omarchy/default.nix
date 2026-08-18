@@ -2667,6 +2667,31 @@ in
     # Defined here rather than `systemctl --user enable
     # systemd-tmpfiles-clean.timer`: that enable is a wants/ symlink no repo
     # tracks, so the rule file would land on a new machine and never run.
+    # One-time root step (home-manager owns no /etc):
+    #   sudo install -Dm644 hosts/linux/omarchy/files/49-timezone-nopasswd.rules \
+    #     /etc/polkit-1/rules.d/49-timezone-nopasswd.rules
+    # Without it the timer runs but the set-timezone call fails on a polkit
+    # prompt no one can answer, and the zone silently stays put.
+    # Follow travel: geo-IP the current location and set the system timezone to
+    # match, so `date` (and every agent that reads it) is right on both coasts.
+    # --print-only needs no privileges; the set goes through timedatectl, which
+    # polkit allows passwordless via the rule installed above. Distro binaries:
+    # both must match the running systemd/polkit.
+    { tzupdate = {
+      Unit = {
+        Description = "Set system timezone from IP geolocation";
+        After = [ "network-online.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = toString (pkgs.writeShellScript "tzupdate-follow" ''
+          tz=$(/usr/bin/tzupdate --print-only --timeout 20) || exit 0
+          [ -n "$tz" ] || exit 0
+          [ "$tz" = "$(/usr/bin/timedatectl show -p Timezone --value)" ] && exit 0
+          exec /usr/bin/timedatectl set-timezone "$tz"
+        '');
+      };
+    }; }
     { tmp-scratch-clean = {
       Unit.Description = "Age out stale files in ~/.tmp";
       Service = {
@@ -2993,6 +3018,15 @@ in
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
   systemd.user.timers = lib.mkMerge [
     (lib.mapAttrs (_: mkRoutineTimer) claudeRoutines)
+    { tzupdate = {
+      Unit.Description = "Re-check the timezone against current location";
+      Timer = {
+        OnBootSec = "2min";        # after the network is up
+        OnUnitActiveSec = "1h";    # one small HTTP call; timezone changes rarely
+        Persistent = true;         # catch up after a flight with the lid shut
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
     { tmp-scratch-clean = {
       Unit.Description = "Daily ~/.tmp cleanup";
       Timer = {
