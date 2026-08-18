@@ -3082,8 +3082,13 @@ in
     { omarchy-agent-usage-antigravity = {
       Unit.Description = "Refresh the Antigravity usage record";
       Timer = {
-        OnBootSec = "3min";
-        OnUnitActiveSec = "10min";
+        OnBootSec = "1min";
+        # The panel's own refresh runs omarchy-agent-usage-update, which only
+        # globs collectors under $OMARCHY_PATH/bin — it never reaches this one.
+        # So this interval IS the tab's freshness, and at 10min the tab still
+        # read "language server not running" minutes after the IDE was opened.
+        # The check is a pgrep plus one local RPC, so polling it is cheap.
+        OnUnitActiveSec = "2min";
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
