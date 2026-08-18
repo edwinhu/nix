@@ -269,14 +269,25 @@ def toggle_rule(tab, ctx):
     """Flip the global disable rule in chrome.storage.sync.
     Returns (state, new_rules).
 
-    Vimium stores every setting JSON-ENCODED (a string) in chrome.storage.sync
-    and JSON.parses it on load, so this reads and writes the encoded form. A raw
-    array round-trips through storage fine but makes Vimium's own loader throw
-    `SyntaxError: … is not valid JSON` and abandon the ENTIRE settings load --
-    the failure mode is silent, and leaves Vimium acting as if no rules exist
-    (so vim mode appears stuck ON no matter what this writes). The read still
-    accepts an unencoded array so a profile written by the older, broken version
-    self-heals on the next toggle.
+    Vimium 2.4.x stores settings NATIVELY: `Settings.get` is a plain
+    structuredClone of the stored value with no JSON.parse (lib/settings.js),
+    and `exclusions.getRule` calls `rules.filter(...)` on it directly. So this
+    must write a real ARRAY.
+
+    Writing the JSON-ENCODED form (correct for older Vimium, which parsed on
+    load) makes getRule throw `TypeError: rules.filter is not a function`
+    inside the `initializeFrame` message handler. That handler is registered
+    via Utils.addChromeRuntimeOnMessageListener, which returns `true` and only
+    then calls sendResponse from an async IIFE — so a throw means sendResponse
+    is NEVER called and the content script's `await chrome.runtime.sendMessage`
+    hangs forever. Consequences, all silent: checkIfEnabledForUrl() never
+    resolves so this script's apply_state times out on every tab; every
+    exclusion rule stops applying (Vimium looks stuck ON everywhere); and the
+    toolbar icon never changes, because chrome.action.setIcon is inside that
+    same handler.
+
+    The read below still accepts a string, so a profile corrupted by the old
+    encoded write self-heals on the next toggle.
     """
     raw = tab.eval(
         "chrome.storage.sync.get('exclusionRules').then(r=>JSON.stringify(r.exclusionRules??[]))",
@@ -293,8 +304,10 @@ def toggle_rule(tab, ctx):
     else:    # add the global disable rule -> vim mode OFF
         rules = rules + [{"pattern": "*", "passKeys": ""}]
         state = "OFF"
+    # json.dumps ONCE: the value must land in storage as an array, not as a
+    # string containing an array. See the docstring above.
     ok = tab.eval("chrome.storage.sync.set({exclusionRules:%s}).then(()=>'ok')"
-                  % json.dumps(json.dumps(rules)),
+                  % json.dumps(rules),
                   ctx=ctx, await_promise=True)
     if ok != "ok":
         raise RuntimeError("storage.set failed")
