@@ -517,22 +517,6 @@
         "type": "github"
       }
     },
-    "nixpkgs-himalaya": {
-      "locked": {
-        "lastModified": 1785692966,
-        "narHash": "sha256-vUfIeBEfpbAfZ5zjgIkYk7eHBeVfCYVjLbWnMkseYnk=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "643809054d65fdd466a63e3155b8c498cb483c04",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "643809054d65fdd466a63e3155b8c498cb483c04",
-        "type": "github"
-      }
-    },
     "nixpkgs-onlyoffice": {
       "locked": {
         "lastModified": 1780930886,
@@ -692,7 +676,6 @@
         "nix-secrets": "nix-secrets",
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-himalaya": "nixpkgs-himalaya",
         "nixpkgs-onlyoffice": "nixpkgs-onlyoffice",
         "nixpkgs-stremio": "nixpkgs-stremio",
         "ortie": "ortie",

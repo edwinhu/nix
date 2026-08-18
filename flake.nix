@@ -8,12 +8,6 @@
     # that our docbuilder derivation extends). Safe to fold into nixpkgs on
     # the next full lock update.
     nixpkgs-onlyoffice.url = "github:nixos/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
-    # Newer nixpkgs pin for himalaya only: the main lock carries 1.2.0, whose
-    # CLI and config schema v2 removed wholesale (no `template` tree, `-f` →
-    # `-m`, `-o json` → `--json`, `backend.*` → `imap.*`/`smtp.*`). Pinned
-    # rather than folded into nixpkgs so the migration is one deliberate step
-    # instead of a side effect of the next `nix flake update`. Binary-cached.
-    nixpkgs-himalaya.url = "github:nixos/nixpkgs/643809054d65fdd466a63e3155b8c498cb483c04";
     # Newer nixpkgs pin for stremio-linux-shell only: the main lock (2026-07-05)
     # predates the 1.1.x series, so it carries 1.0.2. 1.1.4 fixes the server
     # process outliving the shell (a stale `node server.js` keeps :11470 and the
@@ -103,7 +97,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-himalaya, nixpkgs-stremio, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-stremio, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -398,11 +392,13 @@
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
-                # himalaya v2 + its un-bundled composer (see the inputs above).
-                # Both are referenced as plain `pkgs.himalaya` / `pkgs.mml` by
-                # the omarchy host module, so the overlay is the only place the
-                # pin appears.
-                himalaya = (import inputs.nixpkgs-himalaya { system = prev.stdenv.hostPlatform.system; }).himalaya;
+                # himalaya v2 + its un-bundled composer, both from upstream's
+                # prebuilt releases. nixpkgs is stuck at 2.0.0, whose vendored
+                # pimalaya-cli 0.1.3 aborts on EPIPE (`.unwrap()` on a write to
+                # a closed pipe), so `himalaya ... | head` dumps core; 2.1.0
+                # carries the fixed 0.2.2. Referenced as plain `pkgs.himalaya` /
+                # `pkgs.mml` by the omarchy host module.
+                himalaya = prev.callPackage ./modules/shared/himalaya-release.nix {};
                 mml = prev.callPackage ./modules/shared/mml-release.nix {};
                 ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
                 # chawan from upstream's prebuilt release: nixpkgs is stuck at
