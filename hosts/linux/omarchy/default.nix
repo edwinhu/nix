@@ -2017,8 +2017,15 @@ in
       # Archive would lead. enable-folders-sort defaults true, so the listed
       # names come first in this order and anything else follows -- but nothing
       # else can, because `folders` admits only these.
-      folders       = Focused,Other,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
-      folders-sort  = Focused,Other,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
+      # The category folders (Respond..Waiting) are mail-bridge >= 0.9.0 saved
+      # searches over INBOX, one per Outlook category the rules and the Power
+      # Automate classifier apply. They OVERLAP Focused/Other rather than
+      # partitioning anything -- the same message is in Focused and in Respond,
+      # and a message with two categories is in two of them. Listing them
+      # alongside the split is therefore not double-counting the way listing
+      # INBOX beside Focused/Other would be.
+      folders       = Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
+      folders-sort  = Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
 
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
