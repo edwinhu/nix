@@ -66,6 +66,7 @@ with pkgs; [
   (import ./nlm.nix { inherit pkgs; })
   (import ./scholar.nix { inherit pkgs; })
   (import ./consensus.nix { inherit pkgs; })
+  (import ./linecast.nix { inherit pkgs; })
   gws
 
   # Text and terminal utilities
