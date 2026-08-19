@@ -61,6 +61,12 @@ python3.pkgs.buildPythonApplication rec {
     # bottom/right (marked SHOWING, positioned past the window) still gets
     # hinted. Also drop positions >= window width/height.
     ./hints-viewport-filter.patch
+    # Stop hintsd leaking two uinput devices per screen reconfiguration:
+    # on_size_changed rebuilds the Mouse but never destroys the old one, and
+    # Mouse has no close(). They accumulate for the life of the daemon and push
+    # the machine past keyd's hard MAX_DEVICES of 64, which is an assert() —
+    # keyd core-dumps and every remap dies with it.
+    ./hints-mouse-leak.patch
   ];
 
   postPatch = ''

@@ -1,0 +1,34 @@
+--- a/hints/service.py
++++ b/hints/service.py
+@@ -148,6 +148,18 @@
+             name="Hints absolute mouse",
+         )
+ 
++    def close(self):
++        """Destroy the uinput devices backing this mouse.
++
++        Without this the kernel keeps every device this process ever created,
++        and on_size_changed builds a fresh Mouse per screen reconfiguration.
++        """
++        for device in (self.relative_mouse, self.absolute_mouse):
++            try:
++                device.close()
++            except Exception:  # best effort teardown
++                pass
++
+     def scroll(self, x: int, y: int, *_args, **_kwargs):
+         """Scroll event.
+ 
+@@ -377,7 +389,12 @@
+ 
+         :param screen: The screen object for the event.
+         """
++        old_mouse = self.mouse
+         self.mouse = Mouse(*_virtual_screen_size())
++        # The adapter handed to interceptor windows caches the Mouse, so it has
++        # to follow the replacement or it keeps a closed device alive forever.
++        self._mouse_adapter = _DaemonMouse(self.mouse)
++        old_mouse.close()
+ 
+     def socket_connection(self):
+         """Handle socket connection events.
