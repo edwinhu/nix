@@ -1835,6 +1835,49 @@ in
     force = true;
   };
 
+  # AirPlay sinks for the KEF LSX II LT and the Sonos, so any app — cliamp,
+  # mpv, a browser — can play to them as ordinary PipeWire sinks. Pair with
+  # `kefctl source wifi`, which is the input the speaker receives AirPlay on.
+  #
+  # Arch keeps PipeWire's RAOP modules in the `pipewire-zeroconf` package, which
+  # is not installed here and would need root. It doesn't have to be: nixpkgs'
+  # pipewire module directory is a strict superset of /usr/lib/pipewire-0.3 — it
+  # adds raop/roc/snapcast/zeroconf and drops nothing — so pointing the daemon's
+  # module search at the nix build gains RAOP and loses no module Arch's own
+  # pipewire.conf loads. Verified by diffing the two directories.
+  #
+  # ⚠️ VERSION-MATCHED ON PURPOSE. Modules are built against a specific
+  # libpipewire, so pkgs.pipewire-raop comes from the nixpkgs-pipewire input,
+  # pinned to the version Arch ships (1.6.8) rather than the main lock's 1.6.5.
+  # Re-pin that input when `pacman -Q pipewire` moves. (1.6.5 modules were tested
+  # in the 1.6.8 daemon and did load, so the skew is survivable — but matching
+  # removes the question.) `flags = [ ifexists nofail ]` bounds the damage
+  # anyway: without it a module that fails to load is FATAL and the daemon will
+  # not start at all — i.e. no audio on this box, not merely no AirPlay. That
+  # failure mode was hit and confirmed during setup. Fallback if this ever stops
+  # being worth it: `pacman -S pipewire-zeroconf` and delete both files below.
+  #
+  # A store path can NOT be named directly in context.modules — PipeWire appends
+  # ".so" to the module name and resolves it against the module dir, so an
+  # absolute path is what produced that fatal-start failure. The search dir has
+  # to move instead, hence the systemd drop-in.
+  xdg.configFile."pipewire/pipewire.conf.d/60-raop.conf" = {
+    force = true;
+    text = ''
+      context.modules = [
+          { name = libpipewire-module-raop-discover
+            flags = [ ifexists nofail ] }
+      ]
+    '';
+  };
+  xdg.configFile."systemd/user/pipewire.service.d/10-raop-module-dir.conf" = {
+    force = true;
+    text = ''
+      [Service]
+      Environment=PIPEWIRE_MODULE_DIR=${pkgs.pipewire-raop}/lib/pipewire-0.3
+    '';
+  };
+
   # Autostart the CDP web apps on login (Hyprland sources this user autostart
   # slot; Omarchy's own defaults live in a separate file). Guarantees Morgen —
   # and thus the browser-wide :9222 endpoint morgen-cli attaches to — is up for

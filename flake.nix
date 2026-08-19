@@ -16,6 +16,15 @@
     # (web.stremio.com through the local server's proxy), so this is strictly
     # the shell. Binary-cached — nixos-unstable head.
     nixpkgs-stremio.url = "github:nixos/nixpkgs/e5bdc4a41d4c072fe1e3787eaa0320a384741d44";
+    # Newer nixpkgs pin for pipewire only, and ONLY for its module directory —
+    # nothing here runs a nix PipeWire daemon. The Omarchy host borrows
+    # libpipewire-module-raop-* from this build to give the Arch-packaged daemon
+    # AirPlay sinks (see hosts/linux/omarchy/default.nix). Modules are built
+    # against a specific libpipewire, so this rev is chosen to be the exact
+    # version Arch ships: 1.6.8. The main lock carries 1.6.5, which was tested
+    # and does load in the 1.6.8 daemon, but matching removes the question.
+    # Bump this when `pacman -Q pipewire` moves.
+    nixpkgs-pipewire.url = "github:nixos/nixpkgs/279b4a8275f032c566576b3f181fa0f27197f588";
     # mml: the MML template/compile/interpret pipeline himalaya v2 un-bundled.
     # Not in nixpkgs at any pin, so it comes from upstream's own flake.
     mml = {
@@ -97,7 +106,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-stremio, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -389,6 +398,10 @@
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
                 rv = prev.callPackage ./modules/shared/rv.nix {};
+                # pipewire ONLY as a source of libpipewire-module-raop-*, from a
+                # pin matching the Arch daemon's version. No nix PipeWire runs
+                # here; see the input and the raop config in the omarchy host.
+                pipewire-raop = (import inputs.nixpkgs-pipewire { system = prev.stdenv.hostPlatform.system; }).pipewire;
                 # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                 # sends no User-Agent and crates.io now 403s it.
                 elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};

@@ -533,6 +533,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-pipewire": {
+      "locked": {
+        "lastModified": 1786247143,
+        "narHash": "sha256-8S3Kcxs7D4UtxJxSJZz0m14CGhuW0MxfrIwJxeGWGnQ=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "279b4a8275f032c566576b3f181fa0f27197f588",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "279b4a8275f032c566576b3f181fa0f27197f588",
+        "type": "github"
+      }
+    },
     "nixpkgs-stremio": {
       "locked": {
         "lastModified": 1786862985,
@@ -677,6 +693,7 @@
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs",
         "nixpkgs-onlyoffice": "nixpkgs-onlyoffice",
+        "nixpkgs-pipewire": "nixpkgs-pipewire",
         "nixpkgs-stremio": "nixpkgs-stremio",
         "ortie": "ortie",
         "presmihaylov-taps": "presmihaylov-taps",
