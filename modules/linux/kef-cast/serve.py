@@ -3,14 +3,40 @@
 One ffmpeg per client, spawned on GET and killed when the client goes away, so
 nothing encodes while nobody is listening. The Cast receiver is the only client
 in practice.
+
+Every change in the number of live GET handlers is printed as
+`clients=N peer=<ip>`. That line is the wrapper's watchdog signal: a receiver
+that stops pulling shows up here immediately, with no `catt status` round-trip
+to hang on. The peer is the address of the client whose arrival or departure
+caused the transition — the port is unauthenticated, so the wrapper needs it to
+tell the speaker apart from any other LAN host that happens to GET the stream.
 """
 
 import http.server
+import os
 import socketserver
 import subprocess
 import sys
+import threading
 
 PORT, SINK = int(sys.argv[1]), sys.argv[2]
+# Measured on this speaker: 192k gave 7m48s and 4m21s between receiver drops,
+# 96k gave 15m05s on the same AP. Less airtime, roughly double the uptime, and
+# no audible difference here. Overridable for a link that can afford more.
+BITRATE = os.environ.get("KEF_CAST_BITRATE", "96k")
+
+_clients = 0
+_clients_lock = threading.Lock()
+
+
+def _clients_delta(delta, peer):
+    """Adjust the live-handler count and announce the new value and the peer."""
+    global _clients
+    with _clients_lock:
+        _clients += delta
+        # Unbuffered and one line per transition: the wrapper reads this
+        # incrementally, so a silent buffer would stall the watchdog.
+        print(f"clients={_clients} peer={peer}", flush=True)
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -30,12 +56,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._headers()
 
     def do_GET(self):
+        # Counted around the WHOLE handler, not just the copy loop: an attach
+        # that dies before the encoder starts is still an attach that ended.
+        # HEAD is deliberately not counted — it is a probe, not a receiver.
+        # Reported on both edges so the wrapper can attribute the attach AND the
+        # detach to a host. Taken from the accepted socket, not from a header:
+        # a client cannot forge it.
+        peer = self.client_address[0]
+        _clients_delta(1, peer)
+        try:
+            self._stream()
+        finally:
+            _clients_delta(-1, peer)
+
+    def _stream(self):
         self._headers()
         encoder = subprocess.Popen(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
                 "-f", "pulse", "-i", SINK,
-                "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+                "-c:a", "libmp3lame", "-b:a", BITRATE, "-ar", "44100", "-ac", "2",
                 # Xing/ID3 headers describe a file of known length; this is not one.
                 "-f", "mp3", "-write_xing", "0", "-id3v2_version", "0", "-",
             ],
