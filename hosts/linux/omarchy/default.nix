@@ -3121,6 +3121,94 @@ in
 
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
+    # linecast's six terminal dashboards, so they are findable in the apps menu
+    # (SUPER+ALT+SPACE), which reads XDG entries through Quickshell's
+    # DesktopEntries. The package ships none of its own.
+    #
+    # Declared here rather than in dotfiles because they name
+    # omarchy-launch-or-focus-tui, which exists only on this host — a stowed
+    # copy would follow onto the Mac and point at nothing.
+    #
+    # terminal = false, deliberately: `terminal = true` has the launcher spawn a
+    # fresh terminal on every activation, and these run live, so a second
+    # activation should raise the window that is already open.
+    # omarchy-launch-or-focus-tui does that, and is what SUPER+SHIFT+L runs too.
+    linecast-weather = {
+      name = "Weather";
+      genericName = "linecast weather";
+      comment = "Current conditions, hourly curve, 7-day forecast, air quality and alerts";
+      exec = "omarchy-launch-or-focus-tui weather";
+      terminal = false;
+      type = "Application";
+      icon = "weather-few-clouds";
+      categories = [ "Utility" "ConsoleOnly" ];
+      settings.Keywords = "linecast;weather;forecast;terminal;";
+    };
+
+    # `sunshine` on PATH is the Sunshine streaming server, so linecast's alias is
+    # dropped in its derivation (modules/shared/linecast.nix) and the dispatcher
+    # is the way in. The explicit --app-id keeps focus-or-launch matching working,
+    # which would otherwise key on the basename `linecast` for every subcommand.
+    linecast-sunshine = {
+      name = "Sunshine";
+      genericName = "linecast sunshine";
+      comment = "The Sun across its daily arc, day length and moon phase";
+      exec = "omarchy-launch-or-focus-tui --app-id=org.omarchy.linecast-sunshine linecast sunshine";
+      terminal = false;
+      type = "Application";
+      icon = "weather-clear";
+      categories = [ "Utility" "ConsoleOnly" ];
+      settings.Keywords = "linecast;sun;solar;terminal;";
+    };
+
+    linecast-moon = {
+      name = "Moon";
+      genericName = "linecast moon";
+      comment = "Lunar disc, illumination, rise and set, next full and new moons";
+      exec = "omarchy-launch-or-focus-tui moon";
+      terminal = false;
+      type = "Application";
+      icon = "weather-clear-night";
+      categories = [ "Utility" "ConsoleOnly" ];
+      settings.Keywords = "linecast;moon;lunar;terminal;";
+    };
+
+    linecast-tides = {
+      name = "Tides";
+      genericName = "linecast tides";
+      comment = "Sunlight-shaded tide curve, water level, high and low times";
+      exec = "omarchy-launch-or-focus-tui tides";
+      terminal = false;
+      type = "Application";
+      icon = "weather-showers";
+      categories = [ "Utility" "ConsoleOnly" ];
+      settings.Keywords = "linecast;tide;noaa;terminal;";
+    };
+
+    linecast-radar = {
+      name = "Radar";
+      genericName = "linecast radar";
+      comment = "Animated worldwide radar and satellite, warnings, temperature and wind";
+      exec = "omarchy-launch-or-focus-tui radar";
+      terminal = false;
+      type = "Application";
+      icon = "weather-storm";
+      categories = [ "Utility" "ConsoleOnly" ];
+      settings.Keywords = "linecast;radar;satellite;terminal;";
+    };
+
+    linecast-maps = {
+      name = "Maps";
+      genericName = "linecast maps";
+      comment = "Vector streets, terrain and bathymetry, place search and directions";
+      exec = "omarchy-launch-or-focus-tui maps";
+      terminal = false;
+      type = "Application";
+      icon = "mark-location";
+      categories = [ "Utility" "ConsoleOnly" ];
+      settings.Keywords = "linecast;map;terrain;terminal;";
+    };
+
     opencode = {
       name = "OpenCode";
       comment = "The open source AI coding agent";
