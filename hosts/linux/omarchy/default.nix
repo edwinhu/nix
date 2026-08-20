@@ -1958,6 +1958,10 @@ in
   #     hosts/linux/omarchy/files/ufw-rules.sh --check   # names what is missing
   #     sudo hosts/linux/omarchy/files/ufw-rules.sh      # apply
   #
+  # The ufw-rules service below runs `--ensure` at login, which self-heals when
+  # the YubiKey is in (sudo is passwordless only then) and logs a clear message
+  # when it is not, rather than blocking on a password prompt it cannot answer.
+  #
   # The speaker connects BACK to owntone's control/timing ports; without the
   # rule every SETUP times out and the device "fails to activate". Those two
   # ports are pinned below precisely so one narrow rule suffices — note that
@@ -3067,6 +3071,24 @@ in
         ''}";
         Restart = "always";
         RestartSec = 3;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # Reapplies the host's ufw rules if they have drifted (rebuilt box, `ufw
+    # reset`). Best-effort: sudo is passwordless only while the YubiKey is
+    # inserted, so without it this just logs what is missing. Failure is not
+    # fatal - the only symptom of a missing rule is AirPlay not connecting.
+    { ufw-rules = {
+      Unit = {
+        Description = "Ensure this host's ufw rules are present";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${config.home.homeDirectory}/nix/hosts/linux/omarchy/files/ufw-rules.sh --ensure";
+        # A missing rule is a warning, not a failed boot.
+        SuccessExitStatus = [ 0 1 ];
       };
       Install.WantedBy = [ "default.target" ];
     }; }

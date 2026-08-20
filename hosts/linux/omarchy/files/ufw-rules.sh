@@ -36,6 +36,25 @@ if [ "${1:-}" = "--check" ]; then
   exit $?
 fi
 
+# --ensure: apply only what is missing, and only if sudo can be had WITHOUT a
+# prompt. sudo here is passwordless only while the YubiKey is inserted
+# (pam_yubico, mode=challenge-response, sufficient in /etc/pam.d/sudo), so this
+# is best-effort by design: it heals silently when the key is in and says so
+# plainly when it is not. It must never block on a password prompt — it runs
+# unattended from a systemd unit with no terminal to type into.
+if [ "${1:-}" = "--ensure" ]; then
+  if check; then
+    echo "all firewall rules present"
+    exit 0
+  fi
+  if ! sudo -n true 2>/dev/null; then
+    echo "firewall rules missing and sudo needs a password (YubiKey out?)." >&2
+    echo "run: sudo $0" >&2
+    exit 1
+  fi
+  exec sudo -n "$0"
+fi
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "error: apply needs root — re-run with sudo (or pass --check)" >&2
   exit 2
