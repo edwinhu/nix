@@ -1950,9 +1950,14 @@ in
   # and the session is never torn down. That is what removes the whole failure
   # mode rather than papering over it.
   #
-  # ⚠️ REQUIRES A ufw RULE, which is machine state and NOT in this repo:
-  #     sudo ufw allow from 192.168.4.0/22 to any port 6002:6003 proto udp \
-  #       comment 'owntone airplay'
+  # ⚠️ REQUIRES A ufw RULE. ufw is root-owned system state and this is Arch, not
+  # NixOS, so there is no networking.firewall option to declare it with — the
+  # rule lives in files/ufw-rules.sh instead, which is version-controlled,
+  # idempotent, and checkable without root:
+  #
+  #     hosts/linux/omarchy/files/ufw-rules.sh --check   # names what is missing
+  #     sudo hosts/linux/omarchy/files/ufw-rules.sh      # apply
+  #
   # The speaker connects BACK to owntone's control/timing ports; without the
   # rule every SETUP times out and the device "fails to activate". Those two
   # ports are pinned below precisely so one narrow rule suffices — note that
