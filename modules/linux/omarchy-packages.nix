@@ -52,6 +52,10 @@ let
     beeper
     stremio-linux-shell
 
+    # AirPlay 2 bridge to the KEF (PipeWire's RAOP is AirPlay 1 only).
+    # Wiring + the required ufw rule: hosts/linux/omarchy/default.nix.
+    owntone
+
     # Tailscale TUI (source build). Terminal workspaces are herdr's job now —
     # it's cross-platform, so it lives in modules/shared/packages.nix.
     tsui

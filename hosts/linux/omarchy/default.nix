@@ -1908,9 +1908,10 @@ in
                 # holding a silent keepalive stream (died mid-stream), and
                 # disabling WirePlumber's idle-suspend hook (unrelated).
                 # Only devices matched by a create-stream rule get a sink.
-                # The KEF is deliberately absent: its sink is supervised by the
-                # kef-airplay service, and a discovered sink alongside it would
-                # be a second client for a receiver that accepts one session.
+                # The KEF is deliberately absent: PipeWire only speaks AirPlay 1
+                # and this speaker is an AirPlay 2 device that will not keep such
+                # a session (see the owntone block below). The Sonos is happy on
+                # AirPlay 1, so it stays here.
                 stream.rules = [
                     {
                         matches = [ { raop.hostname = "~Sonos-.*" } ]
@@ -1934,40 +1935,74 @@ in
     '';
   };
 
-  # The KEF's AirPlay sink is hosted by a SECOND pipewire instance running as a
-  # plain client of the main daemon — the same pattern as pipewire-pulse — so
-  # that rebuilding the sink does not mean restarting the daemon and killing
-  # every client stream. See the kef-airplay service for why it needs rebuilding.
-  xdg.configFile."pipewire/raop-kef.conf" = {
+  # The KEF over AirPlay 2, via owntone.
+  #
+  # PipeWire's RAOP modules only speak AirPlay 1. The LSX II LT is an AirPlay 2
+  # device and will not keep an AirPlay 1 session: RTSP SETUP is answered 500
+  # (PCM) or simply dropped ~30s after a stream ENDS (ALAC), and since
+  # module-raop-sink calls pw_impl_module_schedule_destroy on rtsp_disconnected
+  # the sink then deletes itself with nothing logged. owntone speaks AirPlay 2
+  # natively and holds the session.
+  #
+  # Audio reaches it through a FIFO: the `kef` null sink's monitor is piped into
+  # owntone's library as a named pipe, which owntone streams (pipe_autostart).
+  # The feeder never stops writing — silence included — so the stream never ends
+  # and the session is never torn down. That is what removes the whole failure
+  # mode rather than papering over it.
+  #
+  # ⚠️ REQUIRES A ufw RULE, which is machine state and NOT in this repo:
+  #     sudo ufw allow from 192.168.4.0/22 to any port 6002:6003 proto udp \
+  #       comment 'owntone airplay'
+  # The speaker connects BACK to owntone's control/timing ports; without the
+  # rule every SETUP times out and the device "fails to activate". Those two
+  # ports are pinned below precisely so one narrow rule suffices — note that
+  # AirPlay 1 ignores them and always picks random ports, so AirPlay 2 is the
+  # only path that can work behind a firewall at all.
+  xdg.configFile."owntone/owntone.conf" = {
     force = true;
     text = ''
-      context.properties = {
-          log.level = 2
+      general {
+        uid = "${user}"
+        db_path = "${config.home.homeDirectory}/.local/state/owntone/songs3.db"
+        cache_dir = "${config.home.homeDirectory}/.local/state/owntone"
+        logfile = "${config.home.homeDirectory}/.local/state/owntone/owntone.log"
+        loglevel = log
+        websocket_port = 3688
       }
-      context.spa-libs = {
-          audio.convert.* = audioconvert/libspa-audioconvert
-          support.*       = support/libspa-support
+      library {
+        name = "owntone on %h"
+        port = 3689
+        directories = { "${config.home.homeDirectory}/.local/share/owntone" }
+        pipe_autostart = true
       }
-      context.modules = [
-          { name = libpipewire-module-rt
-            args = { nice.level = -11 }
-            flags = [ ifexists nofail ] }
-          { name = libpipewire-module-protocol-native }
-          { name = libpipewire-module-client-node }
-          { name = libpipewire-module-adapter }
-          { name = libpipewire-module-raop-sink
+      audio {
+        nickname = "Local"
+        type = "disabled"
+      }
+      airplay_shared {
+        control_port = 6002
+        timing_port = 6003
+      }
+      mpd {
+        port = 0
+      }
+    '';
+  };
+
+  # The sink apps actually select. A null sink, because nothing local plays it —
+  # its monitor is what gets shipped to the speaker.
+  xdg.configFile."pipewire/pipewire.conf.d/61-kef-null-sink.conf" = {
+    force = true;
+    text = ''
+      context.objects = [
+          { factory = adapter
             args = {
-                raop.ip = "lsxlite-84171507148c.local"
-                raop.port = 7000
-                raop.name = "84171507148C@LSX II LT-07148c"
-                raop.hostname = "lsxlite-84171507148c.local"
-                raop.transport = "udp"
-                raop.encryption.type = "auth_setup"
-                raop.audio.codec = "ALAC"
-                stream.props = {
-                    node.name = "kef"
-                    node.description = "KEF LSX II LT"
-                }
+                factory.name = support.null-audio-sink
+                node.name = "kef"
+                node.description = "KEF LSX II LT"
+                media.class = Audio/Sink
+                audio.position = [ FL FR ]
+                monitor.channel-volumes = true
             } }
       ]
     '';
@@ -2987,58 +3022,48 @@ in
         ExecStart = "${aercAddressBook}/bin/aerc-addressbook --index";
       };
     }; }
-    # module-raop-sink destroys itself when its RTSP session tears down. The KEF
-    # tears down ~30s after a stream ENDS, and raop-discover will not rebuild the
-    # sink — it only acts on mDNS add events and the speaker never stops
-    # advertising — so a discovered KEF sink is good for exactly one playback.
-    # Hence a supervisor: it polls for the sink and restarts the RAOP client that
-    # hosts it. Polling, not exit status, because the module dying leaves the
-    # helper process running with no sink.
-    { kef-airplay = {
+    { owntone = {
       Unit = {
-        Description = "KEF LSX II LT AirPlay sink (supervised RAOP client)";
-        After = [ "pipewire.service" ];
+        Description = "owntone (AirPlay 2 bridge to the KEF)";
+        After = [ "network-online.target" "pipewire.service" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStartPre = "${pkgs.writeShellScript "owntone-pre" ''
+          mkdir -p "$HOME/.local/state/owntone" "$HOME/.local/share/owntone"
+          [ -p "$HOME/.local/share/owntone/kef.pipe" ] || \
+            mkfifo "$HOME/.local/share/owntone/kef.pipe"
+        ''}";
+        ExecStart = "${pkgs.owntone}/bin/owntone -c %h/.config/owntone/owntone.conf -f";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # Feeds the null sink's monitor into owntone's FIFO, forever. parec keeps
+    # writing silence when nothing is playing, which is deliberate: it is what
+    # keeps owntone's AirPlay session open between tracks.
+    { kef-pipe = {
+      Unit = {
+        Description = "Feed the kef null sink into owntone's pipe";
+        After = [ "owntone.service" "pipewire.service" ];
         BindsTo = [ "pipewire.service" ];
       };
       Service = {
-        # Only the MODULE dir comes from nixpkgs; the binary is Arch's, to match
-        # the running daemon. RAOP is absent from Arch's default pipewire split.
-        Environment = [ "PIPEWIRE_MODULE_DIR=${pkgs.pipewire-raop}/lib/pipewire-0.3" ];
-        ExecStart = "${pkgs.writeShellScript "kef-airplay" ''
+        ExecStart = "${pkgs.writeShellScript "kef-pipe" ''
           set -u
-          start_helper() {
-            pipewire -c "$HOME/.config/pipewire/raop-kef.conf" &
-            HELPER=$!
-          }
-          cleanup() { [ -n "''${HELPER:-}" ] && kill "$HELPER" 2>/dev/null; }
-          # `trap cleanup TERM` alone RESUMES the loop after the handler returns:
-          # the interrupted sleep just ends, the next poll finds the sink gone
-          # (because cleanup killed the helper) and starts a new one, so the unit
-          # never stops and systemd waits out its full stop timeout. Exit
-          # explicitly. EXIT stays bare - exiting from within the EXIT trap is a
-          # recursion.
-          trap 'cleanup; exit 0' INT TERM
-          trap cleanup EXIT
-
-          start_helper
-          # Grace before the first poll, so a helper that is merely still
-          # starting is not killed as if its sink had died.
-          sleep 5
-          while true; do
-            if ! pactl list sinks short 2>/dev/null | grep -qE '^[0-9]+[[:space:]]+kef[[:space:]]'; then
-              echo "kef sink missing - restarting RAOP client"
-              kill "$HELPER" 2>/dev/null
-              wait "$HELPER" 2>/dev/null
-              start_helper
-              sleep 5
-            fi
-            sleep 5
+          PIPE="$HOME/.local/share/owntone/kef.pipe"
+          # Wait for the sink; pipewire may still be settling after a switch.
+          for _ in $(seq 1 30); do
+            pactl list sinks short 2>/dev/null | grep -qE '^[0-9]+[[:space:]]+kef[[:space:]]' && break
+            sleep 1
           done
+          exec parec --device=kef.monitor --format=s16le --rate=44100 --channels=2 > "$PIPE"
         ''}";
         Restart = "always";
-        RestartSec = 2;
+        RestartSec = 3;
       };
-      Install.WantedBy = [ "pipewire.service" ];
+      Install.WantedBy = [ "default.target" ];
     }; }
     { host-dispatch = {
       Unit = {
