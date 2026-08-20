@@ -31,7 +31,10 @@ CHROMIUM = next(
     (b for b in ("chromium", "chromium-browser", "google-chrome-stable", "chrome")
      if shutil.which(b)), None,
 )
-WIDTH = 900  # a desktop mail reading pane; narrower than a browser window
+WIDTH = int(os.environ.get("MAIL_PREVIEW_WIDTH", "900"))  # desktop mail
+# reading pane; narrower than a browser window. Overridable because the aerc
+# herdr-graphics filter needs the PNG at an EXACT pixel width: herdr crops to
+# grid_cols*cell_w rather than scaling, so any other width shows a cropped edge.
 TALL = 6000  # render window height: a ceiling on message length, then cropped
 
 # Neutral chrome around the message so the render shows the recipient's frame
@@ -226,10 +229,17 @@ def show_external(png):
 
 def show(png):
     if shutil.which("chafa"):
-        # chafa picks kitty/sixel/symbols by probing the terminal; --scale max
-        # fills the width without overflowing it. Height is left free so a long
-        # message scrolls in the pager rather than being squashed to one screen.
-        subprocess.run(["chafa", "--scale", "max", png], check=False)
+        # NOT reachable from inside aerc -- aerc's embedded terminal parses and
+        # discards a child's kitty escapes (and sixel), measured 0 against a
+        # plain-pty control of 1 by files/aerc-graphics-probe.sh. This path is
+        # for a real terminal; from aerc use show_external, or `o` for Chromium.
+        # Force the protocol and geometry so chafa never probes /dev/tty.
+        # Width fills the pane; height remains scrollable instead of squashed.
+        cols = shutil.get_terminal_size((120, 40)).columns
+        subprocess.run(
+            ["chafa", "-f", "kitty", "--probe", "off", "--size", f"{cols}x", png],
+            check=False,
+        )
     else:
         print(f"(no chafa) rendered: {png}")
 
@@ -264,6 +274,11 @@ def main():
                     help="open in an image viewer instead of painting in the terminal")
     ap.add_argument("--text", action="store_true",
                     help="render through chawan instead (works inside aerc)")
+    ap.add_argument("--render-only", action="store_true",
+                    help="write the PNG and print its path; display nothing. For "
+                         "callers that composite the image themselves (the aerc "
+                         "herdr-graphics filter), where show_external's viewer "
+                         "window would be exactly the wrong thing.")
     args = ap.parse_args()
 
     if args.html or args.target in (None, "-"):
@@ -283,6 +298,9 @@ def main():
         return
     png = args.out or tempfile.mkstemp(prefix="mail-preview.", suffix=".png")[1]
     render(head, body, png)
+    if args.render_only:
+        print(png)
+        return
     if args.open or not sys.stdout.isatty():
         show_external(png)
     else:

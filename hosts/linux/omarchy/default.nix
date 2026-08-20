@@ -8,7 +8,7 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # aerc's text/html filter: chawan in DUMP mode, network-isolated.
+  # Network-isolated Chawan text preview used by `mail-preview --text`.
   #
   # chawan (not w3m) because it has a real CSS engine and honours a newsletter's
   # own column layout instead of flattening it — measured 29ms vs w3m's 21ms on a
@@ -16,8 +16,8 @@ let
   # the same as the interactive mode did; it is the SAME renderer, so nothing
   # about the layout changes.
   #
-  # INLINE IMAGES WERE TRIED AND ARE IMPOSSIBLE HERE. Do not re-attempt without
-  # reading this. aerc pipes the message part in on STDIN, so chawan treats the
+  # INLINE IMAGES ARE IMPOSSIBLE THROUGH THIS CHAWAN PATH. aerc pipes the
+  # message part in on STDIN, so chawan treats the
   # document as `<*stdin*>` — and chawan only fetches remote images for documents
   # that are THEMSELVES remote. Every image in an email is a remote URL, so none
   # of them ever load. Measured three ways: an https document loaded 52/56
@@ -456,7 +456,18 @@ set -u
 
 TMP=$(mktemp -d) || exit 0
 HELPER_PID=""
+# The key loop below reads single bytes from /dev/tty. Left in cooked mode the
+# tty driver ECHOES each one, so paging with j/k types "jjkk" across the page
+# you are looking at. Turn echo off (and canonical mode with it, so a keypress
+# arrives without Enter) for the filter's life, and put the terminal back the
+# way it was on every exit path -- aerc reuses this terminal.
+STTY_SAVED=""
+if [ -r /dev/tty ]; then
+  STTY_SAVED=$(stty -g < /dev/tty 2>/dev/null || true)
+  [ -n "$STTY_SAVED" ] && stty -echo -icanon min 1 time 0 < /dev/tty 2>/dev/null || true
+fi
 cleanup() {
+  [ -n "$STTY_SAVED" ] && stty "$STTY_SAVED" < /dev/tty 2>/dev/null || true
   [ -n "$HELPER_PID" ] && kill "$HELPER_PID" 2>/dev/null
   exec 3>&- 2>/dev/null
   rm -rf "$TMP"
@@ -592,7 +603,13 @@ page=1
 last_state=""
 draw() {
   local state="$1"
-  printf '\033[2J\033[H  page %s/%s   j/k page   q dismiss\033[2;90m %s\033[0m\n' \
+  # Page counter only. The j/k and q hints used to be spelled out here, but the
+  # line sits above every page you look at and you already know the bindings.
+  # The line itself is NOT decorative and must not be dropped: the helper finds
+  # TOKEN's row to place the image (fact 7) and polls for it to notice a part
+  # switch (fact 5). Keep the INDENT spaces and keep TOKEN greppable in the
+  # pane's TEXT — it is dimmed for the eye, not removed from the buffer.
+  printf '\033[2J\033[H  page %s/%s\033[2;90m %s\033[0m\n' \
     "$page" "$NPAGES" "$TOKEN"
   # Never a silent blank pane: while another part's filter holds the stream we
   # show the notice, and it clears itself the moment we get the image up.
@@ -633,64 +650,6 @@ else
   while kill -0 "$HELPER_PID" 2>/dev/null; do sleep 1; done
 fi
 exit 0
-  '';
-
-  # aerc's application/pdf filter: extracted text, not a rendered page.
-  #
-  # This is a deliberate retreat from a working inline image preview, because
-  # the image preview cannot work WHERE THIS USER ACTUALLY RUNS AERC.
-  #
-  # Nothing in-band survives. aerc's embedded terminal (the `!` filter form)
-  # PARSES AND DISCARDS kitty graphics APC sequences rather than passing them
-  # to Ghostty — measured with a hand-written APC, no terminal probing in the
-  # path: the identical byte stream renders in a bare Ghostty and renders
-  # NOTHING inside aerc. `chafa -f kitty` HANGS FOREVER under aerc on a
-  # /dev/tty probe aerc never answers; `chafa -f sixel` exits 0 and draws
-  # nothing (this Ghostty build has no sixel); `chafa -f symbols` renders only
-  # a text-cell smear. This is why yazi and elio manage inline images and aerc
-  # cannot: they own the TTY and write APC straight to it, whereas aerc
-  # interposes an emulator that eats the escape.
-  #
-  # ueberzugpp DOES work around that — it paints in its own Hyprland window,
-  # so aerc's emulator never gets a say — and a full implementation was built
-  # and verified: centred, aspect-correct, j/k paging, tracking move/resize,
-  # clean on message-switch and quit. It is not shipped, because placing that
-  # overlay needs three inputs and TWO OF THEM DO NOT EXIST inside a terminal
-  # multiplexer, which is how this user runs aerc (herdr):
-  #   - pane rect in cells:  available (HERDR_* env survives into the filter)
-  #   - pixels per cell:     NOT available — aerc's embedded terminal answers
-  #                          DA1 but returns empty for CSI 16t / 14t / 18t
-  #   - hosting window rect: NOT available — process ancestry from a herdr pane
-  #                          ends at the herdr systemd service, so no
-  #                          window-owning process is ever in the chain;
-  #                          `hyprctl activewindow` is a guess and in testing
-  #                          returned an unrelated Chromium window
-  # The observable result was a ~2.4x horizontal scale error and a blank pane.
-  # A guarded version that detects the multiplexer and degrades would take the
-  # text path 100% of the time here, so it would be dead weight.
-  #
-  # So this filter renders NO page and dumps NO text — extracted text was
-  # explicitly not wanted, and it is the wrong shape for a PDF anyway (columns
-  # interleave, figures and tables vanish). It prints one line of orientation
-  # and gets out of the way; `o` opens the real document in hylo, which works
-  # fine from a herdr pane. Its only job over having no filter at all is
-  # replacing aerc's "No filter configured for this mimetype" menu with the
-  # page count, the size, and the keystroke that actually helps.
-  aercPdfText = pkgs.writeShellScript "aerc-pdf-notice" ''
-    set -u
-    tmp=$(${pkgs.coreutils}/bin/mktemp) || exit 0
-    trap 'rm -f "$tmp"' EXIT INT TERM HUP
-    ${pkgs.coreutils}/bin/cat > "$tmp"
-
-    info=$(${pkgs.poppler-utils}/bin/pdfinfo "$tmp" 2>/dev/null)
-    if [ -z "$info" ]; then
-      echo "  Not a readable PDF. Press o to open it anyway, or | to pipe it."
-      exit 0
-    fi
-    pages=$(printf '%s\n' "$info" | ${pkgs.gawk}/bin/awk '/^Pages:/{print $2}')
-    size=$(${pkgs.coreutils}/bin/du -h "$tmp" | ${pkgs.gawk}/bin/awk '{print $1}')
-    printf '  PDF — %s pages, %sB. Press o to open in hylo.\n' \
-      "''${pages:-?}" "$size"
   '';
 
   # Brother DS-740D (retail name: DS-7400) sheet-fed scanner — USB 04f9:0469.
@@ -852,9 +811,8 @@ exit 0
   # system browser, already the CDP target) is inherited from PATH, and pulling
   # a second nixpkgs chromium in would be ~400MB for a screenshot. imagemagick
   # crops the render (Chromium screenshots the WINDOW, not the page).
-  # --text reuses aercChawanHtml verbatim, so an in-aerc preview is byte-for-byte
-  # what the message view would show for the same part — no second renderer whose
-  # output could disagree with the one you read mail in.
+  # --text retains the network-isolated Chawan rendering as an explicit
+  # text-only preview alongside the default Chromium/Kitty message view.
   mailPreview = pkgs.writeShellApplication {
     name = "mail-preview";
     runtimeInputs = [ pkgs.python3 pkgs.chafa pkgs.imagemagick pkgs.himalaya ];
@@ -2035,7 +1993,8 @@ in
   # messages.send, so having the client append one would duplicate every
   # sent message.
   #
-  # binds.conf is deliberately NOT declared — it stays hand-editable.
+  # binds.conf is deliberately NOT declared here — it is owned by dotfiles
+  # (~/dotfiles/.config/aerc/binds.conf) so it stays hand-editable.
   xdg.configFile."aerc/accounts.conf" = {
     force = true;
     # The default folder on both accounts is the low-noise view of the inbox,
@@ -2269,36 +2228,34 @@ in
   # programs.aerc module asserts exactly this. It costs nothing here — the file
   # holds cred *commands*, never a credential.
   #
-  # Everything else is aerc's stock [filters]: `html` is the shipped filter that
-  # renders text/html through w3m (hence w3m in omarchy-packages.nix).
+  # HTML bodies render as a network-isolated chawan dump, text only. Images in
+  # an HTML body cannot be shown by ANY filter -- see the text/html line below
+  # for the measurement that settles it. `o` hands the part to Chromium, which
+  # is where an HTML mail's images are meant to be looked at; that deliberately
+  # leaves the isolation the dump provides, so remote images and fonts load and
+  # the sender learns you opened it.
   #
-  # text/html carries the `!` prefix, which means "skip the pager, run this as
-  # the main process in aerc's embedded terminal". That is required for inline
-  # images: chawan emits image escapes only to a TTY, and a piped `-d` dump
-  # renders an <img> as a blank line. The cost is that chawan runs as a full TUI
-  # browser inside the message view — keys go to it, `q` returns to aerc.
+  # Do NOT register an `image/*` filter. aerc renders image PARTS itself as real
+  # terminal graphics (measured: a 32x32 image/png fixture produces a kitty
+  # transmit + place, apc_chunks=2; inline multipart/related gives 4 with the
+  # deletes on close). Adding `image/*=cat` suppresses that renderer completely
+  # -- measured, apc_chunks=0. The absence of the entry IS the feature.
   #
-  # Historical note, because this line has flipped twice: the STOCK `! html`
-  # (w3m) was bad specifically because w3m's interactive branch sets
-  # `-o display_borders=true`, so table-layout newsletters rendered as six levels
-  # of box-drawing with the text shoved off-screen. That is a w3m problem, not an
-  # interactive-mode problem — chawan lays the same mail out properly. So `!` is
-  # back, with a different renderer behind it.
+  # Two host preconditions, both verified on this machine: the terminal must
+  # answer aerc's kitty capability query (a herdr pane answers ESC_Gi=1;OK) and
+  # must report NONZERO pixel winsize (a herdr pane reports 2880x1944 for
+  # 180x54). With zero pixels Vaxis silently falls back to half-blocks, so a
+  # bare pty is not a valid place to test this. `show-images` is not an aerc
+  # 0.21 viewer option.
   xdg.configFile."aerc/aerc.conf" = {
     force = true;
     text = ''
       [general]
       unsafe-accounts-conf = true
 
-      # Prefer the HTML part of a multipart/alternative message. aerc's default
-      # is the reverse (text/plain first), which meant chawan almost never ran —
-      # most real mail carries a plain alternative, so the rich rendering and
-      # inline images this setup exists for were only reachable on the rare
-      # HTML-only message. Flipping this is what makes the filter actually apply.
-      #
-      # Trade-off, deliberate: essentially every message now opens in chawan's
-      # interactive viewer rather than the pager, so `q` is needed to get back.
-      # Reverse this line first if that becomes tiresome.
+      # Prefer HTML so the Kitty screenshot renderer applies even when a plain
+      # alternative exists. The filter is interactive, so `q` returns to aerc.
+      # Reverse this order to make the network-isolated plain part the default.
       [viewer]
       alternatives = text/html,text/plain
 
@@ -2441,7 +2398,31 @@ in
       text/calendar=calendar
       message/delivery-status=colorize
       message/rfc822=colorize
-      text/html=${aercChawanHtml}
+      # getExe, not a bare ${mailPreview}: this one is a writeShellApplication,
+      # so its store path is a DIRECTORY holding bin/mail-preview — unlike the
+      # writeShellScript filters around it, whose path IS the executable.
+      # Interpolating it like its neighbours gets "Is a directory" at runtime.
+      #
+      # --text, and NO `!`: --html is the Chromium/chafa pixel render, which
+      # emits ~2.8MB of kitty APC for a two-line message. aerc's embedded
+      # terminal parses that payload and then discards it, so the cost buys
+      # nothing and the pane appears to hang. --text is the chawan dump: fast,
+      # `unshare --net` so no beacons fire, and what the message view can
+      # actually display.
+      #
+      # NO IMAGES IN AN HTML BODY, AND NO FILTER CAN CHANGE THAT. Measured with
+      # a pty probe that counts a filter's escapes in aerc's own output
+      # (files/aerc-graphics-probe.sh, tests/aerc-graphics/): a fixed kitty APC
+      # from a text/html filter arrives 0 times, and so does a fixed SIXEL,
+      # against a plain-pty positive control of 1. aerc's terminal parses and
+      # drops a child's graphics whatever the protocol -- which also rules out
+      # img2sixel, ueberzugpp under the filter, and aerc-config(5)'s own
+      # `text/html=! html-unsafe -sixel` recipe. `o` opens the part in Chromium
+      # (see [openers] below); that is the way to see an HTML mail's images.
+      #
+      # Real image/* PARTS are a different code path and DO render inline --
+      # see the [filters] note above about not registering an image/* filter.
+      text/html=${lib.getExe mailPreview} --html --text
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
