@@ -52,10 +52,6 @@ let
     beeper
     stremio-linux-shell
 
-    # Audio to the KEF over Google Cast. kefctl itself is cross-platform and
-    # lives in shared/packages.nix; this bridge is PipeWire-specific.
-    (import ./kef-cast { inherit pkgs; })
-
     # Tailscale TUI (source build). Terminal workspaces are herdr's job now —
     # it's cross-platform, so it lives in modules/shared/packages.nix.
     tsui
