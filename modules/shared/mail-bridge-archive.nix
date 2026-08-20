@@ -13,9 +13,12 @@
 # previous generation: this module never mutates a running unit or a generated
 # Aerc file, so a generation IS the whole state of the choice.
 #
-# Aerc is untouched by mode. It keeps pointing at 127.0.0.1:1143 / :1144 and
-# keeps sending through the `mail-bridge sendmail` shim; only what answers on
-# those ports changes.
+# Aerc's TRANSPORT is untouched by mode: it keeps pointing at 127.0.0.1:1143 /
+# :1144 and keeps sending through the `mail-bridge sendmail` shim. Its mailbox
+# NAMES are not — the archive listener spells every derived membership
+# `kind/value` (`view/Focused`) where the live bridge uses the bare name, so a
+# consumer of this option must select its vocabulary from `mode`. The host's
+# generated accounts.conf does exactly that.
 { config, lib, pkgs, ... }:
 
 let

@@ -1271,15 +1271,17 @@ in
 
   # Which implementation answers on each of the two Aerc mail ports.
   #
-  # BOTH ACCOUNTS ARE LIVE. The archive units below are emitted but enabled by
-  # nothing, so this generation runs exactly the bridge it always did. Work is
-  # the intended first canary — flipping `work.mode` to "archive" moves port
-  # 1143 onto the archive alone and leaves Personal on the live bridge — and
-  # mkDefault is what makes that a one-line override rather than an edit here.
+  # WORK IS ON THE ARCHIVE; PERSONAL IS LIVE. `work.mode = "archive"` below puts
+  # the archive listener alone on port 1143 and leaves Personal on the live
+  # bridge on 1144; the two switch independently. Rolling Work back is editing
+  # that one word here (it is a plain definition, not mkDefault) or
+  # `home-manager switch --rollback` onto the previous generation.
   #
-  # Aerc does not appear in this block at all: accounts.conf points at
-  # 127.0.0.1:1143/:1144 and at the `mail-bridge sendmail` shim in both modes,
-  # so a mode change is invisible to the client. Sending is never archived.
+  # A mode change is NOT invisible to Aerc: transport is identical in both modes
+  # (127.0.0.1:1143/:1144 plus the `mail-bridge sendmail` shim), but the two
+  # serve paths name mailboxes differently, so accounts.conf reads `work.mode`
+  # to pick the vocabulary — see xdg.configFile."aerc/accounts.conf" below.
+  # Sending is never archived.
   services.mail-bridge.accounts = {
     work = {
       mode = "archive";
@@ -2176,7 +2178,52 @@ in
   #
   # binds.conf is deliberately NOT declared here — it is owned by dotfiles
   # (~/dotfiles/.config/aerc/binds.conf) so it stays hand-editable.
-  xdg.configFile."aerc/accounts.conf" = {
+  xdg.configFile."aerc/accounts.conf" =
+  let
+    # The two serve paths behind Work's port 1143 do NOT name the same
+    # mailboxes, so the stanza cannot be one text for both modes.
+    #
+    #   live    -- the bridge publishes the Focused/Other split and the Outlook
+    #              categories under BARE names (`Focused`, `Respond`): the view
+    #              name is also its tag, one vocabulary rather than two.
+    #   archive -- the archive listener names every DERIVED membership
+    #              `kind/value`, so the same projections are `view/Focused`,
+    #              `view/Other`, `category/Respond`. Only a physical folder
+    #              keeps its bare name.
+    #
+    # `folders` is an exact-match whitelist and `default` an exact mailbox name,
+    # so the wrong vocabulary does not degrade -- it filters the entire split out
+    # of the sidebar and opens onto a mailbox the server answers
+    # `NO [CANNOT] mailbox does not exist` for. Which is what happened on the
+    # archive cutover: 1063 Focused and 951 Other messages were served the whole
+    # time under names this file did not list.
+    #
+    # Outbox is dropped in ARCHIVE mode; Drafts is KEPT in both.
+    #
+    # Outbox is not a provider mailbox at all -- the archive's outbox is an
+    # internal operation queue, so no projection can ever derive a membership
+    # for it and the entry would be permanently dead.
+    #
+    # Drafts is different, and the distinction is the whole reason to spell it
+    # out. Graph acquisition scopes EVERY physical folder with no Drafts
+    # exclusion, so a `folder=Drafts` membership -- and with it a LISTable
+    # `Drafts` mailbox -- appears on the first cycle after a remote draft
+    # exists. Its absence from today's LIST is therefore data-dependent, not
+    # structural, and `folders` is exact-match: dropping it would hide real
+    # synced drafts, which is this bug one folder narrower. Aerc's `postpone`
+    # also defaults to `Drafts` and [Work] sets no override, so postponing a
+    # compose needs that name to resolve. A row that is empty until the first
+    # draft exists is the cheap side of that trade.
+    #
+    # The LIVE list is left exactly as it was -- rollback must land on the
+    # vocabulary the live bridge actually serves, Outbox included.
+    workMode = config.services.mail-bridge.accounts.work.mode;
+    workDefaultFolder = if workMode == "archive" then "view/Focused" else "Focused";
+    workFolderList =
+      if workMode == "archive"
+      then "view/Focused,view/Other,category/Respond,category/Waiting,category/Pitch,category/News,category/Marketing,category/Meeting,category/Invoice,Drafts,Sent Items,Archive,Junk Email,Deleted Items"
+      else "Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items";
+  in {
     force = true;
     # The default folder on both accounts is the low-noise view of the inbox,
     # not the inbox: Exchange's Focused (mail-bridge reads Graph's per-message
@@ -2189,7 +2236,7 @@ in
       from          = Edwin Hu <ehu@law.virginia.edu>
       source        = imap+insecure://owa:x@127.0.0.1:1143
       outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
-      default       = Focused
+      default       = ${workDefaultFolder}
       cache-headers = true
       # `folders` is a WHITELIST, so INBOX is deliberately absent: Focused and
       # Other partition it exactly, and showing all three would list every
@@ -2207,8 +2254,8 @@ in
       # and a message with two categories is in two of them. Listing them
       # alongside the split is therefore not double-counting the way listing
       # INBOX beside Focused/Other would be.
-      folders       = Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
-      folders-sort  = Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items
+      folders       = ${workFolderList}
+      folders-sort  = ${workFolderList}
 
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
