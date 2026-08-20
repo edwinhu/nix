@@ -1863,6 +1863,25 @@ in
   # mpv, a browser — can play to them as ordinary PipeWire sinks. Pair with
   # `kefctl source wifi`, which is the input the speaker receives AirPlay on.
   #
+  # DECLARED STATICALLY, IN ALAC, and both parts are load-bearing:
+  #
+  #   - Codec. raop-discover negotiates PCM, and the KEF will not hold a PCM
+  #     session: RTSP SETUP comes back 500 and the speaker drops the control
+  #     connection. module-raop-sink calls pw_impl_module_schedule_destroy on
+  #     rtsp_disconnected, so the SINK DELETES ITSELF — it vanishes from `pactl
+  #     list sinks` with no error logged anywhere, while the speaker is still
+  #     announcing _raop._tcp and still answering HTTP. Measured: PCM survived
+  #     ~60s, ALAC survived 41 minutes idle plus playback. The Sonos tolerates
+  #     PCM, which is why only the KEF ever looked broken.
+  #   - Static. A statically declared sink and raop-discover's own sink for the
+  #     same speaker are two clients for a receiver that accepts one session,
+  #     and they knock each other over. Since the KEF has to be static, discover
+  #     has to go, so the Sonos is declared here too. Cost: no other AirPlay
+  #     device will auto-appear.
+  #
+  # Addressed by mDNS HOSTNAME, not IP — both are on DHCP and the KEF has
+  # already moved once (.190 -> .207). raop.ip takes the .local name.
+  #
   # Arch keeps PipeWire's RAOP modules in the `pipewire-zeroconf` package, which
   # is not installed here and would need root. It doesn't have to be: nixpkgs'
   # pipewire module directory is a strict superset of /usr/lib/pipewire-0.3 — it
@@ -1889,7 +1908,35 @@ in
     force = true;
     text = ''
       context.modules = [
-          { name = libpipewire-module-raop-discover
+          { name = libpipewire-module-raop-sink
+            args = {
+                raop.ip = "lsxlite-84171507148c.local"
+                raop.port = 7000
+                raop.name = "84171507148C@LSX II LT-07148c"
+                raop.hostname = "lsxlite-84171507148c.local"
+                raop.transport = "udp"
+                raop.encryption.type = "auth_setup"
+                raop.audio.codec = "ALAC"
+                stream.props = {
+                    node.name = "kef"
+                    node.description = "KEF LSX II LT"
+                }
+            }
+            flags = [ ifexists nofail ] }
+          { name = libpipewire-module-raop-sink
+            args = {
+                raop.ip = "Sonos-804AF2484A2E.local"
+                raop.port = 7000
+                raop.name = "804AF2484A2E@Office"
+                raop.hostname = "Sonos-804AF2484A2E.local"
+                raop.transport = "udp"
+                raop.encryption.type = "auth_setup"
+                raop.audio.codec = "ALAC"
+                stream.props = {
+                    node.name = "sonos"
+                    node.description = "Sonos Beam (Office)"
+                }
+            }
             flags = [ ifexists nofail ] }
       ]
     '';
