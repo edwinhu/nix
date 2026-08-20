@@ -23,6 +23,21 @@ with pkgs; [
   zeromq
   zip
 
+  # Language servers for Claude Code's LSP plugins (pyright-lsp, gopls-lsp,
+  # typescript-lsp, rust-analyzer-lsp). These MUST be global: Claude Code
+  # resolves an LSP `command` from PATH only — never a project venv, pixi env
+  # or node_modules/.bin — so a project-local server is unreachable. Project
+  # fidelity comes from config instead (pyrightconfig.json names the
+  # interpreter; typescript-language-server loads the project's own tsserver
+  # from node_modules when there is one, and falls back to the `typescript`
+  # here otherwise). One per language actually used across ~/projects:
+  # python, go, typescript, rust.
+  pyright
+  gopls
+  typescript-language-server
+  typescript
+  rust-analyzer
+
   # Encryption and security tools
   # `op` is NOT a nix package: desktop-app integration only accepts a CLI binary
   # the app itself vouches for (setgid `onepassword-cli` on Linux, signed on
