@@ -1263,7 +1263,73 @@ in
     # Faithful docx->PDF via real Word in a QEMU Win11 x64 + KVM guest; also a
     # host for Windows-only tools (e.g. BenQ Display QuicKit). Enabled below.
     ../../../modules/shared/word-render.nix
+    # services.mail-bridge.accounts: per-account live/archive mode selection,
+    # plus the provider-free archive listeners and bounded cycle timers. See
+    # services.mail-bridge below for this host's two accounts.
+    ../../../modules/shared/mail-bridge-archive.nix
   ];
+
+  # Which implementation answers on each of the two Aerc mail ports.
+  #
+  # BOTH ACCOUNTS ARE LIVE. The archive units below are emitted but enabled by
+  # nothing, so this generation runs exactly the bridge it always did. Work is
+  # the intended first canary — flipping `work.mode` to "archive" moves port
+  # 1143 onto the archive alone and leaves Personal on the live bridge — and
+  # mkDefault is what makes that a one-line override rather than an edit here.
+  #
+  # Aerc does not appear in this block at all: accounts.conf points at
+  # 127.0.0.1:1143/:1144 and at the `mail-bridge sendmail` shim in both modes,
+  # so a mode change is invisible to the client. Sending is never archived.
+  services.mail-bridge.accounts = {
+    work = {
+      mode = lib.mkDefault "live";
+      address = "ehu@law.virginia.edu";
+      provider = "msgraph";
+      port = 1143;
+      liveUnit = "mail-bridge";
+      # Same broker and same grant as the live unit and as himalaya's msgraph
+      # backend: ortie mints from the stored refresh token and refreshes itself.
+      tokenEnvironmentVariable = "MAIL_BRIDGE_TOKEN_CMD";
+      tokenCommand = "${lib.getExe pkgs.ortie} -a msgraph token show";
+      staleAfterMs = 900000; # 15 minutes: three missed cycles
+      keepGenerations = 2;
+      # Sized for steady state, not for the seed: the initial acquisition is a
+      # separate, explicitly bounded `archive account seed` run. maxElapsedMs is
+      # well under the five-minute cadence so a slow cycle is cut off rather
+      # than overlapping the next one.
+      budgets = {
+        maxRequests = 20000;
+        maxPages = 2000;
+        maxMessages = 50000;
+        maxRawBytes = 2147483648;
+        maxRetries = 4;
+        maxElapsedMs = 240000; # 4 minutes
+        maxOperations = 2000;
+      };
+    };
+    personal = {
+      mode = lib.mkDefault "live";
+      address = "eddyhu@gmail.com";
+      provider = "gmail";
+      port = 1144;
+      liveUnit = "mail-bridge-personal";
+      # ortie's `google` account (gmail.modify). Distinct variable AND distinct
+      # account from Work: neither cycle unit can see the other's broker.
+      tokenEnvironmentVariable = "MAIL_BRIDGE_GMAIL_TOKEN_CMD";
+      tokenCommand = "${lib.getExe pkgs.ortie} -a google token show";
+      staleAfterMs = 900000; # 15 minutes: three missed cycles
+      keepGenerations = 2;
+      budgets = {
+        maxRequests = 20000;
+        maxPages = 2000;
+        maxMessages = 50000;
+        maxRawBytes = 2147483648;
+        maxRetries = 4;
+        maxElapsedMs = 240000; # 4 minutes
+        maxOperations = 2000;
+      };
+    };
+  };
 
   # Ships qemu + swtpm + xorriso + the VM provisioning kit (word-render-provision,
   # start-winvm.sh, ...). See modules/shared/word-render/README.md. (2026-07-11)
@@ -2983,7 +3049,12 @@ in
         Restart = "on-failure";
         RestartSec = 30;
       };
-      Install.WantedBy = [ "default.target" ];
+      # Enabled only while Work is in live mode. Port 1143 has exactly one
+      # owner: switching services.mail-bridge.accounts.work.mode to "archive"
+      # disables this unit in the same generation that enables the archive
+      # listener, so the two can never race for the bind.
+      Install.WantedBy =
+        lib.optionals (config.services.mail-bridge.accounts.work.mode == "live") [ "default.target" ];
     }; }
     # mail-bridge-personal: the same binary, the Gmail provider, the personal
     # mailbox. A SECOND UNIT rather than a second account in one process: the
@@ -3025,7 +3096,10 @@ in
         Restart = "on-failure";
         RestartSec = 30;
       };
-      Install.WantedBy = [ "default.target" ];
+      # Same single-owner rule as Work, on port 1144 and independently: the
+      # Personal account stays live through the whole Work canary.
+      Install.WantedBy =
+        lib.optionals (config.services.mail-bridge.accounts.personal.mode == "live") [ "default.target" ];
     }; }
     # ydotoold: virtual uinput device daemon that `ydotool` talks to over
     # %t/.ydotool_socket. Runs as the user (not root) — /dev/uinput is reachable
