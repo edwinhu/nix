@@ -411,11 +411,11 @@
     "mail-bridge-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1787244506,
-        "narHash": "sha256-bP2oUF6/uiTKMTmq0DEJISxy1ZfFmmJKCHdlnCt1QDQ=",
+        "lastModified": 1787245970,
+        "narHash": "sha256-/j/z3JXN23g8HW5Yh2vbrsf+90Jtoju76zvs8vtqhzs=",
         "ref": "refs/heads/main",
-        "rev": "37c0384d71374f4f40cda8987914e65361c2e068",
-        "revCount": 35,
+        "rev": "bad2827c81e8b0fda34bbff6ce61572fb7aaf856",
+        "revCount": 36,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
       },
