@@ -1282,7 +1282,7 @@ in
   # so a mode change is invisible to the client. Sending is never archived.
   services.mail-bridge.accounts = {
     work = {
-      mode = lib.mkDefault "live";
+      mode = "archive";
       address = "ehu@law.virginia.edu";
       provider = "msgraph";
       port = 1143;
