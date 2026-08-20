@@ -1828,46 +1828,6 @@ in
       ]
     '';
   };
-  # The KEF is declared STATICALLY rather than left to raop-discover, which
-  # repeatedly dropped this one device — the sink vanished from `pactl list
-  # sinks` while the speaker was still announcing `_raop._tcp` and still
-  # answering HTTP, and never came back on its own. The Sonos sink beside it
-  # survived every time, so this is per-device, not discovery being down.
-  # Recovery needed a full `systemctl --user restart pipewire pipewire-pulse
-  # wireplumber` (pactl cannot unload a PipeWire module — "Access denied"),
-  # which kills every client stream, so the player dies with it.
-  #
-  # Addressed by mDNS HOSTNAME, not IP: the speaker is on DHCP and has already
-  # moved once (.190 -> .207), which silently breaks anything holding an
-  # address. raop.ip accepts the .local name and resolves it at connect time.
-  #
-  # raop-discover stays loaded for the Sonos; it will also still create its own
-  # duplicate sink for the KEF whenever it feels like it. The static one is the
-  # stable entry — it is the one named `kef`, and it is what `cliamp device kef`
-  # selects.
-  xdg.configFile."pipewire/pipewire.conf.d/61-kef-raop-sink.conf" = {
-    force = true;
-    text = ''
-      context.modules = [
-          { name = libpipewire-module-raop-sink
-            args = {
-                raop.ip = "lsxlite-84171507148c.local"
-                raop.port = 7000
-                raop.name = "84171507148C@LSX II LT-07148c"
-                raop.hostname = "lsxlite-84171507148c.local"
-                raop.transport = "udp"
-                raop.encryption.type = "auth_setup"
-                raop.audio.codec = "PCM"
-                stream.props = {
-                    node.name = "kef"
-                    node.description = "KEF LSX II LT"
-                }
-            }
-            flags = [ ifexists nofail ] }
-      ]
-    '';
-  };
-
   xdg.configFile."systemd/user/pipewire.service.d/10-raop-module-dir.conf" = {
     force = true;
     text = ''
