@@ -39,6 +39,27 @@ def _clients_delta(delta, peer):
         print(f"clients={_clients} peer={peer}", flush=True)
 
 
+def _source_exists(name):
+    """True if the audio server exposes a source with exactly this name.
+
+    Load-bearing: ffmpeg's pulse input falls back to the DEFAULT source when the
+    named one is missing, so a server that outlives its null sink would silently
+    encode the desktop's own output and serve it on this unauthenticated port.
+    Checked rather than trusted, and failing closed, because the fallback is
+    silent at every layer — ffmpeg exits 0 and the stream sounds plausible.
+    """
+    try:
+        out = subprocess.run(
+            ["pactl", "list", "sources", "short"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if out.returncode != 0:
+        return False
+    return any(l.split("\t")[1:2] == [name] for l in out.stdout.splitlines())
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     # HTTP/1.0 leaves the receiver guessing about a body with no Content-Length.
     protocol_version = "HTTP/1.1"
@@ -70,6 +91,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             _clients_delta(-1, peer)
 
     def _stream(self):
+        # Re-checked per request, not only at startup: the wrapper unloads the
+        # null sink in cleanup, so an orphaned server (an aborted test run
+        # leaves one) would start capturing the default source instead.
+        if not _source_exists(SINK):
+            self.send_response(503)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(b"capture source is gone\n")
+            return
         self._headers()
         encoder = subprocess.Popen(
             [
@@ -95,6 +126,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+
+if not _source_exists(SINK):
+    print(f"capture source {SINK!r} does not exist", file=sys.stderr, flush=True)
+    sys.exit(1)
 
 socketserver.ThreadingTCPServer.allow_reuse_address = True
 with socketserver.ThreadingTCPServer(("0.0.0.0", PORT), Handler) as httpd:
