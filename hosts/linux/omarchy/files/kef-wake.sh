@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
-# Wake the KEF when something actually starts playing to it, and re-establish
-# owntone's AirPlay session.
+# Keep the KEF actually playing what is sent to it.
 #
-# The speaker's standby timer counts SILENCE, not absence of a stream, and its
-# API refuses writes to settings:/kef/host/standbyMode ("Forbidden") — it can
-# only be changed in the KEF Connect app. So the permanently-open AirPlay
-# session does not keep it awake: after ~30 minutes of quiet it sleeps, and the
-# next track plays into a sleeping speaker.
+# Two failure modes, one trigger. The speaker's standby timer counts SILENCE,
+# not absence of a stream (and standbyMode is not writable over its API -
+# "Forbidden" - it is a KEF Connect app setting), so after ~30min of quiet it
+# sleeps. Waking it kills the AirPlay session, and owntone does NOT notice: it
+# keeps its UDP socket open and keeps reporting `play` while the speaker's own
+# player sits at "stopped". Local state is green end to end and no audio comes
+# out.
 #
-# Rather than defeat standby with inaudible noise (which would keep it powered
-# 24/7), this wakes it on demand: a real, uncorked stream on the `kef` sink is
-# the signal that someone wants audio now. The feeder does not count - it reads
-# the MONITOR, so it is never a sink-input.
+# So do not infer from local state. Ask the speaker: player:player/data is
+# authoritative about whether audio is landing. If something is playing to the
+# `kef` sink and the speaker is not playing it, wake it if asleep and make
+# owntone rebuild the session by re-selecting the output.
+#
+# The feeder never counts as playback - it reads the MONITOR, so it is not a
+# sink-input.
 set -uo pipefail
 
-COOLDOWN=30   # seconds; a wake takes a few seconds to settle, do not spam it
+# mDNS name, not an IP: the speaker is on DHCP and has moved before
+# (.190 -> .207), which is what broke every hardcoded address here.
+SPEAKER=lsxlite-84171507148c.local
+COOLDOWN=30   # seconds; a rebuild takes a few seconds to settle, do not spam it
 last_wake=0
 
 kef_sink_id() { pactl list sinks short 2>/dev/null | awk '$2=="kef"{print $1; exit}'; }
@@ -45,26 +52,46 @@ sys.exit(0 if hit else 1)
 ' "$id"
 }
 
+speaker_state() {
+  timeout 8 curl -s -m 5 -G "http://$SPEAKER/api/getData" \
+    --data-urlencode "path=player:player/data" --data-urlencode "roles=value" 2>/dev/null |
+    python3 -c 'import json,sys
+try: print(json.load(sys.stdin)[0].get("state",""))
+except Exception: print("")' 2>/dev/null
+}
+
+airplay_output_id() {
+  curl -s -m 5 http://127.0.0.1:3689/api/outputs 2>/dev/null | python3 -c 'import json,sys
+try:
+    for o in json.load(sys.stdin)["outputs"]:
+        if "LSX" in o["name"] and o["type"].startswith("AirPlay"):
+            print(o["id"]); break
+except Exception: pass' 2>/dev/null
+}
+
 while true; do
   if playing_to_kef; then
     now=$SECONDS
     if [ $((now - last_wake)) -ge "$COOLDOWN" ]; then
-      standby="$(timeout 10 kefctl panel 2>/dev/null | \
-        python3 -c 'import json,sys; print(json.load(sys.stdin)["standby"])' 2>/dev/null)"
-      if [ "$standby" = "True" ]; then
-        echo "audio on kef sink and speaker is in standby - waking"
-        timeout 10 kefctl toggle >/dev/null 2>&1
-        sleep 6
-        # The AirPlay session does not survive standby; re-select the output so
-        # owntone rebuilds it rather than streaming into a dead session.
-        id=$(curl -s -m 5 http://127.0.0.1:3689/api/outputs 2>/dev/null | \
-          python3 -c 'import json,sys
-for o in json.load(sys.stdin)["outputs"]:
-    if "LSX" in o["name"] and o["type"].startswith("AirPlay"):
-        print(o["id"]); break' 2>/dev/null)
-        if [ -n "${id:-}" ]; then
+      state="$(speaker_state)"
+      # "" means the speaker did not answer - do not thrash the session on a
+      # transient network hiccup, just try again next tick.
+      if [ -n "$state" ] && [ "$state" != "playing" ]; then
+        echo "audio on kef sink but speaker reports '$state' - recovering"
+        if [ "$state" = "standby" ] || \
+           [ "$(timeout 10 kefctl panel 2>/dev/null |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["standby"])' 2>/dev/null)" = "True" ]; then
+          timeout 10 kefctl toggle >/dev/null 2>&1
+          sleep 6
+        fi
+        id="$(airplay_output_id)"
+        if [ -n "$id" ]; then
+          # Deselect first: re-selecting an already-selected output is a no-op,
+          # and the stale session is exactly what has to be torn down.
+          curl -s -m 5 -X PUT "http://127.0.0.1:3689/api/outputs/$id" -d '{"selected": false}' >/dev/null
+          sleep 2
           curl -s -m 5 -X PUT "http://127.0.0.1:3689/api/outputs/$id" -d '{"selected": true}' >/dev/null
-          echo "re-selected owntone output $id"
+          echo "rebuilt owntone session on output $id"
         fi
         last_wake=$SECONDS
       fi
