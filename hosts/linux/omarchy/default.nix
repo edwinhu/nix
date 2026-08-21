@@ -1285,10 +1285,15 @@ in
   services.mail-bridge.accounts = {
     work = {
       mode = "archive";
-      # Cycles stay paused until the archive indexing writer is bounded and
-      # readable: Personal's generation18 indexing held the writer long enough to
-      # block IMAP SELECT, so both accounts serve the archive read-only for now.
-      cycleEnabled = false;
+      # The cadence runs; the pass is narrowed instead.
+      cycleEnabled = true;
+      # TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED. Work holds 9
+      # pending local mutations and the provider-read flags they would be
+      # reconciled against are not yet canonical, so `cycle`'s drain would push
+      # decisions taken from stale state. `archive account sync` acquires and
+      # reconciles inbound and delivers nothing. Restoring the outbox is
+      # deleting this one line, once the provider read is canonical.
+      outboxEnabled = false;
       address = "ehu@law.virginia.edu";
       provider = "msgraph";
       port = 1143;
@@ -1315,8 +1320,10 @@ in
     };
     personal = {
       mode = "archive";
-      # Paused for the same reason as Work above.
-      cycleEnabled = false;
+      cycleEnabled = true;
+      # TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED, for the same
+      # reason as Work above; Personal's pending count is 14.
+      outboxEnabled = false;
       address = "eddyhu@gmail.com";
       provider = "gmail";
       port = 1144;
@@ -2742,7 +2749,76 @@ in
           + "modules/linux/aerc-uidvalidity.nix; without it the IMAP header "
           + "cache is keyed header.<mailbox>.0.<uid> and never invalidates.";
       }
-    ];
+    ]
+    # TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED. Both accounts
+    # carry pending LOCAL mutations (Work 9, Personal 14) whose provider-read
+    # flags are not yet canonical, so a `cycle` — which drains the outbox
+    # against those flags — would push a decision made from stale state. Until
+    # the provider read is canonical, each account's timer runs the inbound
+    # half only. These assertions are the gate on that stance: they read the
+    # EVALUATED units, so a re-enabled outbox has to change this list too.
+    #
+    # Parser-level facts (the seven budgets survive, --keep-generations is
+    # absent from a sync argv) are asserted ONCE, in
+    # modules/shared/mail-bridge-archive.nix, against the same evaluated units.
+    # Restating them here would be two places that can disagree about one fact.
+    # What is host-specific, and therefore lives here, is the STANCE: which
+    # accounts are narrowed, and that narrowing them did not pause them.
+    #
+    # The stance is scoped to `mode = "archive"`, because it is only meaningful
+    # there. In live mode the account's port is owned by `imapd`, and the
+    # module's own `cycleWantedBy` already empties the cycle timer's
+    # Install.WantedBy — an unconditional "must be wired to timers.target" here
+    # would contradict that and make a forced live mode unevaluable. So an
+    # archive account still has to be inbound-only AND wired; a live one is
+    # simply out of scope.
+    ++ (
+      let
+        inboundOnlyAccounts = [ "work" "personal" ];
+        execOf =
+          acct:
+          let
+            svc = config.systemd.user.services."mail-bridge-archive-cycle-${acct}";
+            raw = svc.Service.ExecStart or "";
+          in
+          if lib.isList raw then lib.concatStringsSep " " raw else raw;
+        perAccount = acct:
+          let exec = execOf acct; in
+          lib.optionals (config.services.mail-bridge.accounts.${acct}.mode == "archive") [
+            {
+              assertion =
+                lib.hasInfix "archive account sync " exec
+                && !(lib.hasInfix "archive account cycle " exec)
+                && !(lib.hasInfix "drain" exec);
+              message =
+                "mail-bridge-archive-cycle-${acct}: expected the inbound-only "
+                + "`archive account sync` namespace and no drain while the "
+                + "provider-read flags are not canonical; `cycle` would push "
+                + "pending local mutations against stale state. "
+                + "ExecStart = ${exec}";
+            }
+            {
+              assertion = !config.services.mail-bridge.accounts.${acct}.outboxEnabled;
+              message =
+                "services.mail-bridge.accounts.${acct}.outboxEnabled must stay "
+                + "false until the provider read is canonical. Re-enabling the "
+                + "outbox means removing ${acct} from this host's "
+                + "inboundOnlyAccounts list in the same change.";
+            }
+            {
+              assertion =
+                config.services.mail-bridge.accounts.${acct}.cycleEnabled
+                && (config.systemd.user.timers."mail-bridge-archive-cycle-${acct}".Install.WantedBy or [ ])
+                   == [ "timers.target" ];
+              message =
+                "mail-bridge-archive-cycle-${acct}.timer must be wired to "
+                + "timers.target: inbound-only is a narrower COMMAND, not a "
+                + "paused cadence.";
+            }
+          ];
+      in
+      lib.concatMap perAccount inboundOnlyAccounts
+    );
 
   # Reply/forward templates. No template-dirs key is needed: aerc falls back
   # through ~/.config/aerc/templates before its own share dir, so dropping a
