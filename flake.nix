@@ -294,8 +294,13 @@
         onlyoffice-x2t = (import nixpkgs { inherit system; }).callPackage ./modules/shared/onlyoffice-x2t.nix {};
         # allowUnfree for the same reason as obsidian-cli: private repo, so the
         # module declares license = unfree. Built from the pinned source input.
-        mail-bridge = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/mail-bridge.nix {
+        # bun-pinned, not stock bun: the compiled binary embeds its runtime and
+        # nixpkgs' 1.3.13 makes IMAP SEARCH ~47x slower. See bun-pinned.nix.
+        mail-bridge = let
+          p = import nixpkgs { inherit system; config.allowUnfree = true; };
+        in p.callPackage ./modules/shared/mail-bridge.nix {
           src = inputs.mail-bridge-src;
+          bun = p.callPackage ./modules/shared/bun-pinned.nix {};
         };
         onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
       });
@@ -686,8 +691,25 @@
                 # Outlook mailbox as loopback IMAP + sendmail(1) — Linux only,
                 # it's what aerc/himalaya read work mail through here. See
                 # modules/shared/mail-bridge.nix + the omarchy user service.
+                # bun-pinned, not stock bun: the compiled binary embeds its
+                # runtime and nixpkgs' 1.3.13 makes IMAP SEARCH ~47x slower.
+                # Scoped to this callPackage — `pkgs.bun` stays stock.
                 mail-bridge = prev.callPackage ./modules/shared/mail-bridge.nix {
                   src = inputs.mail-bridge-src;
+                  bun = prev.callPackage ./modules/shared/bun-pinned.nix {};
+                };
+
+                # aerc with the upstream CheckMail UIDVALIDITY fix backported
+                # onto 0.21.0. Without it every IMAP header cache entry is
+                # keyed `header.<mailbox>.0.<uid>` after the first CheckMail,
+                # because the STATUS omits UIDVALIDITY and the zeroed status
+                # replaces w.selected. See modules/linux/aerc-uidvalidity.nix.
+                # The fix is only on aerc master, so no lock bump supplies it.
+                # `aerc = prev.aerc` explicitly: callPackage's auto-args resolve
+                # against the FINAL package set, so letting it fill `aerc` in
+                # would point this override at itself (infinite recursion).
+                aerc = prev.callPackage ./modules/linux/aerc-uidvalidity.nix {
+                  inherit (prev) aerc;
                 };
 
                 # Double Commander Qt6 from official releases (aarch64 only; the

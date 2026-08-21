@@ -1,0 +1,36 @@
+CheckMail: request UIDVALIDITY in the STATUS items
+
+Backport of the upstream master fix onto the 0.21.0 release.
+
+handleCheckMailMessage asks the server for MESSAGES/RECENT/UNSEEN/UIDNEXT
+and then, for the currently selected mailbox, does `w.selected = status`.
+Because UIDVALIDITY was never requested, the replacement MailboxStatus
+carries UidValidity == 0, silently discarding the value SELECT returned.
+worker/imap/cache.go keys every cached header as
+
+    header.<mailbox>.<w.selected.UidValidity>.<uid>
+
+so from the first CheckMail onward the whole mailbox is written under
+`header.<mailbox>.0.<uid>`: the cache namespace no longer changes when the
+server invalidates UIDs, which is the exact condition UIDVALIDITY exists to
+detect, and entries written before the first CheckMail are orphaned.
+
+Upstream master fixes this by adding imap.StatusUidValidity to the same
+items slice. Master additionally surfaces the value on models.DirectoryInfo
+via a new `Uid` field (`if status.UidValidity != 0 { info.Uid = ... }`);
+that field does not exist in 0.21.0 and is a separate feature, unrelated to
+the cache key, so only the items-slice half is backported here.
+
+Zero context (`diff -U0`) on purpose. The insertion point sits inside a
+tab-indented Go composite literal, so any context line would begin with the
+diff's own leading space followed by a tab -- literal space-before-tab in
+this file, which `git diff --check` rejects. A pure-insertion hunk carries
+no context lines, so the only added line here starts with `+`, and the hunk
+still names the exact line (after checkmail.go:14, `imap.StatusUidNext,`).
+
+Upstream: https://git.sr.ht/~rjarry/aerc/blob/master/worker/imap/checkmail.go
+
+--- a/worker/imap/checkmail.go
++++ b/worker/imap/checkmail.go
+@@ -14,0 +15 @@
++		imap.StatusUidValidity,

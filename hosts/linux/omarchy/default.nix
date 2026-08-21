@@ -2498,11 +2498,23 @@ in
       # "SORT is not supported but requested: list messages by UID" and issues a
       # plain UID SEARCH (worker/imap/open.go), leaving the list in UID order.
       #
-      # `-r date` is REVERSE DATE, i.e. the `Date:` header newest-first, which
-      # is deliberately not the same key as arrival: the bridge keeps both
-      # SentDateTime and ReceivedDateTime and sorts on the one named here.
+      # `-r arrival`, not `-r date`. The two are different keys and the bridge
+      # keeps both, but they are not the same price:
+      #
+      #   arrival = the archive's own internal/received date, a stored column.
+      #             SORT REVERSE ARRIVAL over Gmail Primary: 33 ms.
+      #   date    = the `Date:` header, which is protocol-correct and is what
+      #             RFC 5256 says to sort on -- but reaching it means hydrating
+      #             raw MIME per message. Over the 37,490-row account-complete
+      #             Primary mailbox that is ~15.1 s, on every mailbox open.
+      #
+      # So this is a deliberate trade, not a correctness fix: DATE remains the
+      # right key in principle and stays cheap on small mailboxes, but it does
+      # not survive account-complete ones. Sender-set `Date:` headers and
+      # receipt order disagree rarely enough that arrival is the better default
+      # here. Do not put `date` back without re-measuring at this row count.
       [ui]
-      sort = -r date
+      sort = -r arrival
       styleset-name = catppuccin-mocha
 
       # Click and wheel-scroll in the ui. aerc then owns mouse events, so
@@ -2672,6 +2684,55 @@ in
       # the git history for the retired aercMailNotify script.
     '';
   };
+
+  # Mechanical gate on the RENDERED aerc configs, not on the literal above:
+  # every `sort =` key that survives into either file must be `arrival`. `date`
+  # costs ~15.1 s per mailbox open at Gmail Primary's 37,490 rows (vs 33 ms) --
+  # see the [ui] note. This reads config.xdg.configFile, so a per-account
+  # `sort` added to accounts.conf is caught too, and it fails at eval: no
+  # build, no switch, no activation.
+  assertions =
+    let
+      badSort =
+        name:
+        let
+          lines = map lib.trim (lib.splitString "\n" (config.xdg.configFile.${name}.text or ""));
+          # `sort = ...` only -- `folders-sort = ...` is a different key and
+          # fails hasPrefix, and `#`-comments fail it too.
+          assigns = lib.filter (l: lib.hasPrefix "sort" l && lib.hasInfix "=" l) lines;
+        in
+        lib.filter (l: !(lib.hasInfix "arrival" l)) assigns;
+      offenders = lib.concatMap badSort [
+        "aerc/aerc.conf"
+        "aerc/accounts.conf"
+      ];
+    in
+    [
+      {
+        assertion = offenders == [ ];
+        message =
+          "aerc: sort key must be arrival, found: "
+          + lib.concatStringsSep "; " offenders
+          + ". DATE sorting hydrates raw MIME per message (~15.1s over 37,490 "
+          + "Gmail Primary rows); arrival is the stored archive date (33ms).";
+      }
+      # The aerc this host installs must be the backported one. Stock nixpkgs
+      # aerc 0.21.0 omits UIDVALIDITY from the CheckMail STATUS, so the zeroed
+      # status replaces w.selected and every header cache entry is keyed
+      # `header.<mailbox>.0.<uid>` from the first mail check onward. The
+      # package-level gates (postPatch grep + fake-server go test) only fire if
+      # the override is in the package set at all; this catches its removal at
+      # eval, before any build. See modules/linux/aerc-uidvalidity.nix.
+      {
+        assertion = pkgs.aerc.uidValidityBackport or false;
+        message =
+          "aerc ${pkgs.aerc.version} lacks the CheckMail UIDVALIDITY backport "
+          + "(passthru.uidValidityBackport unset). The Linux overlay in "
+          + "flake.nix must map `aerc` through "
+          + "modules/linux/aerc-uidvalidity.nix; without it the IMAP header "
+          + "cache is keyed header.<mailbox>.0.<uid> and never invalidates.";
+      }
+    ];
 
   # Reply/forward templates. No template-dirs key is needed: aerc falls back
   # through ~/.config/aerc/templates before its own share dir, so dropping a

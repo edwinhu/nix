@@ -1,0 +1,223 @@
+Add a fake-server regression test for the CheckMail UIDVALIDITY cache key
+
+Not upstream -- this is the mechanical gate for
+aerc-checkmail-uidvalidity.patch. buildGoModule's checkPhase runs `go test`
+on every directory containing a *_test.go, so adding this file makes the
+aerc build FAIL if the backport is ever dropped or silently stops applying.
+
+The test stands up a loopback-only fake IMAP4rev1 server that answers
+STATUS with exactly the items the client asked for, SELECTs a mailbox whose
+UIDVALIDITY is 57404435, and asserts w.headerKey() -- the real cache-key
+function from worker/imap/cache.go -- yields
+`header.Focused.57404435.42` both before and after handleCheckMailMessage.
+
+Verified to discriminate: against unpatched 0.21.0 it fails with
+"after CheckMail: UidValidity = 0, want 57404435".
+
+No new module dependencies (net/bufio from the stdlib, go-imap and the aerc
+packages are already required), so vendorHash is unchanged.
+
+--- /dev/null
++++ b/worker/imap/checkmail_uidvalidity_test.go
+@@ -0,0 +1,201 @@
++package imap
++
++import (
++	"bufio"
++	"fmt"
++	"net"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/emersion/go-imap"
++	"github.com/emersion/go-imap/client"
++
++	"git.sr.ht/~rjarry/aerc/models"
++	"git.sr.ht/~rjarry/aerc/worker/types"
++)
++
++// Regression test for the UIDVALIDITY cache-key bug fixed by
++// aerc-checkmail-uidvalidity.patch.
++//
++// handleCheckMailMessage replaces w.selected with the STATUS result for the
++// selected mailbox. If the STATUS items slice omits UIDVALIDITY the server
++// does not return it, the replacement carries UidValidity == 0, and every
++// subsequent cache write lands under `header.<mailbox>.0.<uid>` instead of
++// `header.<mailbox>.<uidvalidity>.<uid>`.
++//
++// The fake server below answers STATUS with EXACTLY the items the client
++// asked for -- that is what makes this test discriminating. Against the
++// unpatched source it fails; against the patched source it passes.
++
++const (
++	testMailbox     = "Focused"
++	testUidValidity = 57404435
++	testMessages    = 3
++	testRecent      = 0
++	testUnseen      = 1
++	testUidNext     = 10
++)
++
++// statusValues is what the fake server knows about testMailbox. Only the
++// subset named in the client's STATUS command is echoed back.
++var statusValues = map[string]uint32{
++	"MESSAGES":    testMessages,
++	"RECENT":      testRecent,
++	"UNSEEN":      testUnseen,
++	"UIDNEXT":     testUidNext,
++	"UIDVALIDITY": testUidValidity,
++}
++
++// fakeIMAPServer speaks just enough IMAP4rev1 for go-imap's client to
++// greet, log in, SELECT and STATUS. No TLS, loopback only, single
++// connection, no filesystem or network access beyond 127.0.0.1.
++func fakeIMAPServer(t *testing.T) net.Listener {
++	t.Helper()
++	ln, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatalf("listen: %v", err)
++	}
++	go func() {
++		conn, err := ln.Accept()
++		if err != nil {
++			return
++		}
++		defer conn.Close()
++		_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
++		w := bufio.NewWriter(conn)
++		r := bufio.NewReader(conn)
++		send := func(format string, args ...any) {
++			fmt.Fprintf(w, format+"\r\n", args...)
++			_ = w.Flush()
++		}
++		send("* OK [CAPABILITY IMAP4rev1] fake server ready")
++		for {
++			line, err := r.ReadString('\n')
++			if err != nil {
++				return
++			}
++			line = strings.TrimRight(line, "\r\n")
++			fields := strings.Fields(line)
++			if len(fields) < 2 {
++				continue
++			}
++			tag := fields[0]
++			switch strings.ToUpper(fields[1]) {
++			case "CAPABILITY":
++				send("* CAPABILITY IMAP4rev1")
++				send("%s OK CAPABILITY completed", tag)
++			case "LOGIN":
++				send("%s OK LOGIN completed", tag)
++			case "SELECT":
++				send("* FLAGS (\\Seen \\Answered \\Flagged \\Deleted \\Draft)")
++				send("* %d EXISTS", testMessages)
++				send("* %d RECENT", testRecent)
++				send("* OK [UNSEEN %d] first unseen", testUnseen)
++				send("* OK [UIDVALIDITY %d] UIDs valid", testUidValidity)
++				send("* OK [UIDNEXT %d] predicted next UID", testUidNext)
++				send("%s OK [READ-WRITE] SELECT completed", tag)
++			case "STATUS":
++				open := strings.Index(line, "(")
++				closing := strings.LastIndex(line, ")")
++				if open < 0 || closing < open {
++					send("%s BAD malformed STATUS", tag)
++					continue
++				}
++				var parts []string
++				for _, item := range strings.Fields(line[open+1 : closing]) {
++					name := strings.ToUpper(item)
++					v, ok := statusValues[name]
++					if !ok {
++						send("%s BAD unknown STATUS item %s", tag, name)
++						continue
++					}
++					// Echo ONLY what was requested.
++					parts = append(parts, fmt.Sprintf("%s %d", name, v))
++				}
++				send("* STATUS %q (%s)", testMailbox, strings.Join(parts, " "))
++				send("%s OK STATUS completed", tag)
++			case "LOGOUT":
++				send("* BYE logging out")
++				send("%s OK LOGOUT completed", tag)
++				return
++			default:
++				send("%s OK completed", tag)
++			}
++		}
++	}()
++	return ln
++}
++
++func TestCheckMailPreservesUidValidity(t *testing.T) {
++	ln := fakeIMAPServer(t)
++	defer ln.Close()
++
++	c, err := client.Dial(ln.Addr().String())
++	if err != nil {
++		t.Fatalf("dial: %v", err)
++	}
++	defer c.Logout() //nolint:errcheck // best effort teardown
++	c.Updates = nil
++	if err := c.Login("user", "pass"); err != nil {
++		t.Fatalf("login: %v", err)
++	}
++
++	w := &IMAPWorker{
++		worker:   types.NewWorker("uidvalidity-test"),
++		selected: &imap.MailboxStatus{},
++		updates:  make(chan client.Update, 50),
++	}
++	w.client = &imapClient{Client: c}
++
++	// SELECT, exactly as worker/imap/open.go does it.
++	sel, err := c.Select(testMailbox, false)
++	if err != nil {
++		t.Fatalf("select: %v", err)
++	}
++	w.selected = sel
++
++	want := fmt.Sprintf("header.%s.%d.42", testMailbox, testUidValidity)
++
++	// BEFORE CheckMail: the key must already carry the real UIDVALIDITY.
++	if got := w.selected.UidValidity; got != testUidValidity {
++		t.Fatalf("after SELECT: UidValidity = %d, want %d", got, testUidValidity)
++	}
++	if got := string(w.headerKey(models.UID("42"))); got != want {
++		t.Fatalf("after SELECT: cache key = %q, want %q", got, want)
++	}
++
++	// The regression: CheckMail replaces w.selected with the STATUS result.
++	w.handleCheckMailMessage(&types.CheckMail{
++		Directories: []string{testMailbox},
++	})
++
++	// AFTER CheckMail: same key. Without imap.StatusUidValidity in the
++	// STATUS items the fake server returns no UIDVALIDITY, w.selected is
++	// replaced with a zeroed one, and the key becomes header.Focused.0.42.
++	if got := w.selected.UidValidity; got != testUidValidity {
++		t.Fatalf("after CheckMail: UidValidity = %d, want %d "+
++			"(CheckMail STATUS did not request UIDVALIDITY)", got, testUidValidity)
++	}
++	if got := string(w.headerKey(models.UID("42"))); got != want {
++		t.Fatalf("after CheckMail: cache key = %q, want %q "+
++			"(CheckMail STATUS did not request UIDVALIDITY)", got, want)
++	}
++
++	// The other fields must still round-trip, i.e. the backport did not
++	// change what else CheckMail asks for.
++	if w.selected.Messages != testMessages || w.selected.UidNext != testUidNext {
++		t.Fatalf("after CheckMail: Messages=%d UidNext=%d, want %d/%d",
++			w.selected.Messages, w.selected.UidNext, testMessages, testUidNext)
++	}
++
++	// Drain what the handler posted so the global queue is left clean.
++drain:
++	for {
++		select {
++		case <-types.WorkerMessages:
++		default:
++			break drain
++		}
++	}
++}
