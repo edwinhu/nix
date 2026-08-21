@@ -1285,6 +1285,10 @@ in
   services.mail-bridge.accounts = {
     work = {
       mode = "archive";
+      # Cycles stay paused until the archive indexing writer is bounded and
+      # readable: Personal's generation18 indexing held the writer long enough to
+      # block IMAP SELECT, so both accounts serve the archive read-only for now.
+      cycleEnabled = false;
       address = "ehu@law.virginia.edu";
       provider = "msgraph";
       port = 1143;
@@ -1311,6 +1315,8 @@ in
     };
     personal = {
       mode = "archive";
+      # Paused for the same reason as Work above.
+      cycleEnabled = false;
       address = "eddyhu@gmail.com";
       provider = "gmail";
       port = 1144;

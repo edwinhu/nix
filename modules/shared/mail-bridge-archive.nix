@@ -80,6 +80,17 @@ let
           and synchronizes on a timer.
         '';
       };
+      cycleEnabled = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Whether this account's bounded synchronization cycle is wired to run.
+          false pauses the cycle without leaving archive mode: the cycle service
+          and its timer are still emitted, they are simply enabled by nothing.
+          The pause is therefore a source fact the activation agrees with, not a
+          runtime mask the next switch fights.
+        '';
+      };
       address = lib.mkOption {
         type = lib.types.str;
         description = "The mailbox address; every command is bound to it.";
@@ -193,6 +204,13 @@ let
     Install.WantedBy = lib.optionals (a.mode == "archive") [ "default.target" ];
   };
 
+  # One gate for both cycle units: a cycle is wired only while the account is in
+  # archive mode AND its cycle is not paused. The service's own enablement list
+  # is empty either way — the timer is its only enabler — so the gate is stated
+  # once and applied to both rather than living on the timer alone.
+  cycleWantedBy = a: targets:
+    lib.optionals (a.mode == "archive" && a.cycleEnabled) targets;
+
   cycleUnit = name: a: lib.nameValuePair "mail-bridge-archive-cycle-${name}" {
     Unit = {
       Description = "mail-bridge bounded archive synchronization cycle for ${a.address}";
@@ -208,6 +226,7 @@ let
       ExecStartPre = ensureStateDir;
       ExecStart = cycleCommand a;
     };
+    Install.WantedBy = cycleWantedBy a [ ];
   };
 
   cycleTimer = name: a: lib.nameValuePair "mail-bridge-archive-cycle-${name}" {
@@ -222,7 +241,7 @@ let
       Persistent = true;
       Unit = "mail-bridge-archive-cycle-${name}.service";
     };
-    Install.WantedBy = lib.optionals (a.mode == "archive") [ "timers.target" ];
+    Install.WantedBy = cycleWantedBy a [ "timers.target" ];
   };
 in
 {
