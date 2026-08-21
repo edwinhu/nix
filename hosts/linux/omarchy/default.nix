@@ -3291,6 +3291,27 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
+    # The KEF's standby timer counts SILENCE, not absence of a stream, and its
+    # API refuses writes to settings:/kef/host/standbyMode ("Forbidden") — that
+    # is a KEF Connect app setting. So the permanently-open AirPlay session does
+    # NOT keep it awake: after ~30 min of quiet it sleeps and the next track
+    # plays into a sleeping speaker. This wakes it when real audio appears,
+    # rather than defeating standby with inaudible noise and keeping the speaker
+    # powered 24/7. Set standby to Never in the app if you would rather it never
+    # sleep; this service then simply never fires.
+    { kef-wake = {
+      Unit = {
+        Description = "Wake the KEF when audio starts, and re-establish AirPlay";
+        After = [ "owntone.service" "pipewire.service" ];
+        BindsTo = [ "pipewire.service" ];
+      };
+      Service = {
+        ExecStart = "${config.home.homeDirectory}/nix/hosts/linux/omarchy/files/kef-wake.sh";
+        Restart = "always";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     { host-dispatch = {
       Unit = {
         Description = "Ensure host-dispatch Claude session is running";
