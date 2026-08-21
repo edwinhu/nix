@@ -52,12 +52,18 @@ sys.exit(0 if hit else 1)
 ' "$id"
 }
 
+# Prints the speaker's player state, or "unreachable" if it did not answer at
+# all. In standby it answers `[{}]` - reachable, but no state key - and that
+# empty state must not be read as a network hiccup: standby is precisely the
+# case this service exists to recover.
 speaker_state() {
-  timeout 8 curl -s -m 5 -G "http://$SPEAKER/api/getData" \
-    --data-urlencode "path=player:player/data" --data-urlencode "roles=value" 2>/dev/null |
-    python3 -c 'import json,sys
+  local body
+  body="$(timeout 8 curl -sf -m 5 -G "http://$SPEAKER/api/getData" \
+    --data-urlencode "path=player:player/data" --data-urlencode "roles=value" 2>/dev/null)" \
+    || { echo unreachable; return; }
+  printf '%s' "$body" | python3 -c 'import json,sys
 try: print(json.load(sys.stdin)[0].get("state",""))
-except Exception: print("")' 2>/dev/null
+except Exception: print("unreachable")' 2>/dev/null
 }
 
 airplay_output_id() {
@@ -74,11 +80,11 @@ while true; do
     now=$SECONDS
     if [ $((now - last_wake)) -ge "$COOLDOWN" ]; then
       state="$(speaker_state)"
-      # "" means the speaker did not answer - do not thrash the session on a
-      # transient network hiccup, just try again next tick.
-      if [ -n "$state" ] && [ "$state" != "playing" ]; then
+      # Only a genuine no-answer is skipped, so a transient network hiccup does
+      # not thrash the session. An empty state (standby) does fall through here.
+      if [ "$state" != "unreachable" ] && [ "$state" != "playing" ]; then
         echo "audio on kef sink but speaker reports '$state' - recovering"
-        if [ "$state" = "standby" ] || \
+        if [ "$state" = "standby" ] || [ -z "$state" ] || \
            [ "$(timeout 10 kefctl panel 2>/dev/null |
                 python3 -c 'import json,sys; print(json.load(sys.stdin)["standby"])' 2>/dev/null)" = "True" ]; then
           timeout 10 kefctl toggle >/dev/null 2>&1
@@ -91,6 +97,9 @@ while true; do
           curl -s -m 5 -X PUT "http://127.0.0.1:3689/api/outputs/$id" -d '{"selected": false}' >/dev/null
           sleep 2
           curl -s -m 5 -X PUT "http://127.0.0.1:3689/api/outputs/$id" -d '{"selected": true}' >/dev/null
+          # Waking from standby can leave owntone's player parked at `pause`,
+          # in which case the rebuilt session carries no audio.
+          curl -s -m 5 -X PUT "http://127.0.0.1:3689/api/player/play" >/dev/null
           echo "rebuilt owntone session on output $id"
         fi
         last_wake=$SECONDS
