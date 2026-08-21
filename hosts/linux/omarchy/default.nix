@@ -2008,6 +2008,15 @@ in
 
   # The sink apps actually select. A null sink, because nothing local plays it —
   # its monitor is what gets shipped to the speaker.
+  #
+  # session.suspend-timeout-seconds = 0 is REQUIRED, not tidiness. WirePlumber
+  # suspends an idle node after 5s; a suspended null sink stops producing on its
+  # monitor, so the feeder starves, owntone logs "Source is not providing
+  # sufficient data, temporarily suspending playback" and stops streaming — and
+  # the speaker, no longer receiving audio, drops to standby on its own 30-minute
+  # timer. Observed overnight: playback stalled at 07:36 and the KEF was in
+  # standby by morning. Keeping the sink unsuspended keeps silence flowing, which
+  # is the whole mechanism holding the AirPlay session open.
   xdg.configFile."pipewire/pipewire.conf.d/61-kef-null-sink.conf" = {
     force = true;
     text = ''
@@ -2020,6 +2029,7 @@ in
                 media.class = Audio/Sink
                 audio.position = [ FL FR ]
                 monitor.channel-volumes = true
+                session.suspend-timeout-seconds = 0
             } }
       ]
     '';
