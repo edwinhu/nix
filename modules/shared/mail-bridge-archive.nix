@@ -284,7 +284,18 @@ let
       # broker binary, leaving the cycle to spawn a bare broker.
       Environment = [ ''"${a.tokenEnvironmentVariable}=${a.tokenCommand}"'' ];
       ExecStartPre = ensureStateDir;
-      ExecStart = passCommand a;
+      # SERIALISED ACROSS ACCOUNTS. SQLite admits one writer, so two cycles on
+      # one archive contend; the loser blocks, spends its whole --max-elapsed-ms
+      # ceiling waiting, and dies reporting `budget-exhausted` — a message that
+      # names the ceiling rather than the lock and sent three separate
+      # investigations down the wrong path on 2026-08-21. RandomizedDelaySec
+      # below was the original mitigation and is an order of magnitude too small:
+      # a 60s jitter cannot separate runs that take two to four minutes.
+      #
+      # flock waits BEFORE exec, so the wait is not charged to the budget the
+      # way an in-process lock wait is. -w bounds it, so a wedged cycle cannot
+      # starve the other account indefinitely — the timer simply retries.
+      ExecStart = "${pkgs.util-linux}/bin/flock -w 540 %t/mail-bridge-cycle.lock ${passCommand a}";
     };
     Install.WantedBy = cycleWantedBy a [ ];
   };
