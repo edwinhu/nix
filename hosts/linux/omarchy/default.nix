@@ -1271,10 +1271,10 @@ in
 
   # Which implementation answers on each of the two Aerc mail ports.
   #
-  # WORK IS ON THE ARCHIVE; PERSONAL IS LIVE. `work.mode = "archive"` below puts
-  # the archive listener alone on port 1143 and leaves Personal on the live
-  # bridge on 1144; the two switch independently. Rolling Work back is editing
-  # that one word here (it is a plain definition, not mkDefault) or
+  # BOTH ACCOUNTS ARE ON THE ARCHIVE. `work.mode = "archive"` puts the archive
+  # listener alone on port 1143 and `personal.mode = "archive"` does the same on
+  # 1144; the two still switch independently. Rolling either back is editing that
+  # one word here (both are plain definitions, not mkDefault) or
   # `home-manager switch --rollback` onto the previous generation.
   #
   # A mode change is NOT invisible to Aerc: transport is identical in both modes
@@ -1310,7 +1310,7 @@ in
       };
     };
     personal = {
-      mode = lib.mkDefault "live";
+      mode = "archive";
       address = "eddyhu@gmail.com";
       provider = "gmail";
       port = 1144;
