@@ -941,10 +941,10 @@ exit 0
   # to `herdr agent list` — that visibility is the whole point of this helper.
   # Keeps `-n "$LABEL"` so `agent-msg`/`claude agents` still resolve the session
   # by name (the wrapup + shutdown routines below depend on that).
-  # usage: claude-herdr-spawn <dir> <tab-label> <agent-name> [prompt]
+  # usage: claude-herdr-spawn <dir> <tab-label> <agent-name> [prompt] [claude-agent]
   claudeHerdrSpawn = pkgs.writeShellScript "claude-herdr-spawn" ''
     set -uo pipefail
-    DIR="$1"; LABEL="$2"; AGENT_NAME="$3"; PROMPT="''${4:-}"
+    DIR="$1"; LABEL="$2"; AGENT_NAME="$3"; PROMPT="''${4:-}"; CLAUDE_AGENT="''${5:-}"
     cd "$DIR" || exit 1
     command -v herdr >/dev/null 2>&1 || { echo "no herdr on this host" >&2; exit 1; }
 
@@ -1007,9 +1007,13 @@ exit 0
     STARTED=""
     START_ERR=""
     ERR_FILE=$(mktemp "''${TMPDIR:-/tmp}/claude-herdr-spawn.XXXXXX")
+    # --agent replaces claude's default system prompt, so a routine's MAIN
+    # session runs the assistant persona instead of the coding one.
+    CLAUDE_AGENT_ARGS=()
+    [ -n "$CLAUDE_AGENT" ] && CLAUDE_AGENT_ARGS=(--agent "$CLAUDE_AGENT")
     for _ in $(seq 1 10); do
       if STARTED=$(herdr agent start "$AGENT_NAME" --kind claude --pane "$PANE" --timeout 60000 \
-                     -- --rc --effort medium -n "$LABEL" 2>"$ERR_FILE"); then
+                     -- --rc --effort medium -n "$LABEL" ''${CLAUDE_AGENT_ARGS[@]+"''${CLAUDE_AGENT_ARGS[@]}"} 2>"$ERR_FILE"); then
         break
       fi
       STARTED=""
@@ -1063,9 +1067,9 @@ exit 0
         # record `Result=success` while leaving no session — the only trace was
         # morning-planning saying "briefing likely did not run" an hour later.
         if [ "$DOW" -le 5 ]; then
-          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "/morning-briefing"
+          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "/morning-briefing" assistant
         else
-          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant
+          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "" assistant
         fi
       '';
     };
@@ -1131,7 +1135,7 @@ exit 0
           exit 0
         fi
         echo "no live assistant session — spawning standalone wrapup"
-        ${claudeHerdrSpawn} "$HOME/areas/assistant" nightly-wrapup nightly-wrapup "/nightly-wrapup"
+        ${claudeHerdrSpawn} "$HOME/areas/assistant" nightly-wrapup nightly-wrapup "/nightly-wrapup" assistant
       '';
     };
     # Daily 03:00, in the Obsidian vault (~/notes on Linux).
