@@ -2180,20 +2180,19 @@ in
   # (~/dotfiles/.config/aerc/binds.conf) so it stays hand-editable.
   xdg.configFile."aerc/accounts.conf" =
   let
-    # The two serve paths behind Work's port 1143 do NOT name the same
-    # mailboxes, so the stanza cannot be one text for both modes.
+    # Both serve paths behind Work's port 1143 now name the derived mailboxes
+    # the SAME way -- BARE (`Focused`, `Other`, `Respond`) -- so the two modes
+    # differ only in which PHYSICAL folders exist, never in vocabulary.
     #
-    #   live    -- the bridge publishes the Focused/Other split and the Outlook
-    #              categories under BARE names (`Focused`, `Respond`): the view
-    #              name is also its tag, one vocabulary rather than two.
-    #   archive -- the archive listener names every DERIVED membership
-    #              `kind/value`, so the same projections are `view/Focused`,
-    #              `view/Other`, `category/Respond`. Only a physical folder
-    #              keeps its bare name.
+    # The archive still stores each derived mailbox as a canonical membership
+    # (`view/Focused`, `category/Respond`) -- UIDs and UIDVALIDITY are keyed by
+    # that spelling and did not move -- but mail-bridge >= 0.9.0 translates at
+    # the IMAP presentation boundary: LIST advertises only the bare name, and
+    # the prefixed spelling survives as an unadvertised alias.
     #
     # `folders` is an exact-match whitelist and `default` an exact mailbox name,
-    # so the wrong vocabulary does not degrade -- it filters the entire split out
-    # of the sidebar and opens onto a mailbox the server answers
+    # so a wrong name does not degrade -- it filters the entire split out of the
+    # sidebar and opens onto a mailbox the server answers
     # `NO [CANNOT] mailbox does not exist` for. Which is what happened on the
     # archive cutover: 1063 Focused and 951 Other messages were served the whole
     # time under names this file did not list.
@@ -2218,10 +2217,10 @@ in
     # The LIVE list is left exactly as it was -- rollback must land on the
     # vocabulary the live bridge actually serves, Outbox included.
     workMode = config.services.mail-bridge.accounts.work.mode;
-    workDefaultFolder = if workMode == "archive" then "view/Focused" else "Focused";
+    workDefaultFolder = "Focused";
     workFolderList =
       if workMode == "archive"
-      then "view/Focused,view/Other,category/Respond,category/Waiting,category/Pitch,category/News,category/Marketing,category/Meeting,category/Invoice,Drafts,Sent Items,Archive,Junk Email,Deleted Items"
+      then "Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Archive,Junk Email,Deleted Items"
       else "Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items";
   in {
     force = true;

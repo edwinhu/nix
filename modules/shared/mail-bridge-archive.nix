@@ -15,10 +15,11 @@
 #
 # Aerc's TRANSPORT is untouched by mode: it keeps pointing at 127.0.0.1:1143 /
 # :1144 and keeps sending through the `mail-bridge sendmail` shim. Its mailbox
-# NAMES are not — the archive listener spells every derived membership
-# `kind/value` (`view/Focused`) where the live bridge uses the bare name, so a
-# consumer of this option must select its vocabulary from `mode`. The host's
-# generated accounts.conf does exactly that.
+# NAMES are untouched too: both serve paths present every derived membership
+# BARE (`Focused`, `Respond`), the archive translating from its canonical
+# `kind/value` storage at the IMAP boundary. Only the PHYSICAL set differs by
+# mode — the archive has no Outbox — so a consumer selects folders, not a
+# vocabulary, from `mode`. The host's generated accounts.conf does exactly that.
 { config, lib, pkgs, ... }:
 
 let
