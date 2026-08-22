@@ -22,7 +22,15 @@ OUT="${2:-${IN%.*}.pdf}"
 # drive the render through a scheduled task with /IT, which executes in the
 # autologon desktop session where COM works. Fixed `_job.*` names keep the task
 # command constant (no per-file quoting through cmd->schtasks->powershell).
-JOB_IN="$WINVM_DIR/_job.docx"
+#
+# The EXTENSION must match the real format. Word dispatches on it, so a legacy
+# binary .doc staged as `_job.docx` makes Word bail — the task still completes
+# and writes no PDF, which surfaces as "guest render did not complete" rather
+# than anything naming the cause. The task command is rebuilt every run, so
+# carrying the suffix through costs nothing.
+JOB_EXT="${IN##*.}"
+case "$JOB_EXT" in docx|doc|rtf|odt) ;; *) JOB_EXT=docx ;; esac
+JOB_IN="$WINVM_DIR/_job.$JOB_EXT"
 JOB_OUT="$WINVM_DIR/_job.pdf"
 TASK="wrender"
 
