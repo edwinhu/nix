@@ -2254,13 +2254,25 @@ in
     # compose needs that name to resolve. A row that is empty until the first
     # draft exists is the cheap side of that trade.
     #
+    # `Flagged` is ARCHIVE-ONLY, and for the same exact-match reason. It is a
+    # COMPUTED mailbox the archive grants to the Microsoft Graph vocabulary
+    # (`src/archive/presentation.ts`: COMPUTED_FLAGGED_MAILBOX, in
+    # MSGRAPH_VOCABULARY.computedMailboxes and withheld from Gmail, whose star
+    # is already published as `Starred`) -- a view over every message whose
+    # final `\Flagged` is set, not a folder any message was filed into. The
+    # deployed listener on 1143 LISTs it and STATUS reports messages in it.
+    # The LIVE Work provider has no such mailbox: its vocabulary is
+    # `inboxViews = ["Focused", "Other"]` (`src/providers/himalaya.ts`) and it
+    # names no computed flag view, so listing it in the live whitelist would be
+    # the dead row this comment block exists to prevent.
+    #
     # The LIVE list is left exactly as it was -- rollback must land on the
     # vocabulary the live bridge actually serves, Outbox included.
     workMode = config.services.mail-bridge.accounts.work.mode;
     workDefaultFolder = "Focused";
     workFolderList =
       if workMode == "archive"
-      then "Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Archive,Junk Email,Deleted Items"
+      then "Focused,Other,Flagged,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Archive,Junk Email,Deleted Items"
       else "Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items";
   in {
     force = true;
