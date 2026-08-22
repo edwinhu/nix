@@ -11,7 +11,11 @@ with pkgs; [
   lazygit
   neovim
   nodejs
-  bun
+  # bun-pinned, not stock bun: nixpkgs' 1.3.13 makes IMAP SEARCH ~47x slower and
+  # lifts test module poison, and mail-bridge is COMPILED with the pinned 1.3.14
+  # (flake.nix). An interactive bun on a different version than the shipped
+  # binary is the inconsistency this removes. See bun-pinned.nix.
+  (pkgs.callPackage ./bun-pinned.nix {})
   openssh
   postgresql
   sqlite
