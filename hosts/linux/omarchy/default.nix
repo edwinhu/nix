@@ -1859,6 +1859,38 @@ in
     force = true;
   };
 
+  # DJI Mic 3 TX (8C:58:23:B1:01:17) is an INPUT-ONLY device here. It advertises
+  # no A2DP, so its only card profiles are HSP/HFP, and HFP's SCO link is
+  # bidirectional by spec: BlueZ always creates an Audio/Sink beside the source.
+  # Neither knob that would normally hide it works — bluez.lua (unlike alsa.lua)
+  # ignores node.disabled, and the adapter re-derives media.class from the SPA
+  # port direction, discarding any override. Destroying the node as it appears is
+  # what is left, hence a Lua component rather than only a rule. The rule still
+  # ships as a fallback: priority 0 keeps the sink last if the script ever fails
+  # to load, and it carries the DJI-scoped bluez5.auto-connect = [ hfp_hf hsp_hs ]
+  # (the global a2dp autoconnect rule lists roles this device does not have, which
+  # is why it never reconnected on its own).
+  #
+  # ⚠️ dji-hide-sink.conf declares the script a `required` component. If
+  # WirePlumber cannot resolve it at the XDG_DATA_HOME path below, it exits
+  # 78/CONFIG, systemd hits the restart limit, and ALL audio on this box dies —
+  # hit during setup by placing the script under ~/.config, which WirePlumber does
+  # not search. `required` is deliberate: a silently skipped component would put
+  # the sink back. Keep these two paths in sync, and check
+  # `systemctl --user status wireplumber` first if audio ever vanishes.
+  xdg.configFile."wireplumber/wireplumber.conf.d/dji-mic-input-only.conf" = {
+    source = ./files/dji-mic-input-only.conf;
+    force = true;
+  };
+  xdg.configFile."wireplumber/wireplumber.conf.d/dji-hide-sink.conf" = {
+    source = ./files/dji-hide-sink.conf;
+    force = true;
+  };
+  home.file.".local/share/wireplumber/scripts/dji-hide-sink.lua" = {
+    source = ./files/dji-hide-sink.lua;
+    force = true;
+  };
+
   # AirPlay sinks for the KEF LSX II LT and the Sonos, so any app — cliamp,
   # mpv, a browser — can play to them as ordinary PipeWire sinks. Pair with
   # `kefctl source wifi`, which is the input the speaker receives AirPlay on.
