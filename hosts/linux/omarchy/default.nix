@@ -3270,7 +3270,14 @@ in
             pactl list sinks short 2>/dev/null | grep -qE '^[0-9]+[[:space:]]+kef[[:space:]]' && break
             sleep 1
           done
-          exec parec --device=kef.monitor --format=s16le --rate=44100 --channels=2 > "$PIPE"
+          # pw-record, not parec: `pactl set-default-sink` drags monitor-capture
+          # streams onto the NEW default's monitor, so parec --device=kef.monitor
+          # silently started feeding the KEF whatever went to the HDMI output.
+          # target + stream.capture.sink pins the monitor; node.dont-reconnect
+          # makes a forced move kill the stream instead (Restart=always reattaches).
+          exec pw-record --target kef \
+            -P '{ stream.capture.sink = true node.dont-reconnect = true }' \
+            --format s16 --rate 44100 --channels 2 --raw - > "$PIPE"
         ''}";
         Restart = "always";
         RestartSec = 3;
