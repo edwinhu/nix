@@ -74,9 +74,6 @@ let
     ydotool
     hints
 
-    # Local Wayland dictation (gh:edwinhu/superwhisper-linux)
-    swlinux
-
     # Mail. The UVA tenant refuses IMAP/SMTP but DOES issue Mail-scoped
     # Microsoft Graph tokens, so the two clients take different work paths:
     # himalaya goes direct to Graph (ortie brokers the token), while aerc —

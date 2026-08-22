@@ -1,6 +1,6 @@
 # mail-bridge — the UVA Outlook mailbox, spoken as IMAP + sendmail(1).
 # (gh:edwinhu/mail-bridge, PRIVATE; source via the mail-bridge-src flake input,
-# SSH-fetched like nix-secrets/swlinux.)
+# SSH-fetched like nix-secrets/joycon-pad.)
 #
 # What it is: a loopback IMAP server on 127.0.0.1:1143 that translates IMAP to
 # Outlook REST using the token held by the live Outlook Web tab, plus an

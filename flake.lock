@@ -395,11 +395,11 @@
     "joycon-pad-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1784146990,
-        "narHash": "sha256-fObpTfCjy+kT1xYkCBFyCLGhkA+BfqdG81+4742Ywik=",
+        "lastModified": 1787421431,
+        "narHash": "sha256-sFJ0bdPSWvkto1lUxet2hi0CcjOLqlZYbb39DD2T3WQ=",
         "ref": "refs/heads/master",
-        "rev": "c74c6e49707df9337e251c2e6e4e966b31551a80",
-        "revCount": 6,
+        "rev": "9ba4477f1b7408e6244d4a0a5c5e2178f822405c",
+        "revCount": 7,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/joycon-pad.git"
       },
@@ -698,7 +698,6 @@
         "ortie": "ortie",
         "presmihaylov-taps": "presmihaylov-taps",
         "stylix": "stylix",
-        "swlinux-src": "swlinux-src",
         "zellij-switch-wasm": "zellij-switch-wasm"
       }
     },
@@ -766,22 +765,6 @@
         "owner": "danth",
         "repo": "stylix",
         "type": "github"
-      }
-    },
-    "swlinux-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1783977169,
-        "narHash": "sha256-vmhxfVXt1D3v70MmIFPE3XVIPt5tRxPfIqN2kqrXhWU=",
-        "ref": "refs/heads/main",
-        "rev": "42bcc04f5819acf6bec4b1f8383c54dab0ab9660",
-        "revCount": 15,
-        "type": "git",
-        "url": "ssh://git@github.com/edwinhu/superwhisper-linux.git"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/edwinhu/superwhisper-linux.git"
       }
     },
     "systems": {

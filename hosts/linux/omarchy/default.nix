@@ -1457,25 +1457,6 @@ in
         x-scheme-handler/tel || true
     '';
 
-    # swlinux dictation models (large, non-store) — fetch once to
-    # ~/.local/share/swlinux/models. Parakeet v3 STT + the open Qwen2.5-1.5B
-    # cleanup fallback. The tuned cleanup model (s1-mini.gguf, private) is placed
-    # out-of-band and pointed at by the daemon's SWLINUX_LOCAL_MODEL below.
-    activation.swlinuxModels = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      MODELS="$HOME/.local/share/swlinux/models"
-      $DRY_RUN_CMD mkdir -p "$MODELS"
-      if [ ! -d "$MODELS/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8" ]; then
-        $DRY_RUN_CMD ${pkgs.curl}/bin/curl -fL --retry 3 -o "$MODELS/p.tar.bz2" \
-          https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 \
-          && $DRY_RUN_CMD ${pkgs.gnutar}/bin/tar -xjf "$MODELS/p.tar.bz2" -C "$MODELS" \
-          && $DRY_RUN_CMD rm -f "$MODELS/p.tar.bz2"
-      fi
-      if [ ! -f "$MODELS/qwen2.5-1.5b-instruct-q4.gguf" ]; then
-        $DRY_RUN_CMD ${pkgs.curl}/bin/curl -fL --retry 3 -o "$MODELS/qwen2.5-1.5b-instruct-q4.gguf" \
-          https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
-      fi
-    '';
-
     # Patched brscan5 model tables at a stable home path; /etc/opt/brother is
     # symlinked here by the one-time sudo step (see home.packages above). Stable
     # across brscan5 updates — the symlink target (home path) never changes.
@@ -3354,12 +3335,6 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # swlinux dictation daemon: Parakeet STT + s1-mini cleanup, capturing the
-    # OBSBOT mic via the system-default source (SWLINUX_MIC=default — the
-    # "builtin" auto-pick would grab the empty analog jack on this desktop).
-    # Keybinds (SUPER+;) live in dotfiles' hypr bindings.conf; models are fetched
-    # by activation.swlinuxModels. s1-mini.gguf is the private tuned cleanup model
-    # (placed out-of-band); if absent, cleanup is skipped (raw still works).
     # sunshine: Moonlight streaming host, so the Mac can drive this desktop
     # remotely over Tailscale (connect Moonlight to 100.122.125.84 and pair with
     # the PIN from https://localhost:47990). Must run INSIDE the graphical
@@ -3384,23 +3359,6 @@ in
         # (and dumps core). Allow a little more than that so a normal `systemctl
         # --user stop` records a clean exit rather than a spurious failure.
         TimeoutStopSec = 20;
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    }; }
-    { swlinux = {
-      Unit = {
-        Description = "swlinux dictation daemon (Parakeet STT + s1-mini cleanup)";
-        PartOf = [ "graphical-session.target" ];
-        After = [ "graphical-session.target" ];
-      };
-      Service = {
-        ExecStart = "${pkgs.swlinux}/bin/swlinux daemon";
-        Environment = [
-          "SWLINUX_MIC=default"
-          "SWLINUX_LOCAL_MODEL=${config.home.homeDirectory}/.local/share/swlinux/models/s1-mini.gguf"
-        ];
-        Restart = "on-failure";
-        RestartSec = 2;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
@@ -3530,27 +3488,28 @@ in
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
     # joycon-pad: Bluetooth Joy-Con (L) as a macro pad — stick→pointer,
-    # ZL→swlinux dictation, SL/SR→tab switch, Capture-hold→Alt-Tab. Reads the
-    # hid-nintendo evdev node + drives ydotool/swlinux; `input` group grants
+    # ZL→voxtype dictation, SL/SR→tab switch, Capture-hold→Alt-Tab. Reads the
+    # hid-nintendo evdev node + drives ydotool/voxtype; `input` group grants
     # /dev/input + rumble. Config is stow-linked at ~/.config/joycon-pad/config.toml
     # (dotfiles), which the daemon prefers over its packaged default. --wait lets
     # the service start before the Joy-Con connects and bind it on (re)connect.
     # One-time pairing fix (ClassicBondedOnly=false) is manual — see the repo.
     { joycon-pad = {
       Unit = {
-        Description = "joycon-pad — Joy-Con macro pad for swlinux";
+        Description = "joycon-pad — Joy-Con macro pad for voxtype";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" "bluetooth.target" ];
       };
       Service = {
         Type = "simple";
-        # swlinux is shelled out to by bare name; ydotool is also on the
-        # wrapper's PATH but listed here too. YDOTOOL_SOCKET matches ydotoold.
-        # (limux used to be on this PATH for the SL/SR tab binds; the daemon's
-        # own config decides what those keys send now — see joycon-pad's repo.)
+        # voxtype is shelled out to by bare name and is an Arch system package,
+        # not a nix one — hence the literal /usr/bin on this PATH. ydotool is
+        # also on the wrapper's PATH but listed here too. YDOTOOL_SOCKET matches
+        # ydotoold. (limux used to be on this PATH for the SL/SR tab binds; the
+        # daemon's own config decides what those keys send now — see the repo.)
         Environment = [
           "YDOTOOL_SOCKET=%t/.ydotool_socket"
-          "PATH=${lib.makeBinPath [ pkgs.ydotool pkgs.swlinux ]}"
+          "PATH=${lib.makeBinPath [ pkgs.ydotool ]}:/usr/bin"
         ];
         ExecStart = "${pkgs.joycon-pad}/bin/joycon-pad --wait 3600";
         # Restart=always, NOT on-failure: on device loss (Joy-Con powers off or

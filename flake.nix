@@ -88,25 +88,20 @@
       url = "git+ssh://git@github.com/edwinhu/nix-secrets.git";
       flake = false;
     };
-    # swlinux: local Wayland dictation tool (private repo, SSH-fetched like secrets)
-    swlinux-src = {
-      url = "git+ssh://git@github.com/edwinhu/superwhisper-linux.git";
-      flake = false;
-    };
-    # joycon-pad: Joy-Con macro pad daemon (private repo, SSH-fetched like swlinux)
+    # joycon-pad: Joy-Con macro pad daemon (private repo, SSH-fetched like secrets)
     joycon-pad-src = {
       url = "git+ssh://git@github.com/edwinhu/joycon-pad.git";
       flake = false;
     };
     # mail-bridge: Outlook mailbox as loopback IMAP + sendmail(1), for aerc and
-    # himalaya (private repo, SSH-fetched like swlinux/joycon-pad).
+    # himalaya (private repo, SSH-fetched like joycon-pad).
     mail-bridge-src = {
       url = "git+ssh://git@github.com/edwinhu/mail-bridge.git";
       flake = false;
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, swlinux-src, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -678,11 +673,6 @@
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
-                # Local Wayland dictation (gh:edwinhu/superwhisper-linux),
-                # source via the swlinux-src flake input. See modules/shared/swlinux.nix.
-                swlinux = prev.callPackage ./modules/shared/swlinux.nix {
-                  src = inputs.swlinux-src;
-                };
                 # Joy-Con macro pad daemon (gh:edwinhu/joycon-pad) — Linux only.
                 # See modules/linux/joycon-pad.nix + the omarchy user service.
                 joycon-pad = prev.callPackage ./modules/linux/joycon-pad.nix {
