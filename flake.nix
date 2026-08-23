@@ -283,6 +283,7 @@
         # (same as paperpile-cli, which is overlay-only and never hit this).
         obsidian-cli = (import nixpkgs { inherit system; config.allowUnfree = true; }).callPackage ./modules/shared/obsidian-cli.nix {};
         omniwm = (import nixpkgs { inherit system; }).callPackage ./modules/shared/omniwm.nix {};
+        tinymist-lsp = (import nixpkgs { inherit system; }).callPackage ./modules/shared/tinymist-lsp.nix {};
         # elio via newer nixpkgs: the main lock's cargo vendor fetcher sends
         # no User-Agent and crates.io now 403s it (affects all platforms).
         elio = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/elio.nix {};
@@ -322,6 +323,7 @@
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
+                  tinymist-lsp = prev.callPackage ./modules/shared/tinymist-lsp.nix {};
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
                   elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
@@ -397,6 +399,7 @@
                 # exposed under its own name rather than shadowing anything.
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
+                tinymist-lsp = prev.callPackage ./modules/shared/tinymist-lsp.nix {};
                 rv = prev.callPackage ./modules/shared/rv.nix {};
                 # pipewire ONLY as a source of libpipewire-module-raop-*, from a
                 # pin matching the Arch daemon's version. No nix PipeWire runs

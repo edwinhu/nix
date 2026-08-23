@@ -140,6 +140,10 @@ with pkgs; [
   tv
   typst
   tinymist
+  # tinymist-lsp: wrapper that injects the project root into the LSP
+  # initialize request; tinymist has no --root flag and Claude Code cannot send
+  # initializationOptions. See modules/shared/tinymist-lsp.nix.
+  tinymist-lsp
   unrar
   unzip
   croc  # fast P2P file transfer (direct over LAN when peers are local)
