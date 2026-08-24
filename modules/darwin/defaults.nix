@@ -97,10 +97,9 @@
 
       # Mission Control settings
       spaces = {
-        # Disable "Displays have separate Spaces" for aerospace compatibility.
-        # spans-displays = true means a single Space spans all displays, which
-        # is the inverse of the macOS checkbox being on.
-        spans-displays = true;
+        # OmniWM requires "Displays have separate Spaces" ON; spans-displays
+        # is the inverse of that macOS checkbox, so keep it false.
+        spans-displays = false;
       };
 
       # Custom preferences not covered by nix-darwin options
