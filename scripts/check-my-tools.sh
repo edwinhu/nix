@@ -2,7 +2,7 @@
 # check-my-tools.sh - Check my own edwinhu release-pinned nix packages for updates.
 #
 # Checks the version pinned in modules/shared/<pkg>.nix against the latest
-# GitHub release for each of my own tools (superhuman-cli, morgen-cli).
+# GitHub release for each of my own tools (morgen-cli).
 #
 # Usage:
 #   scripts/check-my-tools.sh            Check mode. Prints one line per pkg;
@@ -22,7 +22,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Per-pkg config: name | github repo | asset-URL template (v${version} placeholder as {V}).
 # Add a new tool here and it is checked/updated automatically.
 TOOLS=(
-  "superhuman-cli|edwinhu/superhuman-cli|https://github.com/edwinhu/superhuman-cli/releases/download/v{V}/superhuman"
   "morgen-cli|edwinhu/morgen-cli|https://github.com/edwinhu/morgen-cli/releases/download/v{V}/morgen-darwin-arm64"
 )
 

@@ -9,8 +9,8 @@
 # makes aerc and himalaya usable for work mail. See the omarchy host for the
 # user service and both clients' configs.
 #
-# Built from source rather than a release asset, unlike superhuman-cli and
-# obsidian-cli: there is no release CI here, and the flake input already pins a
+# Built from source rather than a release asset, unlike obsidian-cli: there is
+# no release CI here, and the flake input already pins a
 # commit, so a build gives the same reproducibility without a manual upload
 # step on every change. The cost is the two-derivation bun dance below.
 {

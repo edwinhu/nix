@@ -197,7 +197,7 @@ in
         Type = "simple";
         WorkingDirectory = "%h";
         # Force the dedicated port explicitly: the omarchy login session exports
-        # CDP_PORT=9222 (the Superhuman/Morgen browser); without this the daemon
+        # CDP_PORT=9222 (the Morgen browser); without this the daemon
         # would inherit 9222 and collide with that instance.
         Environment = [ "CDP_PORT=${cdpPort}" ];
         ExecStart = "${chromeCdpBin} daemon";

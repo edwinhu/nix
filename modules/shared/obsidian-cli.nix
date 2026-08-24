@@ -1,6 +1,6 @@
 # obsidian-cli — Edwin's Bun/TypeScript CLI for the Obsidian vault
 # (gh:edwinhu/obsidian-cli, PRIVATE). Prebuilt Bun binary from the GitHub
-# release, installed like paperpile-cli/superhuman-cli.
+# release, installed like paperpile-cli/morgen-cli.
 #
 # What it is: `obsidian clip` is a web clipper (Defuddle + Turndown, the same
 # engine as the official Web Clipper extension) that writes markdown straight

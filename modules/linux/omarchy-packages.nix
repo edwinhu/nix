@@ -81,7 +81,7 @@ let
     # (a user service brings it up) and sends through its sendmail(1) shim.
     # Personal Gmail goes direct for both. aerc is the TUI,
     # himalaya the scriptable one. Configs for both are declared in the omarchy
-    # host, which also replaced superhuman-cli for this mailbox.
+    # host.
     #
     # himalaya is pinned to v2 by the Linux overlay in flake.nix. v2 is a pure
     # protocol client: composing and rendering moved out to mml, which is why

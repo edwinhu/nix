@@ -27,9 +27,6 @@ in
     # Install desktop entry icons
     file.".local/share/applications/icons/OpenCode.svg".source = "${iconDir}/OpenCode.svg";
     file.".local/share/applications/icons/Docker.svg".source = "${iconDir}/Docker.svg";
-    file.".local/share/applications/icons/Morgen.svg".source = "${iconDir}/Superhuman.svg";  # Using similar icon
-    file.".local/share/applications/icons/Beeper.svg".source = "${iconDir}/Superhuman.svg";  # Using similar icon  
-    file.".local/share/applications/icons/Superhuman.svg".source = "${iconDir}/Superhuman.svg";
     file.".local/share/applications/icons/Tailscale.svg".source = "${iconDir}/Tailscale.svg";
     file.".local/share/applications/icons/Tailscale Admin Console.png".source = "${iconDir}/Tailscale Admin Console.png";
     file.".local/share/applications/icons/YouTube Music.png".source = "${iconDir}/YouTube Music.png";
@@ -189,16 +186,6 @@ in
       icon = "beeper";
       categories = [ "Network" ];
       mimeType = [ "x-scheme-handler/beeper" ];
-    };
-
-    superhuman = {
-      name = "Superhuman";
-      comment = "Superhuman email client";
-      exec = "/usr/bin/chromium --profile-directory=Default --app-id=cabkgbgkeonbpeoedbaeolhgfkempoka";
-      terminal = false;
-      type = "Application";
-      icon = "${config.home.homeDirectory}/.local/share/applications/icons/Superhuman.svg";
-      startupNotify = true;
     };
 
     tailscale = {

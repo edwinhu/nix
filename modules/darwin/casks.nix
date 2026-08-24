@@ -18,7 +18,6 @@ _:
   "beeper"
   "granola"
   "macwhisper"
-  "superhuman"
   "zoom"
 
   # Utility Tools

@@ -1,6 +1,6 @@
 # paperpile-cli — Edwin's Bun/TypeScript CLI for the Paperpile library
 # (gh:edwinhu/paperpile-cli, PRIVATE). Prebuilt Bun binary from the GitHub
-# release, installed like morgen-cli/superhuman-cli.
+# release, installed like morgen-cli.
 #
 # The linux-x64 asset is an ordinary dynamically-linked ELF; on FHS hosts
 # (Omarchy/Arch) it runs against system glibc unpatched, so dontFixup is fine
