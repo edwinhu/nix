@@ -147,6 +147,8 @@ let
     hylo
     morgen-cli
     paperpile-cli
+    # pinpoint: release ships linux-x64 + darwin-arm64, no linux-arm64.
+    pinpoint
   ];
 in
 lib.subtractLists providedByOmarchyBase shared
