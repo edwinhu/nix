@@ -33,18 +33,18 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.1.0";
+  version = "0.2.0";
 
   # Per-platform release asset ids + hashes (all attached to the v${version}
-  # release, built from 69fcbc8).
+  # release, built from 1ef16f8).
   platforms = {
     x86_64-linux = {
-      assetId = "526931018"; # pinpoint-linux-x64
-      hash = "sha256-paDj0bBsh7NswN6dGmAsD61cGPlv4oWwxrXtmHawGk0=";
+      assetId = "527700443"; # pinpoint-linux-x64
+      hash = "sha256-jG+pheb9lZTTrXb4/ob1EmAasM0PsWtyyHxKcMEnr0A=";
     };
     aarch64-darwin = {
-      assetId = "526931017"; # pinpoint-darwin-arm64
-      hash = "sha256-33CodnTETvGyfb3hVLgc/i+ntj217lfLfyUolVf3oKs=";
+      assetId = "527700444"; # pinpoint-darwin-arm64
+      hash = "sha256-Zw6c0oMPn8g+nanaRHi1GKrx+Btx1U/fVoydIM++hKY=";
     };
   };
 
