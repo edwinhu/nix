@@ -102,9 +102,11 @@
         spans-displays = false;
       };
 
-      # Root-owned system defaults. As root, `defaults write <domain>` lands in
-      # /Library/Preferences/<domain>.plist, which is Chrome's non-MDM policy
-      # channel on macOS — the darwin counterpart to omarchy's root-owned
+      # Root-owned system defaults. The domain MUST be the absolute path
+      # /Library/Preferences/com.google.Chrome — a bare domain resolves to the
+      # CALLING user's prefs, so as root it silently lands in
+      # /var/root/Library/Preferences where Chrome never reads it. That path is
+      # Chrome's non-MDM policy channel on macOS — the darwin counterpart to omarchy's root-owned
       # /etc/chromium/policies/managed/*.json. NOT /Library/Managed Preferences:
       # that belongs to Jamf on the work host and is rewritten out from under us.
       # Jamf sets no com.google.Chrome policy today, so nothing conflicts; if it
@@ -119,7 +121,7 @@
         # which no policy can seed. Their durable copy is dotfiles'
         # .config/vimium/vimium-backup.json; restore via the Vimium Options page
         # (Backup and Restore -> Restore) when sync has not already carried them.
-        "com.google.Chrome".ExtensionInstallForcelist = [
+        "/Library/Preferences/com.google.Chrome".ExtensionInstallForcelist = [
           "dbepggeogbaibhgnhhndojpepiihcmeb;https://clients2.google.com/service/update2/crx" # Vimium
         ];
       };
