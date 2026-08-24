@@ -229,11 +229,7 @@
     username = user;
     entries = [
       { path = "/Applications/Reader.app"; }
-      # Wrapper bundle, NOT /Applications/Dia.app — clicking the real app
-      # launches Dia without --remote-debugging-port, which then holds the
-      # profile SingletonLock and leaves CDP 9222 permanently down. Built by
-      # activation.installDiaCdpApp in home-manager.nix.
-      { path = "${config.users.users.${user}.home}/Applications/Dia (CDP).app"; }
+      { path = "/Applications/Google Chrome.app"; }
       { path = "/Applications/Morgen.app"; }
       { path = "/Applications/Visual Studio Code.app"; }
       { path = "/Applications/Obsidian.app"; }
