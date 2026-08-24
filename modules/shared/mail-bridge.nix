@@ -21,7 +21,7 @@
   src,
 }:
 let
-  version = "0.10.4";
+  version = "0.10.7";
 
   # The bun that BUILDS this is the bun that RUNS it: `--compile` embeds the
   # runtime in the binary. 1.3.13 answers IMAP `SEARCH TEXT` over the Gmail
