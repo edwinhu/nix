@@ -102,6 +102,28 @@
         spans-displays = false;
       };
 
+      # Root-owned system defaults. As root, `defaults write <domain>` lands in
+      # /Library/Preferences/<domain>.plist, which is Chrome's non-MDM policy
+      # channel on macOS — the darwin counterpart to omarchy's root-owned
+      # /etc/chromium/policies/managed/*.json. NOT /Library/Managed Preferences:
+      # that belongs to Jamf on the work host and is rewritten out from under us.
+      # Jamf sets no com.google.Chrome policy today, so nothing conflicts; if it
+      # ever does, MDM wins and this key is silently ignored.
+      CustomSystemPreferences = {
+        # Force-install Vimium so it comes back on a fresh profile without a
+        # Web Store visit, matching chromium-extensions-policy.json on omarchy.
+        # Verify with chrome://policy (Reload policies).
+        #
+        # This installs the extension only. Vimium's own settings — the per-app
+        # exclusion rules and the `;` hint mapping — live in chrome.storage.sync,
+        # which no policy can seed. Their durable copy is dotfiles'
+        # .config/vimium/vimium-backup.json; restore via the Vimium Options page
+        # (Backup and Restore -> Restore) when sync has not already carried them.
+        "com.google.Chrome".ExtensionInstallForcelist = [
+          "dbepggeogbaibhgnhhndojpepiihcmeb;https://clients2.google.com/service/update2/crx" # Vimium
+        ];
+      };
+
       # Custom preferences not covered by nix-darwin options
       CustomUserPreferences = {
         NSGlobalDomain = {
