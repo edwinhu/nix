@@ -20,7 +20,7 @@
   src,
 }:
 let
-  version = "0.10.7";
+  version = "0.10.10";
 
   # The floor is load-bearing twice over, and the second reason is CORRECTNESS,
   # not speed.
