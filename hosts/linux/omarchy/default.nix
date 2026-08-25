@@ -1238,13 +1238,9 @@ in
       mode = "archive";
       # The cadence runs; the pass is narrowed instead.
       cycleEnabled = true;
-      # TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED. Work holds 9
-      # pending local mutations and the provider-read flags they would be
-      # reconciled against are not yet canonical, so `cycle`'s drain would push
-      # decisions taken from stale state. `archive account sync` acquires and
-      # reconciles inbound and delivers nothing. Restoring the outbox is
-      # deleting this one line, once the provider read is canonical.
-      outboxEnabled = false;
+      # Outbox restored: the msgraph provider read is canonical for this
+      # account (0 rows of unknown read state out of 18,340), so `cycle`'s
+      # drain reconciles against current flags. outboxEnabled defaults to true.
       address = "ehu@law.virginia.edu";
       provider = "msgraph";
       port = 1143;
@@ -2776,7 +2772,7 @@ in
     # simply out of scope.
     ++ (
       let
-        inboundOnlyAccounts = [ "work" "personal" ];
+        inboundOnlyAccounts = [ "personal" ];
         execOf =
           acct:
           let
