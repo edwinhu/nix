@@ -1268,9 +1268,10 @@ in
     personal = {
       mode = "archive";
       cycleEnabled = true;
-      # TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED, for the same
-      # reason as Work above; Personal's pending count is 14.
-      outboxEnabled = false;
+      # Outbox restored: the gmail provider read is canonical for this account
+      # (`archive account repair-gmail-flags` derived all 17,616 unknown-flag
+      # rows from stored memberships and left none unknown), so `cycle`'s drain
+      # reconciles against current flags. outboxEnabled defaults to true.
       address = "eddyhu@gmail.com";
       provider = "gmail";
       port = 1144;
@@ -2748,13 +2749,13 @@ in
           + "cache is keyed header.<mailbox>.0.<uid> and never invalidates.";
       }
     ]
-    # TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED. Both accounts
-    # carry pending LOCAL mutations (Work 9, Personal 14) whose provider-read
-    # flags are not yet canonical, so a `cycle` — which drains the outbox
-    # against those flags — would push a decision made from stale state. Until
-    # the provider read is canonical, each account's timer runs the inbound
-    # half only. These assertions are the gate on that stance: they read the
-    # EVALUATED units, so a re-enabled outbox has to change this list too.
+    # The inbound-only stance: an account listed here runs the inbound half
+    # only, because a `cycle` — which drains the outbox — would push local
+    # mutations decided from provider-read flags that are not yet canonical.
+    # Both accounts' reads are now canonical, so the list is empty and no
+    # account is narrowed. These assertions are the gate on that stance: they
+    # read the EVALUATED units, so re-enabling an outbox has to remove the
+    # account from this list in the same change.
     #
     # Parser-level facts (the seven budgets survive, --keep-generations is
     # absent from a sync argv) are asserted ONCE, in
@@ -2772,7 +2773,7 @@ in
     # simply out of scope.
     ++ (
       let
-        inboundOnlyAccounts = [ "personal" ];
+        inboundOnlyAccounts = [ ];
         execOf =
           acct:
           let
