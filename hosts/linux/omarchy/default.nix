@@ -8,74 +8,10 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # Network-isolated Chawan text preview used by `mail-preview --text`.
-  #
-  # chawan (not w3m) because it has a real CSS engine and honours a newsletter's
-  # own column layout instead of flattening it — measured 29ms vs w3m's 21ms on a
-  # 142KB newsletter, so the fidelity is nearly free. Dump mode renders exactly
-  # the same as the interactive mode did; it is the SAME renderer, so nothing
-  # about the layout changes.
-  #
-  # INLINE IMAGES ARE IMPOSSIBLE THROUGH THIS CHAWAN PATH. aerc pipes the
-  # message part in on STDIN, so chawan treats the
-  # document as `<*stdin*>` — and chawan only fetches remote images for documents
-  # that are THEMSELVES remote. Every image in an email is a remote URL, so none
-  # of them ever load. Measured three ways: an https document loaded 52/56
-  # images, the same markup as a file:// document loaded 0/1, and via stdin
-  # (aerc's actual path) every image rendered as `[img]`. There is no config to
-  # relax it — `buffer.images` is only on/off, and siteconf matches on URL, which
-  # a stdin document has none of. Interactive mode, forced image-mode, and
-  # hardcoded cell geometry were each tried and none of them address this.
-  #
-  # Consequences of dump mode, all of them wins given the above:
-  #   - aerc's own keybindings work; chawan no longer owns input until `q`.
-  #   - Scrolling is aerc's pager, so no chawan key rebinding is needed. (The
-  #     interactive version had to remap j/k/arrows/space because chawan's own
-  #     scroll keys — J/K, C-e/C-y — are all swallowed by aerc's [view] binds.)
-  #   - `unshare --net` is back, which is what blocks tracking pixels. It also
-  #     keeps chawan fast: with network access it tries to fetch remote images
-  #     and fonts and hangs for minutes on a real newsletter.
-  #
-  # -I/-O UTF-8 are NOT optional; dropping them is what produced mojibake
-  # (a curly apostrophe rendering as "\u00e2\u20ac\u2122"). aerc decodes a part to UTF-8
-  # before piping it here, but plenty of marketing mail carries a <meta> that
-  # still DECLARES a legacy charset, and chawan believes the declaration over
-  # the bytes — decoding UTF-8 as windows-1252. Reproduced exactly: a page
-  # declaring windows-1252 while holding UTF-8 bytes came out as the byte
-  # sequence C3 A2 E2 82 AC E2 84 A2. aerc's own shipped w3m filter passes both
-  # flags for precisely this reason; this filter replaced it and initially did
-  # not.
-  #
-  # STYLING AND WIDTH MUST BE FORCED IN DUMP MODE, or the output is plain
-  # monochrome text wrapped at 80 columns — every style chawan's CSS engine
-  # computed is thrown away on the way out. `-d` writes to a pipe, so chawan
-  # cannot detect the terminal and its "auto" settings resolve to nothing:
-  #   - color-mode        → monochrome. Measured: 0 escape sequences in the
-  #                         output; with true-color, 1632.
-  #   - format-mode       → no attributes. color-mode alone is NOT enough —
-  #                         with only colour forced, bold/italic/underline are
-  #                         all still absent; this array is what restores them.
-  #   - columns           → the documented 80 fallback, while the message view
-  #                         is ~130 wide, so everything was squeezed into 80
-  #                         columns with heavy padding.
-  # 120 leaves margin inside a 152-column terminal minus aerc's 22-column
-  # sidebar. aerc's pager (`less -Rc`) passes the escapes through.
-  #
-  # stdin: aerc pipes the part in, so chawan reads `-`. chawan BLOCKS on an open
-  # stdin it has not been told to read, so the `-` is load-bearing.
-  aercChawanHtml = pkgs.writeShellScript "aerc-chawan-html" ''
-    set -u
-    set -- ${pkgs.chawan}/bin/cha -d -T text/html -I UTF-8 -O UTF-8 \
-      -o 'display.color-mode="true-color"' \
-      -o 'display.format-mode=["bold","italic","underline","reverse","strike"]' \
-      -o 'display.columns=120' \
-      -o 'display.force-columns=true' \
-      -
-    if command -v ${pkgs.util-linux}/bin/unshare >/dev/null 2>&1; then
-      set -- ${pkgs.util-linux}/bin/unshare --map-root-user --net "$@"
-    fi
-    exec "$@"
-  '';
+  # Network-isolated Chawan text renderer for `mail-preview --text`. Shared with
+  # packages.<system>.mail-preview in flake.nix; the rationale for every flag
+  # lives next to the derivation.
+  aercChawanHtml = pkgs.callPackage ../../../modules/shared/chawan-html.nix { };
 
   # Python helper for the PDF preview filter: speaks herdr's socket API.
   aercPdfHelper = pkgs.writeText "herdr-graphics.py" ''
@@ -810,15 +746,23 @@ exit 0
   # chromium is deliberately NOT a runtimeInput: /usr/bin/chromium (the Omarchy
   # system browser, already the CDP target) is inherited from PATH, and pulling
   # a second nixpkgs chromium in would be ~400MB for a screenshot. imagemagick
-  # crops the render (Chromium screenshots the WINDOW, not the page).
+  # crops the render (a screenshot captures the WINDOW, not the page).
   # --text retains the network-isolated Chawan rendering as an explicit
   # text-only preview alongside the default Chromium/Kitty message view.
+  #
+  # bun, not python3: the render half now goes through the shared Bun.WebView
+  # helper, which awaits its own screenshot instead of polling the output file
+  # the way headless chromium's never-exiting --screenshot CLI forced.
+  # BUN_WEBVIEW_LIB is how the script finds that helper in the store.
+  bunPinned = pkgs.callPackage ../../../modules/shared/bun-pinned.nix { };
+  bunWebview = pkgs.callPackage ../../../modules/shared/bun-webview.nix { bun = bunPinned; };
   mailPreview = pkgs.writeShellApplication {
     name = "mail-preview";
-    runtimeInputs = [ pkgs.python3 pkgs.chafa pkgs.imagemagick pkgs.himalaya ];
+    runtimeInputs = [ bunPinned pkgs.chafa pkgs.imagemagick pkgs.himalaya ];
     text = ''
       export CHA_HTML=${aercChawanHtml}
-      exec python3 ${./files/mail-preview.py} "$@"
+      export BUN_WEBVIEW_LIB=${bunWebview}/lib/bun-webview
+      exec bun ${./files/mail-preview.ts} "$@"
     '';
   };
 
@@ -1261,6 +1205,9 @@ in
 {
   imports = [
     ../../../modules/shared/home-secrets.nix
+    # yazi previewers: duckdb for tabular files, rich-preview for notebooks,
+    # fazif for fd/ripgrep/rga searches through fzf.
+    ../../../modules/shared/yazi.nix
     # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
     # systemd user services + a timer here (Linux) and launchd agents on macOS.
     ../../../modules/shared/reader-services.nix
@@ -2701,11 +2648,14 @@ in
       # `unshare --net` so no beacons fire, and what the message view can
       # actually display.
       #
-      # NO IMAGES IN AN HTML BODY, AND NO FILTER CAN CHANGE THAT. Measured with
-      # a pty probe that counts a filter's escapes in aerc's own output
-      # (files/aerc-graphics-probe.sh, tests/aerc-graphics/): a fixed kitty APC
-      # from a text/html filter arrives 0 times, and so does a fixed SIXEL,
-      # against a plain-pty positive control of 1. aerc's terminal parses and
+      # NO IMAGES IN AN HTML BODY, AND NO FILTER CAN CHANGE THAT. Measured by
+      # running a real aerc under a pty and counting a filter's escapes in
+      # aerc's own output: a fixed kitty APC from a text/html filter arrived 0
+      # times, and so did a fixed SIXEL, against a plain-pty positive control of
+      # 1. The probe that measured it is deleted -- it had settled the question
+      # and was 434 lines of pty plumbing to carry for an answer that is not
+      # going to change on its own. Redo it the same way if aerc's embedded
+      # terminal ever gains graphics support. aerc's terminal parses and
       # drops a child's graphics whatever the protocol -- which also rules out
       # img2sixel, ueberzugpp under the filter, and aerc-config(5)'s own
       # `text/html=! html-unsafe -sixel` recipe. `o` opens the part in Chromium

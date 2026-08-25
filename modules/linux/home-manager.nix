@@ -7,6 +7,8 @@
     # Imported so the options exist; enable per host once the guest is stood up:
     #   programs.wordRender.enable = true;  (see ../shared/word-render/README.md)
     ../shared/word-render.nix
+    # yazi previewers: duckdb for tabular files, rich-preview for notebooks.
+    ../shared/yazi.nix
   ];
 
   # Linux-specific Stylix configuration (Qt theming)

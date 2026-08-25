@@ -1,0 +1,9 @@
+{
+  "name": "bun-webview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "index.ts",
+  "exports": { ".": "./index.ts" },
+  "devDependencies": { "@types/bun": "latest" }
+}

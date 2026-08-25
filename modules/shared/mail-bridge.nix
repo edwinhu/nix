@@ -17,19 +17,29 @@
   lib,
   stdenvNoCC,
   bun,
-  patchelf,
   src,
 }:
 let
   version = "0.10.7";
 
-  # The bun that BUILDS this is the bun that RUNS it: `--compile` embeds the
-  # runtime in the binary. 1.3.13 answers IMAP `SEARCH TEXT` over the Gmail
-  # archive in 14.5 s / 17.8 s; 1.3.14 answers the same searches against the
-  # same source and database in 0.31 s / 0.38 s. nixpkgs is still on 1.3.13 at
-  # every rev, so the caller must pass modules/shared/bun-pinned.nix. This
-  # floor is what makes that non-optional.
-  bunFloor = "1.3.14";
+  # The floor is load-bearing twice over, and the second reason is CORRECTNESS,
+  # not speed.
+  #
+  #   Performance: the bun that BUILDS this is the bun that RUNS it, since
+  #   `--compile` embeds the runtime. 1.3.13 answers IMAP `SEARCH TEXT` over the
+  #   Gmail archive in 14.5 s / 17.8 s; 1.3.14 answers the same searches against
+  #   the same source and database in 0.31 s / 0.38 s.
+  #
+  #   Correctness: below 1.4, bun's default `--compile` template is ITSELF —
+  #   i.e. nixpkgs' autopatchelf'd bun — and injecting the bundle into that
+  #   yields a 190 MB binary that segfaults on every argv while the bundler
+  #   exits 0. This package used to dodge that with an unpatched template
+  #   (see buildPhase below); that workaround is gone, so a sub-1.4 bun
+  #   would now silently produce the corrupt binary. See bun-pinned.nix.
+  #
+  # nixpkgs carries neither version at any rev, so the caller must pass
+  # modules/shared/bun-pinned.nix. This floor is what makes that non-optional.
+  bunFloor = "1.4.0";
 
   # Bun's resolver needs the network, which the build sandbox forbids — so the
   # dependency tree is its own fixed-output derivation, the standard shape for
@@ -39,7 +49,7 @@ let
   # HOME/BUN_INSTALL_CACHE_DIR: bun otherwise writes to a real $HOME, which
   # doesn't exist in the sandbox. --ignore-scripts: no postinstall may run,
   # since arbitrary scripts would break the fixed output's reproducibility.
-  # Only one runtime dep (chrome-remote-interface), so this stays small.
+  # `dependencies` is now {} — zero runtime deps — so this stays small.
   nodeModules = stdenvNoCC.mkDerivation {
     pname = "mail-bridge-node-modules";
     inherit version src;
@@ -73,7 +83,8 @@ in
 assert lib.assertMsg (lib.versionAtLeast bun.version bunFloor) (
   "mail-bridge: bun ${bun.version} < ${bunFloor}. Pass "
   + "modules/shared/bun-pinned.nix as `bun`; stock nixpkgs bun makes IMAP "
-  + "SEARCH ~47x slower (14.5s vs 0.31s on the Gmail archive)."
+  + "SEARCH ~47x slower (14.5s vs 0.31s on the Gmail archive), and below 1.4 "
+  + "its default --compile template silently yields a segfaulting binary."
 );
 stdenvNoCC.mkDerivation {
   pname = "mail-bridge";
@@ -88,21 +99,27 @@ stdenvNoCC.mkDerivation {
   # fetch that runtime from npm and would fail here), so the sandbox is fine —
   # which is also why this package is built per-system rather than cross-built.
   #
-  # --compile-executable-path is NOT cross-compilation here, it is a workaround.
-  # Since 1.3.14 bun injects the bundle into a `.bun` ELF SECTION of the
-  # template executable, and it defaults the template to ITSELF — i.e. to
-  # nixpkgs' bun, which autoPatchelfHook has rewritten. That write then
-  # miscomputes: the output is 190 MB instead of 95 MB and segfaults on every
-  # argv, silently (the bundler exits 0). Pointing it at the unpatched upstream
-  # binary restores the normal output byte-for-byte. See bun-pinned.nix.
+  # This used to pass a --compile-executable-path pointing at bun.pristine, an
+  # unpatched copy of the same upstream bun. Not cross-compilation — a
+  # workaround. Between 1.3.14 and 1.4, bun injected the bundle into a `.bun`
+  # ELF SECTION of the template and picked the writable PT_LOAD segment to
+  # extend by table order, which patchelf's header rewrite invalidates; since
+  # the template defaults to bun ITSELF, and nixpkgs' bun is autopatchelf'd, the
+  # default produced a 190 MB binary that segfaulted on every argv while the
+  # bundler exited 0. 1.4 picks that segment by vaddr containment of `.bun`, so
+  # the default self-template is correct again and the workaround is retired
+  # (`bunFloor` above is what keeps a sub-1.4 bun from reviving the bug).
+  #
+  # Consequence worth naming: the artifact now inherits the patchelf'd
+  # template's interpreter, i.e. a /nix/store loader rather than /lib64. That is
+  # normal for nix-built software — and it is what lets installCheck below
+  # actually RUN the binary inside the sandbox.
   buildPhase = ''
     runHook preBuild
     export HOME=$TMPDIR
     export BUN_INSTALL_CACHE_DIR=$TMPDIR/cache
     ln -s ${nodeModules} node_modules
-    bun build --compile \
-      --compile-executable-path=${bun.pristine}/bin/bun \
-      src/cli.ts --outfile mail-bridge
+    bun build --compile src/cli.ts --outfile mail-bridge
     runHook postBuild
   '';
 
@@ -118,17 +135,29 @@ stdenvNoCC.mkDerivation {
   dontPatchELF = true;
 
   # The eval assert above constrains the bun DERIVATION; these constrain the
-  # ARTIFACT. The binary cannot be executed here (its interpreter is the host's
-  # /lib64 loader, absent from the sandbox), so both checks read the ELF.
+  # ARTIFACT.
   #
-  #   1. `Bun/<version>` is the runtime stamp -- proves which bun got embedded.
-  #   2. A non-/nix/store interpreter proves the PRISTINE template was used.
-  #      A patchelf'd template leaves a /nix/store interpreter and, with it,
-  #      the 190 MB segfaulting binary that the bundler reports as a success.
+  #   1. `Bun/<version>` grepped out of the file is the runtime stamp -- proves
+  #      which bun got embedded.
+  #   2. Running `archive doctor`. This is the one that matters: the failure
+  #      mode being guarded is a bundler that exits 0 having written a binary
+  #      that segfaults on every argv, and NOTHING that merely reads the file
+  #      distinguishes that from a sound one. Only execution does.
   #
-  # Together they turn both silent failure modes into build failures.
-  # Check 2 is ELF-only; a Mach-O output has no interpreter to read.
-  nativeInstallCheckInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [ patchelf ];
+  # There used to be a third check asserting a non-/nix/store ELF interpreter,
+  # as a proxy for "the pristine template was used". It is deleted, not
+  # inverted: the interpreter identifies which template compiled the binary,
+  # never whether the binary works, so an assertion in either polarity is a
+  # proxy that can pass over a broken artifact.
+  #
+  # Executing here is possible precisely BECAUSE the workaround is gone. With
+  # the pristine template the artifact's interpreter was the host's /lib64
+  # loader, absent from the sandbox; inheriting the patchelf'd bun's /nix/store
+  # loader makes the binary runnable inside the build.
+  #
+  # `archive doctor` is chosen for being read-only and needing no account, no
+  # network and no state: it reports on the archive database, creating one under
+  # $HOME if absent, and exits non-zero on a broken runtime.
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
@@ -139,19 +168,21 @@ stdenvNoCC.mkDerivation {
       echo "mail-bridge: embedded runtime $embedded != Bun/${bun.version}" >&2
       exit 1
     fi
-  ''
-  + lib.optionalString stdenvNoCC.hostPlatform.isLinux ''
-    interp=$(patchelf --print-interpreter $out/bin/mail-bridge)
-    echo "mail-bridge: interpreter $interp"
-    case "$interp" in
-      /nix/store/*)
-        echo "mail-bridge: interpreter $interp is a nix path -- the --compile" >&2
-        echo "template was the patchelf'd bun, so this binary is corrupt." >&2
-        exit 1
-        ;;
-    esac
-  ''
-  + ''
+
+    size=$(stat -c%s $out/bin/mail-bridge 2>/dev/null || stat -f%z $out/bin/mail-bridge)
+    echo "mail-bridge: artifact $size bytes"
+    if [ "$size" -gt 150000000 ]; then
+      echo "mail-bridge: $size bytes -- a sound artifact is ~82 MB, the" >&2
+      echo "segment-selection corruption produces ~190 MB." >&2
+      exit 1
+    fi
+
+    export HOME=$TMPDIR
+    if ! $out/bin/mail-bridge archive doctor; then
+      echo "mail-bridge: the built binary could not run \`archive doctor\`" >&2
+      exit 1
+    fi
+
     runHook postInstallCheck
   '';
 

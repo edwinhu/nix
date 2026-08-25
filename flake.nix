@@ -299,6 +299,41 @@
           bun = p.callPackage ./modules/shared/bun-pinned.nix {};
         };
         onlyoffice-docbuilder = (import inputs.nixpkgs-onlyoffice { inherit system; }).callPackage ./modules/shared/onlyoffice/docbuilder.nix {};
+        # bun-pinned here too: the helper is consumed by bun scripts, so the
+        # installCheck should load it under the bun that will actually run it.
+        bun-webview = let
+          p = import nixpkgs { inherit system; };
+        in p.callPackage ./modules/shared/bun-webview.nix {
+          bun = p.callPackage ./modules/shared/bun-pinned.nix {};
+        };
+        # The mail-preview wrapper users and aerc actually invoke, standalone so
+        # it can be built and run without switching a profile. chromium is
+        # deliberately absent: the system browser on PATH is the renderer, and a
+        # second nixpkgs chromium would be ~400MB for a screenshot. --text goes
+        # through the SAME network-isolated chawan wrapper the omarchy host uses
+        # (modules/shared/chawan-html.nix): mail HTML is attacker-controlled, so
+        # a preview that can reach the network hands the sender a callback.
+        #
+        # himalaya from himalaya-release.nix, NOT p.himalaya: this `p` has no
+        # overlay, so p.himalaya is nixpkgs' 1.2.0, which rejects the
+        # `message read --raw` the script passes. writeShellApplication PREPENDS
+        # runtimeInputs to PATH, so it would shadow the user's own 2.1.0 and
+        # every -a/-m preview would die on "unexpected argument '--raw'". The
+        # omarchy host gets the same 2.1.0 through the Linux overlay's
+        # `himalaya` attribute (flake.nix, homeConfigurations).
+        mail-preview = let
+          p = import nixpkgs { inherit system; };
+          bun = p.callPackage ./modules/shared/bun-pinned.nix {};
+          himalaya = p.callPackage ./modules/shared/himalaya-release.nix {};
+        in p.writeShellApplication {
+          name = "mail-preview";
+          runtimeInputs = [ bun p.chafa p.imagemagick himalaya ];
+          text = ''
+            export CHA_HTML=${p.callPackage ./modules/shared/chawan-html.nix {}}
+            export BUN_WEBVIEW_LIB=${p.callPackage ./modules/shared/bun-webview.nix { inherit bun; }}/lib/bun-webview
+            exec bun ${./hosts/linux/omarchy/files/mail-preview.ts} "$@"
+          '';
+        };
       });
 
       # Darwin configurations for macOS hosts

@@ -1,4 +1,9 @@
-# bun, pinned ahead of nixpkgs — for mail-bridge only.
+# bun, pinned ahead of nixpkgs.
+#
+# Two consumers, not one: mail-bridge builds against it (modules/shared/
+# mail-bridge.nix), and modules/shared/packages.nix:18 instantiates it into
+# `home.packages` — so this pin is also the interactive `bun` in every user
+# profile on every host, Macs included. A bump moves both.
 #
 # Why: mail-bridge compiled by bun 1.3.13 runs IMAP `SEARCH TEXT` over the
 # Gmail archive at 14.5 s (invoice) / 17.8 s (virginia). The identical source
@@ -18,44 +23,50 @@
 # Bump procedure: change `version`, then re-hash each zip with
 #   nix-prefetch-url --type sha256 \
 #     https://github.com/oven-sh/bun/releases/download/bun-v$V/<name>.zip
-# Keep >= 1.3.14; mail-bridge asserts that floor.
+# Never bump downwards past the floor mail-bridge asserts (`bunFloor` in
+# modules/shared/mail-bridge.nix) — that floor is the authoritative one and it
+# has risen since 1.3.14; read it there rather than trusting a number here.
 #
-# passthru.pristine: the SAME upstream binary, unpacked but NOT autopatchelf'd
-# and NOT stripped. It is never executed -- it exists to be handed to
-# `bun build --compile --compile-executable-path=`, because 1.3.14 injects the
-# bundle into a `.bun` ELF SECTION of the template executable and that write is
-# corrupted by patchelf's rewrite: a patchelf'd template yields a 190 MB binary
-# that segfaults on any argv, while the pristine template yields the normal
-# 95 MB one. (1.3.13 appended instead, which is why the old recipe survived.)
+# Retired at 1.4.0: `passthru.pristine`. Between 1.3.14 and 1.4, bun injected
+# the compiled bundle into a `.bun` ELF SECTION of the template executable and
+# chose the writable PT_LOAD segment to extend by TABLE ORDER, which is not the
+# segment containing `.bun` once patchelf has rewritten the headers. Since bun
+# defaults the template to ITSELF, and nixpkgs' bun is autopatchelf'd, the
+# default path produced a 190 MB binary that segfaulted on every argv while the
+# bundler exited 0. The workaround was a second derivation holding the SAME
+# upstream binary unpacked but neither patchelf'd nor stripped, handed to
+# `--compile-executable-path=`. 1.4 selects that segment by VADDR CONTAINMENT of
+# the `.bun` section, so a patchelf'd template is fine and the pristine copy is
+# no longer needed. (1.3.13 appended rather than injecting, which is why the
+# recipe predating all of this survived.)
 {
   lib,
   bun,
   fetchurl,
   stdenvNoCC,
-  unzip,
 }:
 
 let
-  version = "1.3.14";
+  version = "1.4.0";
 
   # Asset names match nixpkgs' own per-system choice, including the
   # x86_64-darwin baseline build.
   assets = {
     "aarch64-darwin" = {
       asset = "bun-darwin-aarch64";
-      hash = "sha256-2LliIYKK1vl6x6wKt+lYcjQa92MAHogD6CZ2UsJlJiA=";
+      hash = "sha256-xmnpf2Fk4cluBwF0jbmN+ndJKQjL2DlMdVcTSnNd44E=";
     };
     "aarch64-linux" = {
       asset = "bun-linux-aarch64";
-      hash = "sha256-on/7Y6gxA3WDbg1vZorhf6jY0YuIw3yCHGUzGXOhmjs=";
+      hash = "sha256-SxozLuhhmD65O8/m93D/+U4+MbLDiL2uo8jtNeWO7Q4=";
     };
     "x86_64-darwin" = {
       asset = "bun-darwin-x64-baseline";
-      hash = "sha256-PjWtb1OXGpg0v55nhuKt9ytfGSHMmpxf3gc9KXKUQHY=";
+      hash = "sha256-2pufG0unZsbymXEfON+qmGI+HtnECJaqU9uAPFLsH6A=";
     };
     "x86_64-linux" = {
       asset = "bun-linux-x64";
-      hash = "sha256-lR7iruhV8IWVruxiJSJqKY0/6oOj3NZGXAnLzN9+hI8=";
+      hash = "sha256-LQP7X7g6yLVnrKCigbLOGhoZ1Ij1bClo2Iw/Jekv5FI=";
     };
   };
 
@@ -68,40 +79,13 @@ let
   ) assets;
 
   system = stdenvNoCC.hostPlatform.system;
-
-  # Unpack only. No autoPatchelfHook, no strip, no fixup that touches the ELF:
-  # every byte must stay where upstream put it or `.bun` section injection
-  # miscomputes. Not runnable inside the build sandbox (its interpreter is the
-  # host's /lib64 loader) and it does not need to be -- it is read, not run.
-  pristine = stdenvNoCC.mkDerivation {
-    pname = "bun-pristine";
-    inherit version;
-    src = sources.${system} or (throw "bun-pinned: unsupported system ${system}");
-
-    nativeBuildInputs = [ unzip ];
-    dontConfigure = true;
-    dontBuild = true;
-    dontPatchELF = true;
-    dontStrip = true;
-    dontFixup = true;
-
-    installPhase = ''
-      runHook preInstall
-      install -Dm755 ./bun $out/bin/bun
-      runHook postInstall
-    '';
-
-    meta = bun.meta // {
-      description = "Upstream bun ${version}, unpatched — a --compile template only";
-    };
-  };
 in
 bun.overrideAttrs (prev: {
   inherit version;
 
   src = sources.${system} or (throw "bun-pinned: unsupported system ${system}");
 
-  passthru = prev.passthru // { inherit sources pristine; };
+  passthru = prev.passthru // { inherit sources; };
 
   # Cheap, decidable proof the override actually landed: without it a silently
   # ignored `version` would leave stock bun in place and the perf regression
