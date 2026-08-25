@@ -852,6 +852,30 @@ exit 0
     text = ''exec python3 ${./files/aerc-addressbook.py} "$@"'';
   };
 
+  # aerc `b`: the selected message -> a calendar event, Superhuman-style.
+  # Gemini reads the mail, a Textual form sits beside the message so the
+  # extraction can be checked against it, and `morgen calendar create` runs
+  # only on ctrl+s.
+  #
+  # The form MUST take the keyboard from /dev/tty: aerc's :pipe puts the
+  # message on fd 0, so a TUI that inherits stdin reads mail headers as
+  # keystrokes. Structured output is enforced by the API (responseSchema +
+  # responseMimeType), not by asking the model for JSON in the prompt.
+  # bubbletea + lipgloss, same idiom as brscan-tui above: rounded panels, ANSI
+  # 16-palette so it follows the omarchy theme, keybind bar. Go source in
+  # files/aerc-cal/; shells out to morgen (put on PATH by wrapProgram).
+  aercCal = pkgs.buildGoModule {
+    pname = "aerc-cal";
+    version = "0.1.0";
+    src = ./files/aerc-cal;
+    vendorHash = "sha256-68yFB1u5DlLh6PTRCECCsmZNwcoGxXVrQDCO0FkTsL4=";
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postInstall = ''
+      wrapProgram $out/bin/aerc-cal \
+        --prefix PATH : ${lib.makeBinPath [ pkgs.morgen-cli ]}
+    '';
+  };
+
   # Morgen ships no usable icon, so pull the real one from the web app's
   # apple-touch-icon (a real 180px PNG).
   morgenIcon = pkgs.fetchurl {
@@ -1356,7 +1380,7 @@ in
       # Only listed for this host: `alarm` shares omarchy-packages.nix but is
       # a headless aarch64 box with nothing to stream.
       ++ [
-        brscan brscanTui vimiumToggle mailPreview aercAddressBook telGvoice
+        brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal telGvoice
         mailHtmlToMd mailMdToHtml
         pkgs.ghostty pkgs.sunshine
       ];
