@@ -1404,6 +1404,29 @@ in
         x-scheme-handler/tel || true
     '';
 
+    # Office documents -> LibreOffice. openai-codex-desktop (pacman, not nix)
+    # ships /usr/share/applications/chatgpt.desktop declaring MimeType= for
+    # xlsx/xls/xlsm/docx/pptx/csv/tsv, and with no explicit default set it won
+    # the association order -- double-clicking a spreadsheet opened ChatGPT.
+    # Re-run on every switch because a codex-desktop upgrade rewrites that
+    # system .desktop; the user-level mimeapps.list entries these write always
+    # outrank it. Same shape as telHandler above: mimeapps.list is a plain file
+    # here, so only these associations are touched.
+    activation.officeHandlers = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      for m in \
+        application/vnd.openxmlformats-officedocument.spreadsheetml.sheet \
+        application/vnd.ms-excel \
+        application/vnd.ms-excel.sheet.macroEnabled.12 \
+        text/csv \
+        text/tab-separated-values; do
+        $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default libreoffice-calc.desktop "$m" || true
+      done
+      $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default libreoffice-writer.desktop \
+        application/vnd.openxmlformats-officedocument.wordprocessingml.document || true
+      $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default libreoffice-impress.desktop \
+        application/vnd.openxmlformats-officedocument.presentationml.presentation || true
+    '';
+
     # Patched brscan5 model tables at a stable home path; /etc/opt/brother is
     # symlinked here by the one-time sudo step (see home.packages above). Stable
     # across brscan5 updates — the symlink target (home path) never changes.
