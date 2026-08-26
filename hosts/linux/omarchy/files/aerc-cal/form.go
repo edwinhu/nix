@@ -44,7 +44,7 @@ var fields = []field{
 	{fLocation, "Location", "none", false},
 	{fAttendees, "Attendees", "comma-separated", false},
 	{fCalendar, "Calendar", "", true},
-	{fAlerts, "Alerts", "1d,10m", false},
+	{fAlerts, "Alerts", "10m", false},
 	{fNotes, "Notes", "", false},
 }
 
@@ -91,7 +91,7 @@ func NewForm(ev Event, m Mail, cals []Calendar, calIdx int, here string) Form {
 	values := map[fieldID]string{
 		fTitle: title, fDate: date, fStart: start, fEnd: end, fZone: zone,
 		fLocation: location, fAttendees: strings.Join(keepAddrs(ev.Attendees), ", "),
-		fAlerts: "1d,10m", fNotes: strings.TrimSpace(ev.Notes),
+		fAlerts: "10m", fNotes: strings.TrimSpace(ev.Notes),
 	}
 	for _, fl := range fields {
 		if fl.cycle {
