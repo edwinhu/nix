@@ -357,6 +357,8 @@
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   pinpoint = prev.callPackage ./modules/shared/pinpoint.nix {};
+                crumb = prev.callPackage ./modules/shared/crumb.nix {};
+                  crumb = prev.callPackage ./modules/shared/crumb.nix {};
                   rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
                   tinymist-lsp = prev.callPackage ./modules/shared/tinymist-lsp.nix {};
@@ -431,6 +433,7 @@
                 morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                 paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                 pinpoint = prev.callPackage ./modules/shared/pinpoint.nix {};
+                crumb = prev.callPackage ./modules/shared/crumb.nix {};
                 # obsidian-cli: web clipper + passthrough proxy. On darwin the
                 # GUI is a cask (no `obsidian` in the nix profile), so this is
                 # exposed under its own name rather than shadowing anything.
