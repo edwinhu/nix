@@ -20,7 +20,7 @@
   src,
 }:
 let
-  version = "0.10.10";
+  version = (lib.importJSON "${src}/package.json").version;
 
   # The floor is load-bearing twice over, and the second reason is CORRECTNESS,
   # not speed.
