@@ -3126,6 +3126,26 @@ in
   # systemd.user.services (a plain attrset literal can't assign the same path
   # twice; mkMerge combines them into one definition).
   systemd.user.services = lib.mkMerge [
+    # Reap abandoned `tinymist preview` servers. typst-preview.nvim cleans up on
+    # VimLeavePre and the nvim config's reap_orphans sweeps parent-gone servers,
+    # but ONLY when a new nvim opens a Typst file -- close the browser tab and
+    # leave nvim running and nothing ever sweeps, so ~5.5 GiB per preview sits
+    # in zram until the editor exits. Measured 2026-08-25: three of them had
+    # been stranded for two days, 16.5 GiB between them.
+    #
+    # Kills on parent-gone, or on no-client AND no-CPU twice running. Both
+    # idle signals are needed because closing a tab does NOT drop the socket --
+    # chromium holds it open for hours (measured), so "no client" alone fires
+    # far too late to mean anything on its own.
+    { tinymist-reap = {
+      Unit.Description = "Reap abandoned tinymist preview servers";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.python3}/bin/python3 ${./files/tinymist-reap.py}";
+        Environment = [ "PATH=${lib.makeBinPath [ pkgs.libnotify ]}" ];
+        Nice = 10;
+      };
+    }; }
     # Ages out ~/.tmp per ~/dotfiles/.config/user-tmpfiles.d/scratch.conf (7d).
     # Defined here rather than `systemctl --user enable
     # systemd-tmpfiles-clean.timer`: that enable is a wants/ symlink no repo
@@ -3567,6 +3587,18 @@ in
 
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
   systemd.user.timers = lib.mkMerge [
+    # 30min: two consecutive idle checks means an abandoned preview dies within
+    # an hour, which is soon enough for 5.5 GiB and slow enough that a preview
+    # left open over a coffee break survives.
+    { tinymist-reap = {
+      Unit.Description = "Reap abandoned tinymist preview servers (every 30min)";
+      Timer = {
+        OnStartupSec = "10min";
+        OnUnitActiveSec = "30min";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
     (lib.mapAttrs (_: mkRoutineTimer) claudeRoutines)
     { tzupdate = {
       Unit.Description = "Re-check the timezone against current location";

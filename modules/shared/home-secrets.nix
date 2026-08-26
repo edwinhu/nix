@@ -17,6 +17,10 @@ in
       file = "${nix-secrets}/gemini-api-key.age";
       mode = "400";
     };
+    morgen-api-key = {
+      file = "${nix-secrets}/morgen-api-key.age";
+      mode = "400";
+    };
     claude-api-key = {
       file = "${nix-secrets}/claude-api-key.age";
       mode = "400";
@@ -164,6 +168,7 @@ in
     GOOGLE_SEARCH_API_KEY_FILE = "${tempDir}/google-search-api-key";
     GOOGLE_SEARCH_ENGINE_ID_FILE = "${tempDir}/google-search-engine-id";
     GEMINI_API_KEY_FILE = "${tempDir}/gemini-api-key";
+    MORGEN_API_KEY_FILE = "${tempDir}/morgen-api-key";
     CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
     LSEG_CREDENTIALS_FILE = "${tempDir}/lseg-credentials";
@@ -195,6 +200,9 @@ in
     opTokenFile = if pkgs.stdenv.isDarwin
               then "$(getconf DARWIN_USER_TEMP_DIR)agenix/op-service-account-token"
               else "\${XDG_RUNTIME_DIR}/agenix/op-service-account-token";
+    morgenKeyFile = if pkgs.stdenv.isDarwin
+              then "$(getconf DARWIN_USER_TEMP_DIR)agenix/morgen-api-key"
+              else "\${XDG_RUNTIME_DIR}/agenix/morgen-api-key";
   in ''
     if [ -r "${opTokenFile}" ]; then
       OP_SERVICE_ACCOUNT_TOKEN="$(tr -d '\n' < "${opTokenFile}")"
@@ -202,6 +210,14 @@ in
         export OP_SERVICE_ACCOUNT_TOKEN
       else
         unset OP_SERVICE_ACCOUNT_TOKEN
+      fi
+    fi
+    if [ -r "${morgenKeyFile}" ]; then
+      MORGEN_API_KEY="$(tr -d '\n' < "${morgenKeyFile}")"
+      if [ -n "$MORGEN_API_KEY" ]; then
+        export MORGEN_API_KEY
+      else
+        unset MORGEN_API_KEY
       fi
     fi
     if [ -r "${keyFile}" ]; then
@@ -220,6 +236,7 @@ in
     get-google-search-api-key = "cat $GOOGLE_SEARCH_API_KEY_FILE";
     get-google-search-engine-id = "cat $GOOGLE_SEARCH_ENGINE_ID_FILE";
     get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
+    get-morgen-api-key = "cat $MORGEN_API_KEY_FILE";
     get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
     get-beeper-access-token = "cat $BEEPER_ACCESS_TOKEN_FILE";
