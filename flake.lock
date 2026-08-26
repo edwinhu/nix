@@ -411,11 +411,11 @@
     "mail-bridge-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1787705884,
-        "narHash": "sha256-IxnEsF8bZOe0NSeHPzIkjiM6cUlyq+P9p++IULa5n18=",
+        "lastModified": 1787752082,
+        "narHash": "sha256-y/hdPvOaph+TYCYOOhV1hoFrsZlG3YG6/2NNpB+zJE4=",
         "ref": "refs/heads/main",
-        "rev": "b7d6cb227a10d5b06898440226a8efa2fb1db550",
-        "revCount": 98,
+        "rev": "b12e4ae61d0041d96c120e0c46703cb4fca61a7c",
+        "revCount": 101,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
       },
@@ -467,11 +467,11 @@
     "nix-secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1787666679,
-        "narHash": "sha256-ZHCnr0nzZ9DisKZGPMLBi1jerkeKaS6haBqtucl5rmY=",
+        "lastModified": 1787749958,
+        "narHash": "sha256-K1BvVGEvYqZtxfjhzyncQVKSjJ8VcjQGlkeNo7wFtOA=",
         "ref": "refs/heads/main",
-        "rev": "1ff064b7c2e2aee791dab5b8072d5dca61d8d535",
-        "revCount": 38,
+        "rev": "c76c71285bce9809175d42af74ba270d68a9c11e",
+        "revCount": 39,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
       },
