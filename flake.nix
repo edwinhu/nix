@@ -357,7 +357,6 @@
                   morgen-cli = prev.callPackage ./modules/shared/morgen-cli.nix {};
                   paperpile-cli = prev.callPackage ./modules/shared/paperpile-cli.nix {};
                   pinpoint = prev.callPackage ./modules/shared/pinpoint.nix {};
-                crumb = prev.callPackage ./modules/shared/crumb.nix {};
                   crumb = prev.callPackage ./modules/shared/crumb.nix {};
                   rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
