@@ -794,11 +794,21 @@ exit 0
     name = "mail-html2md";
     runtimeInputs = [ pkgs.pandoc ];
     text = ''
-      columns="''${1:-0}"
-      if [ "$columns" -gt 0 ]; then
-        exec pandoc -f html -t gfm --columns="$columns"
-      fi
-      exec pandoc -f html -t gfm --wrap=none
+        # gfm-raw_html, NOT plain gfm. GFM PERMITS raw HTML, so pandoc passes
+        # every <div>/<span> through untouched -- a Gmail reply arrived in the
+        # composer as `<div dir="ltr">` wrappers around each line with blank
+        # lines between. Disabling the extension drops the tags, keeps the prose.
+        #
+        # An &nbsp;-only paragraph survives as a line holding one non-breaking
+        # space, which [[:space:]] does not match -- strip it explicitly or a
+        # quoted reply is half `> ` once `quote` has prefixed every line.
+        #
+        # Always unwrapped: one paragraph is one line, which is what the
+        # soft-wrap-only editor and every recipient's reflowing client want.
+        # aerc encodes the body quoted-printable, so long lines get soft
+        # breaks on the wire and the 998-octet RFC 5322 limit is not at risk.
+        exec pandoc -f html -t gfm-raw_html --wrap=none \
+        | sed 's/\xc2\xa0//g; s/^[[:space:]]*$//' | cat -s
     '';
   };
 
@@ -2274,31 +2284,9 @@ in
     # IMAP folder, [Gmail]/Important). The full INBOX is one `gm`/folder switch
     # away in both cases.
     text = ''
-      [Work]
-      from          = Edwin Hu <ehu@law.virginia.edu>
-      source        = imap+insecure://owa:x@127.0.0.1:1143
-      outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
-      default       = ${workDefaultFolder}
-      cache-headers = true
-      # `folders` is a WHITELIST, so INBOX is deliberately absent: Focused and
-      # Other partition it exactly, and showing all three would list every
-      # message twice. `Conversation History` (Teams chat archive) is dropped
-      # for the same reason it is never read.
-      #
-      # folders-sort pins the order; without it aerc sorts alphabetically and
-      # Archive would lead. enable-folders-sort defaults true, so the listed
-      # names come first in this order and anything else follows -- but nothing
-      # else can, because `folders` admits only these.
-      # The category folders (Respond..Waiting) are mail-bridge >= 0.9.0 saved
-      # searches over INBOX, one per Outlook category the rules and the Power
-      # Automate classifier apply. They OVERLAP Focused/Other rather than
-      # partitioning anything -- the same message is in Focused and in Respond,
-      # and a message with two categories is in two of them. Listing them
-      # alongside the split is therefore not double-counting the way listing
-      # INBOX beside Focused/Other would be.
-      folders       = ${workFolderList}
-      folders-sort  = ${workFolderList}
-
+      # Personal FIRST: aerc builds its account tabs in the order the
+      # sections appear here, and personal is the one opened by reflex.
+      # There is no ordering key -- file order IS the tab order.
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
       # Through mail-bridge on 1144, not Gmail IMAP. Measured on THIS operation
@@ -2348,8 +2336,46 @@ in
       default           = Primary
       folders           = Primary,Social,Promotions,Updates,Forums,Starred,Drafts,Sent,Spam,Trash
       folders-sort      = Primary,Social,Promotions,Updates,Forums,Starred,Drafts,Sent,Spam,Trash
-      postpone          = [Gmail]/Drafts
+      # `Drafts`, not `[Gmail]/Drafts`. That spelling is a leftover from when
+      # this account was direct Gmail IMAP; the read path is mail-bridge now,
+      # and its LIST advertises BARE names -- probed on :1144: Drafts, Forums,
+      # INBOX, Primary, Promotions, Sent, Social, Spam, Starred, Trash, Updates.
+      # No `[Gmail]/*` anywhere.
+      #
+      # It is not cosmetic. `:recall` refuses outright unless the selected
+      # message is in the POSTPONE directory, so with the wrong name every
+      # draft in this account answered "use -f to recall messages not in the
+      # postpone directory" -- and `:postpone` was saving toward a mailbox that
+      # does not exist. [Work] sets no override and inherits the default
+      # `Drafts`, which is why only Personal was broken.
+      postpone          = Drafts
       cache-headers     = true
+
+      [Work]
+      from          = Edwin Hu <ehu@law.virginia.edu>
+      source        = imap+insecure://owa:x@127.0.0.1:1143
+      outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
+      default       = ${workDefaultFolder}
+      cache-headers = true
+      # `folders` is a WHITELIST, so INBOX is deliberately absent: Focused and
+      # Other partition it exactly, and showing all three would list every
+      # message twice. `Conversation History` (Teams chat archive) is dropped
+      # for the same reason it is never read.
+      #
+      # folders-sort pins the order; without it aerc sorts alphabetically and
+      # Archive would lead. enable-folders-sort defaults true, so the listed
+      # names come first in this order and anything else follows -- but nothing
+      # else can, because `folders` admits only these.
+      # The category folders (Respond..Waiting) are mail-bridge >= 0.9.0 saved
+      # searches over INBOX, one per Outlook category the rules and the Power
+      # Automate classifier apply. They OVERLAP Focused/Other rather than
+      # partitioning anything -- the same message is in Focused and in Respond,
+      # and a message with two categories is in two of them. Listing them
+      # alongside the split is therefore not double-counting the way listing
+      # INBOX beside Focused/Other would be.
+      folders       = ${workFolderList}
+      folders-sort  = ${workFolderList}
+
     '';
   };
 
@@ -2858,13 +2884,22 @@ in
   #
   # trimSignature runs on the MARKDOWN, after conversion, because it matches on
   # a "-- " line that does not survive as its own line inside HTML.
+  #
+  # The gate sniffs the TEXT, not .OriginalMIMEType. `eq .OriginalMIMEType
+  # "text/html"` is what upstream does and it does NOT fire on a
+  # multipart/alternative message -- replying to one dropped raw
+  # `<!DOCTYPE html><html ...>` straight into the editor, which was the whole
+  # symptom. Matching a real tag catches it however the type is reported, and
+  # leaves genuine plain text alone: running mail-html2md unconditionally is
+  # DESTRUCTIVE on plain text -- pandoc collapses every paragraph break and
+  # silently eats bare <https://...> autolinks (measured).
   xdg.configFile."aerc/templates/quoted_reply" = {
     force = true;
     text = ''
       X-Mailer: aerc {{version}}
 
       On {{dateFormat (.OriginalDate | toLocal) "Mon Jan 2, 2006 at 3:04 PM MST"}}, {{.OriginalFrom | names | join ", "}} wrote:
-      {{ if eq .OriginalMIMEType "text/html" -}}
+      {{ if match .OriginalText `(?is)<(!doctype|html|head|body|div|table|span|p|br)\b` -}}
       {{- exec `mail-html2md` .OriginalText | trimSignature | quote -}}
       {{- else -}}
       {{- trimSignature .OriginalText | quote -}}
@@ -2882,7 +2917,7 @@ in
       X-Mailer: aerc {{version}}
 
       Forwarded message from {{.OriginalFrom | names | join ", "}} on {{dateFormat (.OriginalDate | toLocal) "Mon Jan 2, 2006 at 3:04 PM MST"}}:
-      {{ if eq .OriginalMIMEType "text/html" -}}
+      {{ if match .OriginalText `(?is)<(!doctype|html|head|body|div|table|span|p|br)\b` -}}
       {{- exec `mail-html2md` .OriginalText -}}
       {{- else -}}
       {{- .OriginalText -}}
