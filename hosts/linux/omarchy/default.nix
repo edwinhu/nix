@@ -886,6 +886,29 @@ exit 0
     '';
   };
 
+  # aerc `i`: the selected message -> a Morgen booking link + a threaded reply
+  # draft. The sibling of `b` (aerc-cal), same bubbletea idiom.
+  #
+  # A booking link is a 1:1 instrument. calendar-availability is explicit that
+  # two or more attendees means a POLL, never a link or a hand-listed time, so
+  # this REFUSES a thread with other humans on it rather than quietly offering
+  # the wrong thing.
+  #
+  # The slot rules live in slots.go because `morgen calendar free` does not know
+  # them: it returns UTC, applies no working hours, and cannot see that the hour
+  # BEFORE a teaching commitment is also blocked.
+  aercInvite = pkgs.buildGoModule {
+    pname = "aerc-invite";
+    version = "0.1.0";
+    src = ./files/aerc-invite;
+    vendorHash = "sha256-KbkCB5DA+r9mjqHRB67uFEm9mF1jJZivrdbC+Lo2JMk=";
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postInstall = ''
+      wrapProgram $out/bin/aerc-invite \
+        --prefix PATH : ${lib.makeBinPath [ pkgs.morgen-cli pkgs.himalaya ]}
+    '';
+  };
+
   # Morgen ships no usable icon, so pull the real one from the web app's
   # apple-touch-icon (a real 180px PNG).
   morgenIcon = pkgs.fetchurl {
@@ -1390,7 +1413,7 @@ in
       # Only listed for this host: `alarm` shares omarchy-packages.nix but is
       # a headless aarch64 box with nothing to stream.
       ++ [
-        brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal telGvoice
+        brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal aercInvite telGvoice
         mailHtmlToMd mailMdToHtml
         pkgs.ghostty pkgs.sunshine
       ];
@@ -2686,6 +2709,17 @@ in
       # edited in the text editor, aerc documents address-book-cmd as unsupported
       # and hands completion to the editor.
       [compose]
+      # Never address yourself on a reply-all. aerc defaults this to true, so
+      # every reply-all put ehu@law.virginia.edu back in To/Cc alongside the
+      # real recipients.
+      #
+      # Only the CURRENT account's address is stripped -- aerc has no notion of
+      # the other account here, so replying as Work on a thread that copies
+      # eddyhu@gmail.com still leaves the personal address in Cc, and vice
+      # versa. `aliases` would teach it both, but aliases also feed the From:
+      # picker, and offering a gmail From on the o365 account is a worse
+      # failure than one stray Cc.
+      reply-to-self = false
       address-book-cmd = ${aercAddressBook}/bin/aerc-addressbook %s
 
       # Bodies are written in Markdown and never hard-wrapped: nvim's
