@@ -1747,8 +1747,9 @@ in
   # only way the profile's extensions come back on a fresh machine. They
   # auto-install + auto-update from the Web Store and can't be removed by hand
   # while the policy is present. IDs = 1Password, Paperpile, Vimium, Tampermonkey,
-  # Readwise, AdGuard, Perma.cc, Claude (copy-url is separate — loaded unpacked
-  # via --load-extension below):
+  # Readwise, AdGuard, Perma.cc, Claude, uBlock Origin Lite, Raindrop.io,
+  # Google Scholar PDF Reader, Google Scholar Button (copy-url is separate —
+  # loaded unpacked via --load-extension below):
   #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-extensions-policy.json \
   #     /etc/chromium/policies/managed/extensions.json
   # Verify: chrome://policy (Reload policies) shows ExtensionInstallForcelist.
