@@ -151,7 +151,10 @@
       forAllSystems = f: nixpkgs.lib.genAttrs (linuxSystems ++ darwinSystems) f;
       devShell = system: let pkgs = nixpkgs.legacyPackages.${system}; in {
         default = with pkgs; mkShell {
-          nativeBuildInputs = with pkgs; [ bashInteractive git sops ];
+          nativeBuildInputs = with pkgs; [
+            bashInteractive git sops
+            (python3.withPackages (ps: [ ps.pytest ]))
+          ];
           shellHook = with pkgs; ''
             export EDITOR=vim
           '';
@@ -271,6 +274,26 @@
     in
     {
       devShells = forAllSystems devShell;
+
+      # Runs the omarchy helper-script test suite. Linux-only: the tests spawn
+      # real processes and read /proc, which has no darwin equivalent.
+      checks = nixpkgs.lib.genAttrs linuxSystems (system:
+        let pkgs = nixpkgs.legacyPackages.${system}; in {
+          omarchy-files = pkgs.runCommand "omarchy-files-tests"
+            {
+              nativeBuildInputs = [ (pkgs.python3.withPackages (ps: [ ps.pytest ])) ];
+            }
+            ''
+              cp -r ${./hosts/linux/omarchy/files} files
+              # test_nix_wires_the_renamed_reaper reads ../default.nix, so the
+              # module has to sit beside files/ exactly as it does in the repo.
+              cp ${./hosts/linux/omarchy/default.nix} default.nix
+              chmod -R u+w files default.nix
+              cd files
+              python3 -m pytest -q test_preview_reap.py
+              touch $out
+            '';
+        });
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
       # Expose custom packages for quick updates without full rebuild

@@ -3195,22 +3195,29 @@ in
   # systemd.user.services (a plain attrset literal can't assign the same path
   # twice; mkMerge combines them into one definition).
   systemd.user.services = lib.mkMerge [
-    # Reap abandoned `tinymist preview` servers. typst-preview.nvim cleans up on
-    # VimLeavePre and the nvim config's reap_orphans sweeps parent-gone servers,
-    # but ONLY when a new nvim opens a Typst file -- close the browser tab and
-    # leave nvim running and nothing ever sweeps, so ~5.5 GiB per preview sits
-    # in zram until the editor exits. Measured 2026-08-25: three of them had
-    # been stranded for two days, 16.5 GiB between them.
+    # Reap abandoned preview servers: `tinymist preview`, the preview skill's
+    # http.server static servers, and its tailscale origin proxies. Nothing else
+    # sweeps them -- typst-preview.nvim only cleans up on VimLeavePre, and the
+    # preview skill's cleanup is an explicit `preview --stop` nothing calls, so
+    # every abandoned server holds its port and RSS until the machine reboots.
     #
-    # Kills on parent-gone, or on no-client AND no-CPU twice running. Both
-    # idle signals are needed because closing a tab does NOT drop the socket --
-    # chromium holds it open for hours (measured), so "no client" alone fires
-    # far too late to mean anything on its own.
-    { tinymist-reap = {
-      Unit.Description = "Reap abandoned tinymist preview servers";
+    # tinymist keeps its own criteria: parent-gone, or no-client AND no-CPU
+    # twice running. No-client alone fires far too late -- closing a tab does
+    # NOT drop the socket, chromium holds it open for hours (measured).
+    #
+    # Parent-gone does NOT transfer to the other two classes. They are spawned
+    # through setsid, which exits right after forking, so they are reparented to
+    # `systemd --user` at birth: a server two seconds old is indistinguishable
+    # from a three-day-old orphan, and parent-gone would reap live previews
+    # instantly. Their idle signal is the per-port request log instead --
+    # http.server writes a line on every request, so its mtime is a true
+    # last-used stamp. Reap when that mtime is older than 30 minutes AND the
+    # process burned no CPU across two consecutive runs.
+    { preview-reap = {
+      Unit.Description = "Reap abandoned preview servers (tinymist, static, origin proxy)";
       Service = {
         Type = "oneshot";
-        ExecStart = "${pkgs.python3}/bin/python3 ${./files/tinymist-reap.py}";
+        ExecStart = "${pkgs.python3}/bin/python3 ${./files/preview-reap.py}";
         Environment = [ "PATH=${lib.makeBinPath [ pkgs.libnotify ]}" ];
         Nice = 10;
       };
@@ -3659,8 +3666,8 @@ in
     # 30min: two consecutive idle checks means an abandoned preview dies within
     # an hour, which is soon enough for 5.5 GiB and slow enough that a preview
     # left open over a coffee break survives.
-    { tinymist-reap = {
-      Unit.Description = "Reap abandoned tinymist preview servers (every 30min)";
+    { preview-reap = {
+      Unit.Description = "Reap abandoned preview servers (tinymist, static, origin proxy; every 30min)";
       Timer = {
         OnStartupSec = "10min";
         OnUnitActiveSec = "30min";
