@@ -1,7 +1,7 @@
-// aerc-cal — the selected message becomes a calendar event. Bound to `b` in
-// aerc: Gemini reads the mail, this form opens beside it so the extraction can
-// be checked against the message it came from, and `morgen calendar create`
-// runs only on ctrl+s.
+// aerc-cal — the selected message becomes a calendar event. Bound to `i`
+// (invite) in aerc: Gemini reads the mail, this form opens beside it so the
+// extraction can be checked against the message it came from, and `morgen
+// calendar create` runs only on ctrl+s.
 //
 // Styled after brscan-tui (rounded panels, selected-row highlight, keybind
 // bar) and coloured from the ANSI 16-palette, so it follows the omarchy theme

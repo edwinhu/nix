@@ -1,5 +1,6 @@
 // aerc-invite — the selected message becomes a Morgen booking link and a
-// threaded reply draft. Bound to `i` in aerc, the sibling of `b` (aerc-cal).
+// threaded reply draft. Bound to `b` (booking) in aerc, the sibling of `i`
+// (aerc-cal).
 //
 // Same two invariants as aerc-cal:
 //  1. stdin is the MESSAGE. aerc's :pipe hands the mail over fd 0, so the TUI
