@@ -862,6 +862,16 @@ exit 0
     text = ''exec python3 ${./files/aerc-addressbook.py} "$@"'';
   };
 
+  # arc-kick: the Beam is silent -> find out why, fix what software can. On
+  # demand only, never a timer: the failure is rare, not time-critical, and a
+  # poller would be watching for something it cannot repair anyway. Keeps no
+  # state — every fact is read live from the device that owns it.
+  arcKick = pkgs.writeShellApplication {
+    name = "arc-kick";
+    runtimeInputs = [ pkgs.curl pkgs.libnotify ];  # pactl/systemctl come from the system
+    text = ''exec bash ${./files/arc-kick.sh} "$@"'';
+  };
+
   # aerc `b`: the selected message -> a calendar event, Superhuman-style.
   # Gemini reads the mail, a Textual form sits beside the message so the
   # extraction can be checked against it, and `morgen calendar create` runs
@@ -1417,6 +1427,7 @@ in
       # a headless aarch64 box with nothing to stream.
       ++ [
         brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal aercInvite telGvoice
+        arcKick
         mailHtmlToMd mailMdToHtml
         pkgs.ghostty pkgs.sunshine
       ];
