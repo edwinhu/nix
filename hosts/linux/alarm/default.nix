@@ -11,6 +11,9 @@ in
     # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
     # systemd user services + a timer here (Linux) and launchd agents on macOS.
     ../../../modules/shared/reader-services.nix
+    # chromium-flags.conf (CDP :9222, Google sign-in, Omarchy migration guards).
+    # Shared with the omarchy host; the /etc policies it needs are documented there.
+    ../../../modules/linux/chromium.nix
   ];
 
   # Basic home-manager configuration
