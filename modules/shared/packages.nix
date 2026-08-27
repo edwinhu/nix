@@ -37,6 +37,7 @@ with pkgs; [
   # here otherwise). One per language actually used across ~/projects:
   # python, go, typescript, rust.
   pyright
+  go              # gopls is inert without the toolchain: it shells out to `go list`
   gopls
   typescript-language-server
   typescript
