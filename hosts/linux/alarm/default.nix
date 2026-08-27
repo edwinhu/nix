@@ -192,7 +192,9 @@ in
     beepertexts = {
       name = "Beeper";
       comment = "Beeper messaging app";
-      exec = "beeper --force-renderer-accessibility %U";  # expose a11y tree to hints (Electron)
+      # Use the absolute GUI path: ~/.local/bin/beeper is the Desktop API CLI
+      # and appears earlier on PATH in Walker's environment.
+      exec = "${pkgs.beeper}/bin/beeper --force-renderer-accessibility %U";  # expose a11y tree to hints (Electron)
       terminal = false;
       type = "Application";
       icon = "beeper";

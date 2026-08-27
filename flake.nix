@@ -903,9 +903,11 @@ EOF
                     twitter-color-emoji
                   ];
                   extraInstallCommands = ''
-                    # Add desktop entry and icon from extracted AppImage
-                    mkdir -p $out/share/applications $out/share/icons/hicolor/512x512/apps
-                    cp ${extracted}/beepertexts.desktop $out/share/applications/ || true
+                    # The AppImage's desktop file currently has Exec=undefined.
+                    # The host declares the correct launcher via
+                    # xdg.desktopEntries.beepertexts; retain only its icon here.
+                    rm -rf $out/share/applications
+                    mkdir -p $out/share/icons/hicolor/512x512/apps
                     cp ${extracted}/beepertexts.png $out/share/icons/hicolor/512x512/apps/beeper.png || true
                   '';
                 });
