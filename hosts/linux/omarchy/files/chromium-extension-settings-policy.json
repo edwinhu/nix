@@ -1,0 +1,19 @@
+{
+  "ExtensionSettings": {
+    "femnahohginddofgekknfmaklcbpinkn": {
+      "runtime_blocked_hosts": ["*://*"],
+      "runtime_allowed_hosts": [
+        "*://*.youtube.com",
+        "*://*.reddit.com",
+        "*://*.x.com",
+        "*://*.twitter.com",
+        "*://*.instagram.com",
+        "*://*.facebook.com",
+        "*://*.tiktok.com",
+        "*://*.twitch.tv",
+        "*://*.linkedin.com",
+        "*://news.ycombinator.com"
+      ]
+    }
+  }
+}

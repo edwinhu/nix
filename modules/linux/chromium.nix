@@ -31,11 +31,26 @@
   # auto-install + auto-update from the Web Store and can't be removed by hand
   # while the policy is present. IDs = 1Password, Paperpile, Vimium, Tampermonkey,
   # Readwise, AdGuard, Perma.cc, Claude, uBlock Origin Lite, Raindrop.io,
-  # Google Scholar PDF Reader, Google Scholar Button (copy-url is separate —
-  # loaded unpacked via --load-extension below):
+  # Google Scholar PDF Reader, Google Scholar Button, one sec (copy-url is
+  # separate — loaded unpacked via --load-extension below):
   #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-extensions-policy.json \
   #     /etc/chromium/policies/managed/extensions.json
   # Verify: chrome://policy (Reload policies) shows ExtensionInstallForcelist.
+  #
+  # one sec needs a FIFTH policy to be usable. Its manifest matches <all_urls> at
+  # document_start and mounts a 2.7MB React bundle (js/vendor.js) into a shadow
+  # host on EVERY page — enough per-navigation work to read as the browser
+  # hanging. Its own dashboard does NOT reduce that: the site list only decides
+  # where it *intervenes*, not where it *injects*. ExtensionSettings is what
+  # actually scopes injection — runtime_blocked_hosts blocks content scripts
+  # outright, so listing only the sites worth guarding keeps the bundle off
+  # everything else:
+  #   sudo install -Dm644 hosts/linux/omarchy/files/chromium-extension-settings-policy.json \
+  #     /etc/chromium/policies/managed/extension-settings.json
+  # Edit runtime_allowed_hosts there to change which sites one sec guards.
+  # Verify on a blocked page: the content script sets a marker attribute, so
+  #   document.documentElement.getAttributeNames().some(n => n.includes('one-sec'))
+  # must be false there and true on an allowed one.
   #
   # Tampermonkey userscripts are PROVISIONED declaratively — a FOURTH policy.
   # Tampermonkey ships storage.managed_schema (schema.json in its bundle) with a
@@ -99,7 +114,29 @@
       # sources. This file REPLACES Omarchy's (force = true), so anything in
       # /usr/share/omarchy/config/chromium-flags.conf that is not restated here
       # is silently lost -- diff against that file after an Omarchy upgrade.
-      --enable-features=TouchpadOverscrollHistoryNavigation,WebRTCPipeWireCapturer
+      # AcceleratedVideoDecodeLinux*GL: Chromium ships VA-API decode OFF on
+      # Linux. Without it every YouTube AV1 stream is decoded in software by
+      # dav1d -- 15 worker threads, ~180% CPU and >1GB RSS in ONE renderer,
+      # which is what a "hanging" browser here actually is. radeonsi's VA
+      # driver is present (/usr/lib/dri/radeonsi_drv_video.so) and Strix
+      # Halo's VCN decodes AV1/VP9/H.264 in hardware. ZeroCopy keeps decoded
+      # frames on the GPU instead of round-tripping them through system RAM.
+      # Only the LAST --enable-features wins, so these MUST stay on this one
+      # line with the two above. Verify: chrome://gpu shows "Video Decode:
+      # Hardware accelerated", and playing an AV1 video spawns no dav1d
+      # threads (ls /proc/<renderer>/task/*/comm | grep dav1d).
+      --enable-features=TouchpadOverscrollHistoryNavigation,WebRTCPipeWireCapturer,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL
+      # The features above are NOT sufficient on their own: Chromium's
+      # gpu_driver_bug_list applies `disable_vaapi` to this Mesa/radeonsi combo,
+      # which leaves chrome://gpu claiming "Video Decode: Hardware accelerated"
+      # while Video Acceleration Information lists NO decode profiles at all --
+      # so AV1 still fell through to dav1d. There is no per-workaround override,
+      # only this all-or-nothing flag. Measured on a throwaway profile: with it,
+      # decode profiles populate (av1 profile main to 8192x4352) and a 1080p60
+      # AV1 YouTube stream plays with ZERO dav1d threads. The workarounds it
+      # also drops are stale ATI/WebGL ones (crbug 518889 is a 2015 fossil);
+      # revisit if WebGL or canvas starts misbehaving.
+      --disable-gpu-driver-bug-workarounds
       # Expose the renderer a11y tree so `hints` can read real elements instead
       # of falling back to opencv edge-detection (same reason the Electron
       # desktop entries pass it, and why dconf sets toolkit-accessibility).
