@@ -993,8 +993,25 @@ exit 0
     else
       # Nothing for this project yet. `workspace create` already yields a root pane
       # at --cwd; calling `tab create` after it would strand an empty shell tab.
-      WS=$(herdr workspace create --label "$(basename "$DIR")" --cwd "$DIR") \
-        || { echo "herdr workspace create failed for $DIR" >&2; exit 1; }
+      # Creation failed transiently at 03:00 on 2026-08-31, then succeeded unchanged
+      # by hand. Retry, and keep stderr separate so the mise banner cannot corrupt
+      # the JSON payload jq parses (the same constraint as `agent start` below).
+      WS=""
+      WS_ERR=""
+      ERR_FILE=$(mktemp "''${TMPDIR:-/tmp}/claude-herdr-spawn.XXXXXX")
+      for _ in $(seq 1 5); do
+        if WS=$(herdr workspace create --label "$(basename "$DIR")" --cwd "$DIR" 2>"$ERR_FILE"); then
+          break
+        fi
+        WS=""
+        WS_ERR=$(cat "$ERR_FILE")
+        sleep 1
+      done
+      rm -f "$ERR_FILE"
+      if [ -z "''${WS:-}" ]; then
+        echo "herdr workspace create failed for $DIR: ''${WS_ERR:-no error output}" >&2
+        exit 1
+      fi
       PANE=$(printf '%s' "$WS" | jq -r '.result.root_pane.pane_id')
       TAB=$(printf '%s' "$WS" | jq -r '.result.root_pane.tab_id')
       herdr tab rename "$TAB" "$LABEL" >/dev/null 2>&1 || true
