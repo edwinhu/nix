@@ -163,6 +163,15 @@ let
         default = 2;
         description = "Historical generations kept beside the current one.";
       };
+      retainGenerations = lib.mkOption {
+        type = lib.types.ints.unsigned;
+        default = 3;
+        description = ''
+          Historical generations retain-apply keeps beside the current one.
+          The current generation is additional, so the default retains four
+          generations in total.
+        '';
+      };
       budgets = lib.mkOption {
         type = budgetsType;
         description = "Cumulative finite ceilings for one cycle.";
@@ -235,6 +244,20 @@ let
     "--provider ${a.provider}"
     "--state ${stateDb}"
   ] ++ budgetFlags a);
+
+  # Retention is applied separately from cycle, which deliberately only plans
+  # it. `retain-apply` takes `--retain`, not `--keep-generations`: the packaged
+  # parser permits the latter for cycle only and would reject it here. It is not
+  # a budgeted provider operation either, so carrying the seven --max-* flags
+  # would likewise make every scheduled invocation fail at parse.
+  retainCommand = a: lib.concatStringsSep " " [
+    exe
+    "archive account retain-apply"
+    "--account ${a.address}"
+    "--provider ${a.provider}"
+    "--state ${stateDb}"
+    "--retain ${toString a.retainGenerations}"
+  ];
 
   # Which of the two the timer fires. One expression, so the unit body cannot
   # drift from the option.
@@ -314,6 +337,31 @@ let
     };
     Install.WantedBy = cycleWantedBy a [ "timers.target" ];
   };
+
+  retainUnit = name: a: lib.nameValuePair "mail-bridge-archive-retain-${name}" {
+    Unit.Description = "mail-bridge archive retention for ${a.address}";
+    Service = {
+      Type = "oneshot";
+      ExecStartPre = ensureStateDir;
+      # The shared lock makes the destructive apply wait outside the process, so
+      # it can never overlap a sync, drain, or another account's retention pass.
+      ExecStart = "${pkgs.util-linux}/bin/flock -w 540 %t/mail-bridge-cycle.lock ${retainCommand a}";
+    };
+    Install.WantedBy = cycleWantedBy a [ ];
+  };
+
+  retainTimer = name: a: lib.nameValuePair "mail-bridge-archive-retain-${name}" {
+    Unit.Description = "mail-bridge archive retention cadence for ${a.address}";
+    Timer = {
+      OnCalendar = "daily";
+      # Spread the two account jobs across the hour; flock remains the hard
+      # guarantee if their randomized windows still overlap a cycle or each other.
+      RandomizedDelaySec = "1h";
+      Persistent = true;
+      Unit = "mail-bridge-archive-retain-${name}.service";
+    };
+    Install.WantedBy = cycleWantedBy a [ "timers.target" ];
+  };
 in
 {
   options.services.mail-bridge = {
@@ -348,9 +396,12 @@ in
 
   config = lib.mkIf (cfg.accounts != { }) {
     systemd.user.services =
-      (lib.mapAttrs' serveUnit cfg.accounts) // (lib.mapAttrs' cycleUnit cfg.accounts);
+      (lib.mapAttrs' serveUnit cfg.accounts)
+      // (lib.mapAttrs' cycleUnit cfg.accounts)
+      // (lib.mapAttrs' retainUnit cfg.accounts);
 
-    systemd.user.timers = lib.mapAttrs' cycleTimer cfg.accounts;
+    systemd.user.timers =
+      (lib.mapAttrs' cycleTimer cfg.accounts) // (lib.mapAttrs' retainTimer cfg.accounts);
 
     # Gates on the EVALUATED units, not on the let-bindings above, so a caller
     # that overrides a unit body is judged too. They fail at eval: no build, no
@@ -359,6 +410,8 @@ in
       let
         exec = name: lib.concatStringsSep " "
           (lib.toList (config.systemd.user.services."mail-bridge-archive-cycle-${name}".Service.ExecStart));
+        retainExec = name: lib.concatStringsSep " "
+          (lib.toList (config.systemd.user.services."mail-bridge-archive-retain-${name}".Service.ExecStart));
         listenerExec = name: lib.concatStringsSep " "
           (lib.toList (config.systemd.user.services."mail-bridge-archive-${name}".Service.ExecStart));
         env = name: lib.concatStringsSep " "
@@ -405,6 +458,34 @@ in
               "mail-bridge-archive-cycle-${name}: all seven finite budget flags are "
               + "required by the parser for every provider-touching operation, sync "
               + "included. ExecStart = ${exec name}";
+          }
+          {
+            assertion =
+              lib.hasInfix "%t/mail-bridge-cycle.lock " (retainExec name)
+              && lib.hasInfix "archive account retain-apply " (retainExec name)
+              && lib.hasInfix "--retain ${toString a.retainGenerations}" (retainExec name)
+              && !(lib.hasInfix "--keep-generations " (retainExec name))
+              && lib.all (f: !(lib.hasInfix "${f} " (retainExec name))) [
+                "--max-requests"
+                "--max-pages"
+                "--max-messages"
+                "--max-raw-bytes"
+                "--max-retries"
+                "--max-elapsed-ms"
+                "--max-operations"
+              ];
+            message =
+              "mail-bridge-archive-retain-${name}: retain-apply must take the shared "
+              + "cycle lock and --retain, with neither --keep-generations nor any "
+              + "provider-operation budget flag. ExecStart = ${retainExec name}";
+          }
+          {
+            assertion =
+              (config.systemd.user.timers."mail-bridge-archive-retain-${name}".Install.WantedBy or [ ])
+              == (config.systemd.user.timers."mail-bridge-archive-cycle-${name}".Install.WantedBy or [ ]);
+            message =
+              "mail-bridge-archive-retain-${name}.timer must follow the cycle timer's "
+              + "mode/cycleEnabled gate exactly.";
           }
           {
             # The listener is provider-free by construction; a token reaching it
