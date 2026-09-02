@@ -754,6 +754,7 @@ exit 0
   # helper, which awaits its own screenshot instead of polling the output file
   # the way headless chromium's never-exiting --screenshot CLI forced.
   # BUN_WEBVIEW_LIB is how the script finds that helper in the store.
+  checkWidows = pkgs.callPackage ../../../modules/shared/check-widows.nix { };
   bunPinned = pkgs.callPackage ../../../modules/shared/bun-pinned.nix { };
   bunWebview = pkgs.callPackage ../../../modules/shared/bun-webview.nix { bun = bunPinned; };
   mailPreview = pkgs.writeShellApplication {
@@ -1039,17 +1040,24 @@ exit 0
     # session runs the assistant persona instead of the coding one.
     CLAUDE_AGENT_ARGS=()
     [ -n "$CLAUDE_AGENT" ] && CLAUDE_AGENT_ARGS=(--agent "$CLAUDE_AGENT")
-    for _ in $(seq 1 10); do
+    # RETRY ON ANY ERROR, not just agent_pane_busy. `agent start` requires the pane to
+    # already be at its interactive shell prompt and rejects synchronously if it is not --
+    # but the rejection string is NOT always `agent_pane_busy`: on the cold/idle 03:00 box the
+    # shell prompt is not up within the ~40ms after tab.create, and herdr returned a DIFFERENT
+    # not-ready error that the old `*) break` treated as fatal, so the nightly vault-compile
+    # spawn died four nights running (agent.start errored once, no retry). Every error here is
+    # either transient (retrying is the fix) or persistent (15 tries then the exit below fires
+    # the same way), so retry uniformly and record each reason -- the old path deleted the
+    # stderr tempfile and left `outcome="error"` with no string in any log.
+    for _ in $(seq 1 15); do
       if STARTED=$(herdr agent start "$AGENT_NAME" --kind claude --pane "$PANE" --timeout 60000 \
                      -- --rc --effort medium -n "$LABEL" ''${CLAUDE_AGENT_ARGS[@]+"''${CLAUDE_AGENT_ARGS[@]}"} 2>"$ERR_FILE"); then
         break
       fi
       STARTED=""
       START_ERR=$(cat "$ERR_FILE")
-      case "$START_ERR" in
-        *agent_pane_busy*) sleep 1 ;;
-        *) break ;;
-      esac
+      echo "agent start not ready (retrying): ''${START_ERR:-no error output}" >&2
+      sleep 1
     done
     rm -f "$ERR_FILE"
     if [ -z "''${STARTED:-}" ] || ! printf '%s' "$STARTED" | jq -e '.result.agent.interactive_ready == true' >/dev/null 2>&1; then
@@ -1444,6 +1452,7 @@ in
       # a headless aarch64 box with nothing to stream.
       ++ [
         brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal aercInvite telGvoice
+        checkWidows
         arcKick
         mailHtmlToMd mailMdToHtml
         pkgs.ghostty pkgs.sunshine
@@ -1631,6 +1640,11 @@ in
   # = act) documented in the linux-computer-use skill.
   home.sessionVariables.YDOTOOL_SOCKET = "\${XDG_RUNTIME_DIR}/.ydotool_socket";
 
+  # Shared Bun.WebView helper. The mail-preview wrapper exports this itself, but
+  # unwrapped callers (~/.claude/skills/recipe-add/scripts/clip-recipe.ts, run as
+  # a bare `bun <path>`) have no wrapper to inherit it from and die without it.
+  home.sessionVariables.BUN_WEBVIEW_LIB = "${bunWebview}/lib/bun-webview";
+
   # hints (keyboard-driven GUI navigation). Config, accessibility toggle and the
   # hintsd daemon service mirror hosts/linux/alarm — see there for the rationale
   # behind the role/state allow-lists. hintsd needs the user in the `input` group
@@ -1757,7 +1771,16 @@ in
   # because it's tied to THIS box's hardware — the DCN31 GPU + BenQ display and
   # the ALC623 audio codec — and would be wrong on the alarm host. force = true
   # overrides the Omarchy-seeded defaults. See each file for the rationale.
-  #   - hypridle.conf: never dpms-off the panel (DCN31 dp_blank wedge workaround)
+  #   - hypridle.conf: DEAD CONFIG since 2026-08-14. omarchy 4.0 (quattro) removed
+  #     the hypridle package outright and replaced it with its own idle service
+  #     (shell/plugins/services/idle). This file is still deployed but nothing
+  #     reads it. The DCN31 dp_blank guard now lives in
+  #     ~/dotfiles/.local/bin/omarchy-brightness-display-noblank, shadowed over
+  #     /usr/share/omarchy/bin/omarchy-brightness-display (first in omarchy-shell's
+  #     PATH) by install-omarchy-brightness-guard.sh. quattro's lock service calls
+  #     `omarchy-brightness-display off` from an idleBlankTimer, which is the same
+  #     dpms-disable that wedges the DP link. pacman restores the stock symlink on
+  #     omarchy upgrade -- re-run the installer after `omarchy update`.
   #   - monitors.conf: DP-4 @ preferred(144), scale 2
   #   - 50-prefer-hdmi.conf: disable onboard analog out, prefer HDMI/DP audio
   xdg.configFile."hypr/hypridle.conf" = { source = ./files/hypridle.conf; force = true; };
@@ -3322,20 +3345,23 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
-    { host-dispatch = {
-      Unit = {
-        Description = "Ensure host-dispatch Claude session is running";
-        After = [ "network-online.target" ];
-        Wants = [ "network-online.target" ];
-      };
-      Service = {
-        Type = "oneshot";
-        # KillMode=process: the default control-group teardown would kill the
-        # freshly-spawned `claude ... --bg` supervisor when ensure.sh exits.
-        KillMode = "process";
-        ExecStart = "/bin/bash -lc %h/.claude/agents/host-dispatch/ensure.sh";
-      };
-    }; }
+    # RETIRED 2026-09-02 — superseded by Dispatch (Claude Desktop spawns a local
+    # session from the phone natively). Nothing depended on this: the scheduled
+    # routines call agent-msg + claude-herdr-spawn directly. Eight of nine
+    # dispatcher sessions ever created here took zero user turns. The agent dir
+    # symlink above is deliberately kept so re-enabling is just uncommenting.
+    # { host-dispatch = {
+    #   Unit = {
+    #     Description = "Ensure host-dispatch Claude session is running";
+    #     After = [ "network-online.target" ];
+    #     Wants = [ "network-online.target" ];
+    #   };
+    #   Service = {
+    #     Type = "oneshot";
+    #     KillMode = "process";
+    #     ExecStart = "/bin/bash -lc %h/.claude/agents/host-dispatch/ensure.sh";
+    #   };
+    # }; }
     # brscan-skey: watch the DS-740D's Start button, scan-to-PDF on press. Runs
     # in the graphical session (as the user — the udev rule grants USB access) so
     # the action writes to ~/scans. The daemon reads /opt/brother/scanner/
@@ -3603,14 +3629,15 @@ in
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
-    { host-dispatch = {
-      Unit.Description = "Periodically ensure host-dispatch Claude session is running";
-      Timer = {
-        OnBootSec = "30s";
-        OnUnitActiveSec = "5min";
-      };
-      Install.WantedBy = [ "timers.target" ];
-    }; }
+    # RETIRED 2026-09-02 — see the host-dispatch note in systemd.user.services.
+    # { host-dispatch = {
+    #   Unit.Description = "Periodically ensure host-dispatch Claude session is running";
+    #   Timer = {
+    #     OnBootSec = "30s";
+    #     OnUnitActiveSec = "5min";
+    #   };
+    #   Install.WantedBy = [ "timers.target" ];
+    # }; }
   ];
 
   # Desktop entries - only the custom ones not provided by Omarchy
