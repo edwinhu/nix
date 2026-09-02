@@ -48,6 +48,11 @@ let
   # source-built tools not in the shared (cross-platform) list. Several GL apps
   # here are nixGL-wrapped in flake.nix's Linux overlay (see nix/CLAUDE.md).
   linuxOnly = with pkgs; [
+    # Wired-NIC diagnostics: link-detected, negotiated speed/duplex. Not in the
+    # Omarchy base; `carrier`/operstate in /sys answer "is there a link" without
+    # it, but ethtool is what reads the negotiated rate.
+    ethtool
+
     # Communication / media
     beeper
     stremio-linux-shell
