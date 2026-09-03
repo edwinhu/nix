@@ -787,10 +787,20 @@ exit 0
   # and vaxis silently falls back to half blocks and draws nothing): the widget
   # emitted f=100 PNG transmits followed by `a=p` -- a placement.
   #
-  # No `!`. The bang runs a filter interactively and hands it the whole screen,
-  # which would make scrolling this script's problem; measured `less -R` passes
-  # all 8750 bytes of a sixel through untouched, so aerc's own pager keeps
-  # working and the text above the image stays scrollable.
+  # THE `!` IS LOAD-BEARING; without it the sixel is printed as TEXT. A plain
+  # filter's stdout goes into aerc's own pager widget, which is not a terminal
+  # and has no VT parser -- the payload lands in the message view as literal
+  # `q"1;1;900;327#0;2;91;91;91...`. Only the bang form runs the filter in the
+  # embedded terminal, which is the thing that decodes sixel at all. Measured
+  # both ways in a throwaway aerc against a maildir fixture: without `!` the
+  # escape is visible as characters, with `!` it renders as a picture.
+  #
+  # "less -R passes a sixel through untouched" is TRUE and irrelevant -- it
+  # measures the pager as a byte pipe, not the widget that displays the bytes.
+  # Do not use it to argue the bang away again.
+  #
+  # The cost of the bang is real: aerc hands the filter the whole screen, so
+  # scrolling a long message is this script's problem, not the pager's.
   #
   # stdin is consumed once and both halves need it, so the part is buffered and
   # replayed rather than piped twice.
@@ -2708,7 +2718,7 @@ in
       #
       # Real image/* PARTS are a different code path again and render inline --
       # see the [filters] note above about not registering an image/* filter.
-      text/html=${aercHtmlSixel}
+      text/html=!${aercHtmlSixel}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
