@@ -833,7 +833,7 @@ exit 0
   #
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
-  aercHtmlChawan = pkgs.writeShellScript "aerc-html-chawan" ''
+  aercHtmlChawanUnchecked = pkgs.writeShellScript "aerc-html-chawan-unchecked" ''
     export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.imagemagick pkgs.coreutils pkgs.ncurses ]}:$PATH
     set -u
     PART="$(cat)"
@@ -891,8 +891,21 @@ exit 0
     # responsive mail lays out in its narrow form and is then stretched across
     # the desktop. Filling the pane and getting the desktop layout are not both
     # available while the px-to-cell ratio is fixed.
+    # Target a CSS viewport ABOVE the mail breakpoints. 480, 600 and 640px are
+    # the standard ones, and a 640px target landed the viewport on 612px here --
+    # inside the 600-640 band -- so mails served their MOBILE layout. The tell
+    # was that the same mail scales up on a phone held sideways, which clears
+    # the band. 612px also overflowed: the outer table reached col 217 of 204
+    # and chawan clipped the remainder off the right edge.
+    #
+    # pixels-per-column is an integer, so viewport = COLS * PPC is quantised and
+    # only a few widths are reachable. ceil() takes the SMALLEST viewport that
+    # still clears the breakpoints, which is also the one that fills the most
+    # pane -- a wider viewport shrinks the mail. At 204 cols that is 816px:
+    # measured p90 76% of the pane, outer table 80%, nothing clipped.
+    TARGET=700
     COLS=''${COLUMNS:-$(tput cols 2>/dev/null </dev/tty || echo 80)}
-    PPC=$(python3 -c "print(max(1, round(640 / max(1, $COLS))))" 2>/dev/null || echo "$CW")
+    PPC=$(python3 -c "import math; print(max(1, math.ceil($TARGET / max(1, $COLS))))" 2>/dev/null || echo "$CW")
     cha -o buffer.images=true \
         -o display.image-mode=sixel \
         -o display.sixel-colors=256 \
@@ -902,6 +915,33 @@ exit 0
         -o display.force-pixels-per-line=true \
         "http://127.0.0.1:$PORT/index.html" < /dev/tty
     exit 0
+  '';
+
+  # BUILD-TIME GATE, because this failure mode is completely silent.
+  #
+  # An unescaped ''${NAME:-default} is not a shell expansion in a Nix '' string:
+  # Nix reads it as the LAMBDA `NAME: -default`, which PARSES, so nothing fails
+  # at eval, at build, or at run. It is stringified into the script as the bare
+  # text `NAME:-default`; the width computation then throws, falls back to the
+  # cell width, and every mail renders in a quarter of the pane. That shipped and
+  # stayed live through several rounds of debugging. Assert on the BUILT script,
+  # which is the only artefact where the damage is visible.
+  aercHtmlChawan = pkgs.runCommand "aerc-html-chawan" { } ''
+    if grep -nE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[A-Za-z_][A-Za-z0-9_]*:-' \
+         ${aercHtmlChawanUnchecked}; then
+      echo "" >&2
+      echo "aerc-html-chawan: the line(s) above assign a bare NAME:-default," >&2
+      echo "which is what an unescaped dollar-brace collapses to inside a Nix" >&2
+      echo "multiline string. The shell sees a literal, not an expansion." >&2
+      exit 1
+    fi
+    # The positive half: the width lever must still BE an expansion. A gate that
+    # only forbids the broken spelling passes a script where the line is gone.
+    if ! grep -qE '^[[:space:]]*COLS=\$\{' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: COLS is not assigned from a shell expansion." >&2
+      exit 1
+    fi
+    ln -s ${aercHtmlChawanUnchecked} $out
   '';
 
   aercHtmlSixel = pkgs.writeShellScript "aerc-html-sixel" ''
