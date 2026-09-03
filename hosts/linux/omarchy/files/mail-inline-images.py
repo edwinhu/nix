@@ -12,6 +12,8 @@ render its text rather than hang the message view.
 import concurrent.futures as cf, hashlib, os, re, sys, urllib.request
 
 DIR, TIMEOUT, MAX = sys.argv[1], float(sys.argv[2]), int(sys.argv[3])
+# Zoom factor. 1.0 renders the mail at its authored size.
+SCALE = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
 html = sys.stdin.read()
 
 urls, seen = [], set()
@@ -51,16 +53,28 @@ if urls:
 for u, name in got.items():
     html = html.replace(u, name)
 
-# NOTHING ELSE IS REWRITTEN. Only the image src values above change; the mail's
-# own HTML, CSS and layout are passed through untouched.
+# ZOOM THE WHOLE MAIL, BOTH HALVES OR NEITHER.
 #
-# Two attempts at "improving" the layout were tried and both made it worse, so
-# do not add a third without a screenshot to justify it:
-#   * a centring wrapper injected inside <body> -- moved the block by one cell
-#     and fixed nothing that mattered;
-#   * relaxing every fixed width at or above 500px to 100%, to spend the whole
-#     pane -- a newsletter's 640px shell is a DESIGN, and stretching it pulled
-#     its internal proportions apart.
-# A mail is laid out for a narrow reading column on purpose. Render it as sent.
+# A newsletter is a fixed ~640px design. chawan renders that faithfully, so in a
+# ~180-column pane it is a 40-column ribbon with the rest of the desktop blank.
+#
+# Widening the BOXES alone was tried and looked worse: chawan emits an image at
+# its natural pixel size whatever cell ratio it is given (measured -- a 300px
+# image stayed 300x120 at pixels-per-column 16, 8 and 5), so the layout stretched
+# while every photo stayed put and the proportions came apart. Scaling the image
+# FILES by the same factor is what keeps the design intact while making it fill
+# the pane.
+if SCALE > 1.01:
+    # WIDEN THE BOXES ONLY. The image FILES are deliberately untouched: an
+    # earlier version re-encoded each one through `magick` at the same factor,
+    # and that is what made every image vanish (measured: 0 placements on both
+    # aerc 0.21.0 and 0.22.0). Layout width and image rendering are independent;
+    # coupling them was the mistake.
+    def _scale_px(m):
+        return f"{m.group(1)}{max(1, round(int(m.group(2)) * SCALE))}"
+
+    html = re.sub(r'(?i)(<(?:table|td|th|div)\b[^>]*?\s(?:width)=")(\d+)', _scale_px, html)
+    html = re.sub(r"(?i)\b((?:max-|min-)?width\s*:\s*)(\d+)(?=px)", _scale_px, html)
+
 sys.stdout.write(html)
 sys.stderr.write("inlined %d/%d images\n" % (len(got), len(urls)))

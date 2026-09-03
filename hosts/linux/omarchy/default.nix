@@ -834,7 +834,7 @@ exit 0
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
   aercHtmlChawan = pkgs.writeShellScript "aerc-html-chawan" ''
-    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.coreutils ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.imagemagick pkgs.coreutils ]}:$PATH
     set -u
     PART="$(cat)"
     DIR="$(mktemp -d)"
@@ -842,7 +842,29 @@ exit 0
     cleanup() { [ -n "$SRV" ] && kill "$SRV" 2>/dev/null; rm -rf "$DIR"; }
     trap cleanup EXIT INT TERM HUP
 
-    python3 ${./files/mail-inline-images.py} "$DIR" 4 40 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
+    # Zoom the mail to the pane. A newsletter is authored at ~640px for a mail
+    # client's reading column; this terminal is several times that, so without a
+    # factor the mail renders as a narrow ribbon with the desktop blank beside
+    # it. COLUMNS is the viewer's own width, CW the real cell width, and the
+    # design width is the de-facto 640px every mass-mail template uses. Capped
+    # at 3x: past that the upscaled photos are visibly soft.
+    COLS=''${COLUMNS:-80}
+    # ZOOM OFF -- a measured trade, not an oversight.
+    #
+    # WIDTH AND IMAGES ARE COUPLED, THROUGH THE VIEWPORT CULL. vaxis >= 0.16.0
+    # drops any graphic whose box leaves the viewport on EITHER axis
+    # (`img.origin.col+img.cols > vt.width()`, widgets/term/term.go). Widening
+    # the mail pushes image origins outward -- a td width="225" becomes 675, the
+    # columns sum past their container -- and every image is culled.
+    #
+    # Measured, three ways, all zero images: boxes+image files scaled together;
+    # boxes scaled alone with the files untouched; and the same on aerc 0.21.0.
+    # So it is not the image encoding and not the file size -- it is the cull.
+    #
+    # The choice is therefore: images at the mail's authored ~640px width (35 of
+    # 204 columns on this display), or full width with no images. Images win.
+    SCALE=1.0
+    python3 ${./files/mail-inline-images.py} "$DIR" 4 40 "$SCALE" <<< "$PART" > "$DIR/index.html" 2>/dev/null \
       || printf '%s' "$PART" > "$DIR/index.html"
 
     CW=16; CH=36
@@ -2883,7 +2905,8 @@ in
       # the override is in the package set at all; this catches its removal at
       # eval, before any build. See modules/linux/aerc-uidvalidity.nix.
       {
-        assertion = pkgs.aerc.uidValidityBackport or false;
+        assertion = (pkgs.aerc.uidValidityBackport or false)
+          || lib.versionAtLeast pkgs.aerc.version "0.22.0";
         message =
           "aerc ${pkgs.aerc.version} lacks the CheckMail UIDVALIDITY backport "
           + "(passthru.uidValidityBackport unset). The Linux overlay in "
