@@ -767,6 +767,48 @@ exit 0
     '';
   };
 
+  # text/html filter: the chawan text dump, then the SAME message rendered and
+  # emitted as sixel underneath it.
+  #
+  # SIXEL, NOT KITTY, AND THE DIFFERENCE IS THE WHOLE REASON THIS WORKS.
+  # aerc's embedded terminal is vaxis v0.15.0's widgets/term (aerc 0.21.0's
+  # pin). Its APC branch only does `postEvent(EventAPC)` -- a kitty image from
+  # a child is parsed and dropped, which is why the Chromium/chafa path never
+  # showed anything. Its DCS branch DECODES sixel to an image.Image, appends it
+  # to vt.graphics, and the draw loop re-encodes it for the OUTER terminal via
+  # vaxis.Image.Draw. On ghostty that re-encoding is kitty graphics.
+  #
+  # That conversion is why the earlier probe concluded "no filter can change
+  # this" and was wrong: it counted the filter's own escapes in aerc's output,
+  # and aerc never forwards them -- it re-encodes. A working sixel and a
+  # dropped one both yield zero sixel bytes downstream. Verified instead by
+  # running this filter inside the real widget under a pty that reports a pixel
+  # size and answers the kitty capability query (ghostty does both; omit either
+  # and vaxis silently falls back to half blocks and draws nothing): the widget
+  # emitted f=100 PNG transmits followed by `a=p` -- a placement.
+  #
+  # No `!`. The bang runs a filter interactively and hands it the whole screen,
+  # which would make scrolling this script's problem; measured `less -R` passes
+  # all 8750 bytes of a sixel through untouched, so aerc's own pager keeps
+  # working and the text above the image stays scrollable.
+  #
+  # stdin is consumed once and both halves need it, so the part is buffered and
+  # replayed rather than piped twice.
+  aercHtmlSixel = pkgs.writeShellScript "aerc-html-sixel" ''
+    export PATH=${lib.makeBinPath [ pkgs.libsixel pkgs.coreutils ]}:$PATH
+    set -u
+    PART="$(cat)"
+    printf '%s' "$PART" | ${lib.getExe mailPreview} --html --text
+    # A render failure must not cost the reader the text half, so every step
+    # below is best-effort and the script always exits 0.
+    PNG="$(printf '%s' "$PART" | ${lib.getExe mailPreview} --html --render-only 2>/dev/null | tail -1)"
+    if [ -n "''${PNG:-}" ] && [ -f "$PNG" ]; then
+      printf '\n'
+      img2sixel "$PNG" 2>/dev/null || true
+    fi
+    exit 0
+  '';
+
   # Markdown is the ONLY hand-written form of a message body in this setup; HTML
   # is generated on the way out and destroyed on the way in. These two scripts
   # are that pair, and both are on PATH (not just referenced by store path)
@@ -2659,22 +2701,14 @@ in
       # `unshare --net` so no beacons fire, and what the message view can
       # actually display.
       #
-      # NO IMAGES IN AN HTML BODY, AND NO FILTER CAN CHANGE THAT. Measured by
-      # running a real aerc under a pty and counting a filter's escapes in
-      # aerc's own output: a fixed kitty APC from a text/html filter arrived 0
-      # times, and so did a fixed SIXEL, against a plain-pty positive control of
-      # 1. The probe that measured it is deleted -- it had settled the question
-      # and was 434 lines of pty plumbing to carry for an answer that is not
-      # going to change on its own. Redo it the same way if aerc's embedded
-      # terminal ever gains graphics support. aerc's terminal parses and
-      # drops a child's graphics whatever the protocol -- which also rules out
-      # img2sixel, ueberzugpp under the filter, and aerc-config(5)'s own
-      # `text/html=! html-unsafe -sixel` recipe. `o` opens the part in Chromium
-      # (see [openers] below); that is the way to see an HTML mail's images.
+      # Images in an HTML body DO render, via sixel -- see aercHtmlSixel above
+      # for why, and for the measurement that overturned the earlier "no filter
+      # can change that" conclusion recorded here. Kitty graphics from a filter
+      # are still dropped; only the sixel path survives aerc's terminal.
       #
-      # Real image/* PARTS are a different code path and DO render inline --
+      # Real image/* PARTS are a different code path again and render inline --
       # see the [filters] note above about not registering an image/* filter.
-      text/html=${lib.getExe mailPreview} --html --text
+      text/html=${aercHtmlSixel}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
