@@ -874,6 +874,8 @@ exit 0
         -o display.pixels-per-line="$CH" \
         -o display.force-pixels-per-column=true \
         -o display.force-pixels-per-line=true \
+        -o "display.columns=$COLS" \
+        -o display.force-columns=true \
         "http://127.0.0.1:$PORT/index.html" < /dev/tty
     exit 0
   '';

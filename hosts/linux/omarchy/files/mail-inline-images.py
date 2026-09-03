@@ -72,10 +72,6 @@ if m:
     # margin/padding, zeroing table margins, making images display:block, and
     # a body>* stylesheet. Do not spend another pass on it without first
     # confirming chawan can move that image at all.
-    html = html[:m.end()] + '<div align="center">' + html[m.end():]
-    c = re.search(r"(?i)</body\s*>", html)
-    html = (html[:c.start()] + "</div>" + html[c.start():]) if c else html + "</div>"
-else:
-    html = '<div align="center">' + html + "</div>"
+    pass
 sys.stdout.write(html)
 sys.stderr.write("inlined %d/%d images\n" % (len(got), len(urls)))
