@@ -51,55 +51,16 @@ if urls:
 for u, name in got.items():
     html = html.replace(u, name)
 
-# Centering. A newsletter is a fixed ~640px design and chawan centers it in
-# whole COLUMNS, so the leftover width does not split evenly and the block sits
-# a couple of cells right of centre. A sheet targeting body>* missed (the
-# content is not a direct child of body) and wrapping the whole string put the
-# div before the DOCTYPE, where the parser drops it. Inject INSIDE body, which
-# does not depend on the mail's structure.
-m = re.search(r"(?i)<body\b[^>]*>", html)
-if m:
-    # Centre the mail: chawan centres a block in whole COLUMNS, so a fixed
-    # ~640px newsletter does not split the leftover pane width evenly. This
-    # wrapper took it from 744/687 to 728/688 -- about one cell off, which is
-    # the floor for a cell-quantised renderer.
-    #
-    # A hero image still sits one cell (16px) right of the masthead rules and
-    # the photos below. That is the mail's own structure -- a spacer cell --
-    # rendered faithfully and rounded up to a whole column, NOT something the
-    # served document can override. Four rules were measured against it and
-    # every one left the number at exactly 744 vs 728: zeroing the image
-    # margin/padding, zeroing table margins, making images display:block, and
-    # a body>* stylesheet. Do not spend another pass on it without first
-    # confirming chawan can move that image at all.
-    pass
-
-# WIDEN THE WRAPPER. A newsletter is built as one fixed-width table -- this one
-# is `<table id="template_container" style="width:640px">` -- because that is
-# what a mail client's narrow reading column wants. chawan honours it exactly,
-# so in a 126-column pane the mail renders as a 40-column ribbon with two
-# thirds of the pane blank.
+# NOTHING ELSE IS REWRITTEN. Only the image src values above change; the mail's
+# own HTML, CSS and layout are passed through untouched.
 #
-# Only WIDE boxes are relaxed: at 500px and up a width is the outer shell, and
-# below it the number is doing real layout work (this mail's 225px thumbnail
-# columns, spacer cells at width="1"). Rewriting those too would collapse the
-# two-column story rows into a stack.
-WIDE_PX = 500
-
-def _relax_attr(m):
-    tag, name, num = m.group(1), m.group(2), int(m.group(3))
-    return f'{tag}{name}="100%"' if num >= WIDE_PX else m.group(0)
-
-html = re.sub(
-    r'(?i)(<(?:table|td|div)\b[^>]*?)(\swidth=)"(\d+)"',
-    _relax_attr,
-    html,
-)
-
-def _relax_style(m):
-    num = int(m.group(2))
-    return f"{m.group(1)}100%" if num >= WIDE_PX else m.group(0)
-
-html = re.sub(r"(?i)(\bwidth\s*:\s*)(\d+)px", _relax_style, html)
+# Two attempts at "improving" the layout were tried and both made it worse, so
+# do not add a third without a screenshot to justify it:
+#   * a centring wrapper injected inside <body> -- moved the block by one cell
+#     and fixed nothing that mattered;
+#   * relaxing every fixed width at or above 500px to 100%, to spend the whole
+#     pane -- a newsletter's 640px shell is a DESIGN, and stretching it pulled
+#     its internal proportions apart.
+# A mail is laid out for a narrow reading column on purpose. Render it as sent.
 sys.stdout.write(html)
 sys.stderr.write("inlined %d/%d images\n" % (len(got), len(urls)))
