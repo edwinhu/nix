@@ -834,7 +834,7 @@ exit 0
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
   aercHtmlChawan = pkgs.writeShellScript "aerc-html-chawan" ''
-    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.imagemagick pkgs.coreutils ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.imagemagick pkgs.coreutils pkgs.ncurses ]}:$PATH
     set -u
     PART="$(cat)"
     DIR="$(mktemp -d)"
@@ -891,7 +891,7 @@ exit 0
     # responsive mail lays out in its narrow form and is then stretched across
     # the desktop. Filling the pane and getting the desktop layout are not both
     # available while the px-to-cell ratio is fixed.
-    COLS=${COLUMNS:-80}
+    COLS=''${COLUMNS:-$(tput cols 2>/dev/null </dev/tty || echo 80)}
     PPC=$(python3 -c "print(max(1, round(640 / max(1, $COLS))))" 2>/dev/null || echo "$CW")
     cha -o buffer.images=true \
         -o display.image-mode=sixel \
@@ -1545,6 +1545,19 @@ in
         maxElapsedMs = 240000; # 4 minutes
         maxOperations = 2000;
       };
+      # Provider-driven trigger. Graph posts a notification to the tunnel and
+      # the receiver runs the SAME bounded cycle the timer runs, so mail lands
+      # in seconds rather than at the next five-minute tick. The timer is not
+      # removed: it is the safety net for a notification that is missed,
+      # refused, or arrives while the subscription has lapsed.
+      #
+      # The URL is PATH-based on the hostname the readwise tunnel already owns,
+      # and its ingress rule must stay AHEAD of that catch-all
+      # (modules/shared/reader-services.nix). Graph validates this URL
+      # synchronously at subscription creation, so the route has to be live
+      # before the unit can succeed.
+      graphWebhookEnabled = true;
+      graphWebhookUrl = "https://webhook.eddyhu.com/graph";
     };
     personal = {
       mode = "archive";
@@ -1572,6 +1585,15 @@ in
         maxElapsedMs = 240000; # 4 minutes
         maxOperations = 2000;
       };
+      # Provider-driven trigger, the Gmail half. Unlike Work's webhook there is
+      # no tunnel and no inbound surface at all: users.watch publishes to the
+      # topic and this PULLS from the subscription. The five-minute timer stays,
+      # which matters more here than it does for Graph — a watch lapses SILENTLY
+      # after seven days, so the timer is what stops a failed renewal becoming
+      # silence rather than slowness.
+      gmailPushEnabled = true;
+      gmailPushSubscription = "projects/eddyhu-gws-cli/subscriptions/gmail-push-mail-bridge";
+      gmailPushTopic = "projects/eddyhu-gws-cli/topics/gmail-push";
     };
   };
 
@@ -3524,23 +3546,43 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
-    # RETIRED 2026-09-02 — superseded by Dispatch (Claude Desktop spawns a local
-    # session from the phone natively). Nothing depended on this: the scheduled
-    # routines call agent-msg + claude-herdr-spawn directly. Eight of nine
-    # dispatcher sessions ever created here took zero user turns. The agent dir
-    # symlink above is deliberately kept so re-enabling is just uncommenting.
-    # { host-dispatch = {
-    #   Unit = {
-    #     Description = "Ensure host-dispatch Claude session is running";
-    #     After = [ "network-online.target" ];
-    #     Wants = [ "network-online.target" ];
-    #   };
-    #   Service = {
-    #     Type = "oneshot";
-    #     KillMode = "process";
-    #     ExecStart = "/bin/bash -lc %h/.claude/agents/host-dispatch/ensure.sh";
-    #   };
-    # }; }
+    # claude-remote-control: keep this machine reachable as a Claude Code
+    # "environment", so the phone and claude.ai can CREATE sessions here rather
+    # than only driving ones already started at the terminal. Replaces the
+    # host-dispatch ensure.sh loop retired 2026-09-02 — that existed solely
+    # because nothing else could originate a local session remotely, which
+    # `remote-control` server mode now does natively (Dispatch, via the Desktop
+    # app, is the other route; this one needs no GUI).
+    #
+    # A long-running server, not a 5-minute ensure tick: it holds one
+    # pre-created session and spawns more on demand up to --capacity (32 by
+    # default), so the whole spawn-and-die failure class the old script was
+    # shaped around does not arise.
+    #
+    # StandardOutput=null is NOT laziness: remote-control renders a live TUI and
+    # repaints it about once a second even with no terminal attached (~1.2 MB of
+    # ANSI escapes per hour, measured 2026-09-03). Journalling that buries every
+    # other unit. Real failures still reach the journal via stderr.
+    #
+    # ExecStart is the mise SHIM for the same reason cli-proxy-api's is — the
+    # ~/.local/bin stub runs `mise use -g` first and exits non-zero when the
+    # network is not up yet, which would fail the unit on a cold boot.
+    { claude-remote-control = {
+      Unit = {
+        Description = "Claude Code Remote Control server (this host as an environment)";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStart = "%h/.local/share/mise/shims/claude remote-control --name omarchy-rc";
+        WorkingDirectory = "%h";
+        Restart = "always";
+        RestartSec = 10;
+        StandardOutput = "null";
+        StandardError = "journal";
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     # brscan-skey: watch the DS-740D's Start button, scan-to-PDF on press. Runs
     # in the graphical session (as the user — the udev rule grants USB access) so
     # the action writes to ~/scans. The daemon reads /opt/brother/scanner/
@@ -3808,7 +3850,8 @@ in
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
-    # RETIRED 2026-09-02 — see the host-dispatch note in systemd.user.services.
+    # RETIRED 2026-09-02 — host-dispatch is gone; claude-remote-control in
+    # systemd.user.services covers it, and needs no timer (it is long-running).
     # { host-dispatch = {
     #   Unit.Description = "Periodically ensure host-dispatch Claude session is running";
     #   Timer = {
