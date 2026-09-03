@@ -804,6 +804,80 @@ exit 0
   #
   # stdin is consumed once and both halves need it, so the part is buffered and
   # replayed rather than piped twice.
+  # text/html filter: chawan, interactive, with the images the mail carries
+  # drawn INLINE at their natural positions.
+  #
+  # FOUR CONDITIONS, ALL REQUIRED. Miss any one and the pane shows [img], with
+  # no error anywhere:
+  #
+  #   1. INTERACTIVE, not `-d`. Dump mode reserves the image's cells and paints
+  #      nothing, whatever else is forced.
+  #   2. SERVED OVER HTTP. chawan fetches a document's images only when the
+  #      DOCUMENT is remote; on stdin or file:// it renders [img] forever.
+  #      That is why this stands up a loopback server instead of piping.
+  #   3. FORCED PIXEL GEOMETRY. aerc's terminal reports xpixel=0 and answers
+  #      neither CSI 14t nor CSI 16t, so chawan cannot size a cell. herdr knows
+  #      the cell size and its socket is already in the environment.
+  #   4. FORCED SIXEL PALETTE. aerc's terminal reports no sixel color
+  #      registers, so chawan has no palette and emits nothing. This is the one
+  #      that made chawan work under a plain pty -- where nothing answers the
+  #      query, so the forced settings stand -- and fail inside aerc, where the
+  #      terminal does answer and its answer wins. Measured: identical command
+  #      and page, `display.sixel-colors=256` the only difference between no
+  #      image and an image.
+  #
+  # The images are also fetched here and rewritten same-origin: chawan will not
+  # load an https image into the http document above (measured), and the local
+  # copies need real file extensions or the server types them
+  # application/octet-stream and chawan will not draw them.
+  #
+  # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
+  # embedded terminal drops a child's kitty APC and decodes its sixel.
+  aercHtmlChawan = pkgs.writeShellScript "aerc-html-chawan" ''
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.coreutils ]}:$PATH
+    set -u
+    PART="$(cat)"
+    DIR="$(mktemp -d)"
+    SRV=""
+    cleanup() { [ -n "$SRV" ] && kill "$SRV" 2>/dev/null; rm -rf "$DIR"; }
+    trap cleanup EXIT INT TERM HUP
+
+    python3 ${./files/mail-inline-images.py} "$DIR" 4 40 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
+      || printf '%s' "$PART" > "$DIR/index.html"
+
+    CW=16; CH=36
+    if [ -n "''${HERDR_PANE_ID:-}" ]; then
+      INFO=$(python3 ${aercPdfHelper} info \
+        "''${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" \
+        "$HERDR_PANE_ID" 2>/dev/null) || INFO=""
+      [ -n "$INFO" ] && read -r CW CH _ _ <<<"$INFO"
+    fi
+
+    python3 ${./files/mail-serve.py} "$DIR" > "$DIR/port" 2>/dev/null &
+    SRV=$!
+    PORT=""
+    for _ in $(seq 1 40); do
+      PORT=$(tr -d '\n' < "$DIR/port" 2>/dev/null)
+      [ -n "$PORT" ] && break
+      sleep 0.1
+    done
+    # No server, no images: fall back to the text dump rather than a blank pane.
+    if [ -z "$PORT" ]; then
+      printf '%s' "$PART" | cha -d -T text/html -I UTF-8 -O UTF-8 -
+      exit 0
+    fi
+
+    cha -o buffer.images=true \
+        -o display.image-mode=sixel \
+        -o display.sixel-colors=256 \
+        -o display.pixels-per-column="$CW" \
+        -o display.pixels-per-line="$CH" \
+        -o display.force-pixels-per-column=true \
+        -o display.force-pixels-per-line=true \
+        "http://127.0.0.1:$PORT/index.html" < /dev/tty
+    exit 0
+  '';
+
   aercHtmlSixel = pkgs.writeShellScript "aerc-html-sixel" ''
     export PATH=${lib.makeBinPath [ pkgs.libsixel pkgs.imagemagick pkgs.python3 pkgs.coreutils ]}:$PATH
     set -u
@@ -2752,7 +2826,7 @@ in
       #
       # Real image/* PARTS are a different code path again and render inline --
       # see the [filters] note above about not registering an image/* filter.
-      text/html=!${aercHtmlSixel}
+      text/html=!${aercHtmlChawan}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
