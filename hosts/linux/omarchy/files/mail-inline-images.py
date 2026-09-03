@@ -73,5 +73,33 @@ if m:
     # a body>* stylesheet. Do not spend another pass on it without first
     # confirming chawan can move that image at all.
     pass
+
+# WIDEN THE WRAPPER. A newsletter is built as one fixed-width table -- this one
+# is `<table id="template_container" style="width:640px">` -- because that is
+# what a mail client's narrow reading column wants. chawan honours it exactly,
+# so in a 126-column pane the mail renders as a 40-column ribbon with two
+# thirds of the pane blank.
+#
+# Only WIDE boxes are relaxed: at 500px and up a width is the outer shell, and
+# below it the number is doing real layout work (this mail's 225px thumbnail
+# columns, spacer cells at width="1"). Rewriting those too would collapse the
+# two-column story rows into a stack.
+WIDE_PX = 500
+
+def _relax_attr(m):
+    tag, name, num = m.group(1), m.group(2), int(m.group(3))
+    return f'{tag}{name}="100%"' if num >= WIDE_PX else m.group(0)
+
+html = re.sub(
+    r'(?i)(<(?:table|td|div)\b[^>]*?)(\swidth=)"(\d+)"',
+    _relax_attr,
+    html,
+)
+
+def _relax_style(m):
+    num = int(m.group(2))
+    return f"{m.group(1)}100%" if num >= WIDE_PX else m.group(0)
+
+html = re.sub(r"(?i)(\bwidth\s*:\s*)(\d+)px", _relax_style, html)
 sys.stdout.write(html)
 sys.stderr.write("inlined %d/%d images\n" % (len(got), len(urls)))
