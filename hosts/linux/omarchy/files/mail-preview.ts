@@ -14,7 +14,8 @@
 // can be opened at full size without recomposing anything.
 
 import { tmpdir } from "node:os";
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 type RenderHtmlToPng = (
   html: string,
@@ -214,12 +215,55 @@ function decodeEncodedWords(value: string): string {
   );
 }
 
+/**
+ * Rewrite `cid:` references to data: URIs, using the message's own image parts.
+ *
+ * This is the one thing the chawan path can never do. aerc's text/html filter
+ * receives ONLY the html part on stdin, so the sibling images a
+ * multipart/related message carries are not reachable from inside a filter at
+ * any price. `:pipe -m` hands over the whole message, so here they are.
+ *
+ * The base64 payload is taken from `entity.raw` rather than partContent(),
+ * which decodes to a STRING through a charset -- correct for text, and
+ * corruption for a PNG. A base64 part is already exactly what a data: URI
+ * wants, so it is passed through with only whitespace removed.
+ */
+function inlineCids(msg: Entity, body: string): string {
+  const byId = new Map<string, string>();
+  const walk = (entity: Entity): void => {
+    const children = subParts(entity);
+    if (children.length) {
+      for (const child of children) walk(child);
+      return;
+    }
+    const id = headerOf(entity, "content-id").trim().replace(/^<|>$/g, "");
+    if (!id) return;
+    const { type } = contentType(entity);
+    if (!type.startsWith("image/")) return;
+    const cte = headerOf(entity, "content-transfer-encoding").toLowerCase().trim();
+    // Anything not already base64 has to become base64 to ride in a URI.
+    const b64 =
+      cte === "base64"
+        ? entity.raw.replace(/\s+/g, "")
+        : Buffer.from(
+            cte === "quoted-printable" ? decodeQuotedPrintable(entity.raw) : Buffer.from(entity.raw, "binary"),
+          ).toString("base64");
+    byId.set(id, `data:${type};base64,${b64}`);
+  };
+  walk(msg);
+  if (!byId.size) return body;
+  return body.replace(/cid:([^"'\s)>]+)/gi, (all, id: string) => {
+    const hit = byId.get(decodeURIComponent(id));
+    return hit ?? all;
+  });
+}
+
 function fromEml(raw: string): [string, string] {
   const msg = parseEntity(raw);
   const html = findPart(msg, "text/html");
   let body: string;
   if (html) {
-    body = partContent(html);
+    body = inlineCids(msg, partContent(html));
   } else {
     const plain = findPart(msg, "text/plain");
     body =
@@ -264,6 +308,94 @@ function headerHtml(head: string): string {
 }
 
 // ------------------------------------------------------------------ render --
+
+/** Identifies our own tab in `terminal-browser ls --json`, so it can be reused. */
+const APP_ID = "mail";
+
+/** The browser+tab already showing mail, or null if there is none. */
+function findMailTab(tb: string): { browser: string; tab: number } | null {
+  const proc = Bun.spawnSync([tb, "ls", "--json"], { stdout: "pipe", stderr: "ignore" });
+  if (proc.exitCode !== 0) return null;
+  try {
+    const listing = JSON.parse(proc.stdout.toString()) as {
+      browsers?: { key: string; tabs?: { id: number; app?: { id?: string } | null }[] }[];
+    };
+    for (const browser of listing.browsers ?? []) {
+      for (const tab of browser.tabs ?? []) {
+        if (tab.app?.id === APP_ID) return { browser: browser.key, tab: tab.id };
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Hand the assembled page to terminal-browser, which paints a real Chromium in
+ * a split pane beside aerc.
+ *
+ * NOT a filter, and it cannot be one. aerc's embedded terminal parses kitty
+ * graphics APC and discards it, so nothing that draws to its own stdout can
+ * ever appear in the message view -- the same wall the PDF preview hit. This
+ * is reached from a `:pipe -m -b` keybind instead: aerc writes the whole raw
+ * message to stdin and terminal-browser owns its own pane, so no pixels are
+ * routed through aerc at all.
+ *
+ * REUSE THE TAB, DO NOT OPEN ONE PER MESSAGE. terminal-browser merges a second
+ * `open` into the existing browser as a NEW TAB, so the pane is correctly
+ * reused but the tabs accumulate without bound -- reading fifty messages left
+ * fifty tabs. `action -- open` navigates the tab that is already there, which
+ * is what "preview the selected message" actually means.
+ *
+ * The html is left on disk. terminal-browser reads it asynchronously after
+ * this process has exited, so deleting it here is a race that shows a blank
+ * pane; it lives in a mkdtemp under TMPDIR and goes with the boot.
+ */
+function showBrowser(head: string, body: string): void {
+  const tb = Bun.which("terminal-browser");
+  if (!tb) die("mail-preview: no terminal-browser on PATH");
+  const dir = mkdtempSync(`${tmpdir()}/mail-preview.`);
+  const file = `${dir}/message.html`;
+  writeFileSync(file, page(WIDTH, headerHtml(head), body), "utf8");
+
+  const open = pathToFileURL(file).href;
+  const existing = findMailTab(tb);
+  if (existing) {
+    // eval, NOT `action -- open`. Despite reading as "Navigate to URL", open
+    // ADDS A TAB even when --tab selects an existing one (it answers with
+    // "openedTab": <new id>), which is the accumulation this is here to stop.
+    // Assigning location.href navigates the selected tab in place -- measured:
+    // tab count held at 10 and the selected tab's url changed.
+    // --follow raises the tab: the pane may be showing something else, and a
+    // preview nobody is looking at is not a preview.
+    const nav = Bun.spawnSync(
+      [tb, "action", "--browser", existing.browser, "--tab", String(existing.tab), "--follow",
+       "--", "eval", `location.href=${JSON.stringify(open)}`],
+      { stdout: "ignore", stderr: "pipe" },
+    );
+    if (nav.exitCode === 0) {
+      console.log(file);
+      return;
+    }
+    // The browser died between the listing and now; fall through and make one.
+  }
+
+  // --app-mode strips the toolbar, tab strip and context menu: this is a
+  // message viewer, and a URL bar over someone's mail is furniture that only
+  // invites navigating away from it.
+  const proc = Bun.spawnSync(
+    // --app-name alone sets BOTH name and id; passing --app-id as well makes
+    // the tab come back with app=null, so findMailTab never matches it again
+    // and every preview opens a new tab. Measured.
+    [tb, "open", "--split", "right", "--size", "0.5", "--app-mode", `--app-name=${APP_ID}`, file],
+    { stdout: "ignore", stderr: "pipe" },
+  );
+  if (proc.exitCode !== 0) {
+    die(`mail-preview: terminal-browser failed: ${proc.stderr.toString().trim()}`);
+  }
+  console.log(file);
+}
 
 async function render(head: string, body: string, outPng: string): Promise<void> {
   const renderHtmlToPng = await loadRenderer();
@@ -430,12 +562,13 @@ interface Args {
   html: boolean;
   out?: string;
   open: boolean;
+  browser: boolean;
   text: boolean;
   renderOnly: boolean;
 }
 
 const USAGE = `usage: mail-preview [-h] [-a ACCOUNT] [-m MAILBOX] [--html] [-o OUT] [--open]
-                    [--text] [--render-only] [target]
+                    [--text] [--browser] [--render-only] [target]
 
   target         file path, or message id with -a
   -a, --account  himalaya account
@@ -444,10 +577,11 @@ const USAGE = `usage: mail-preview [-h] [-a ACCOUNT] [-m MAILBOX] [--html] [-o O
   -o, --out      where to write the PNG
   --open         open in an image viewer instead of painting in the terminal
   --text         render through chawan instead (works inside aerc)
+  --browser      open in terminal-browser in a split pane (aerc: :pipe -m -b)
   --render-only  write the PNG and print its path; display nothing`;
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { mailbox: "drafts", html: false, open: false, text: false, renderOnly: false };
+  const args: Args = { mailbox: "drafts", html: false, open: false, text: false, renderOnly: false, browser: false };
   const value = (flag: string, inline: string | undefined, i: { v: number }): string => {
     if (inline !== undefined) return inline;
     const next = argv[++i.v];
@@ -470,6 +604,9 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--open":
         args.open = true;
+        break;
+      case "--browser":
+        args.browser = true;
         break;
       case "--text":
         args.text = true;
@@ -527,6 +664,10 @@ async function main(): Promise<void> {
   }
 
   body = decodeMmlEncodings(body);
+  if (args.browser) {
+    showBrowser(head, body);
+    return;
+  }
   if (args.text) {
     showChawan(head, body);
     return;
