@@ -891,30 +891,22 @@ exit 0
     # responsive mail lays out in its narrow form and is then stretched across
     # the desktop. Filling the pane and getting the desktop layout are not both
     # available while the px-to-cell ratio is fixed.
-    # Target a CSS viewport ABOVE the mail breakpoints. 480, 600 and 640px are
-    # the standard ones, and a 640px target landed the viewport on 612px here --
-    # inside the 600-640 band -- so mails served their MOBILE layout. The tell
-    # was that the same mail scales up on a phone held sideways, which clears
-    # the band. 612px also overflowed: the outer table reached col 217 of 204
-    # and chawan clipped the remainder off the right edge.
+    # NATURAL SIZE. pixels-per-column maps CSS px to cells, and it is the ONLY
+    # knob -- it sets the layout viewport and the size of every image at once.
+    # Setting it below the terminal's true cell width zooms the whole document:
+    # at PPC=4 this mail's 640x383 hero image became 160x43 CELLS and swallowed
+    # a 204x46 screen whole, leaving a logo, one photo and no body text at all.
+    # Widening the mail that way costs the mail.
     #
-    # pixels-per-column is an integer, so viewport = COLS * PPC is quantised and
-    # only a few widths are reachable. ceil() takes the SMALLEST viewport that
-    # still clears the breakpoints, which is also the one that fills the most
-    # pane -- a wider viewport shrinks the mail. At 204 cols that is 816px:
-    # measured p90 76% of the pane, outer table 80%, nothing clipped.
-    #
-    # BOTH AXES MOVE TOGETHER OR THE IMAGES DISTORT. pixels-per-column does two
-    # jobs: it sets the CSS viewport above, and it converts an image's pixel size
-    # into CELLS. Lowering it alone (leaving pixels-per-line at the true cell
-    # height) stretched every image horizontally by exactly the factor the
-    # viewport shrank by. Scale the line height by the same factor -- i.e. keep
-    # PPL/PPC at the terminal's own CH/CW aspect -- so the mail and its images
-    # zoom together instead of shearing.
-    TARGET=700
+    # So render 1 CSS px per real pixel, which is what a browser does. A mail
+    # authored at 640px then occupies 640px of the pane and no more -- a column
+    # with a wide right margin, exactly as it looks in Gmail on a wide monitor.
+    # Making it FILL a desktop pane is not reachable from here: the mail's width
+    # is fixed in its own markup, so it can only be zoomed (unreadable, above)
+    # or restyled (custom CSS, which is out of scope by request).
     COLS=''${COLUMNS:-$(tput cols 2>/dev/null </dev/tty || echo 80)}
-    PPC=$(python3 -c "import math; print(max(1, math.ceil($TARGET / max(1, $COLS))))" 2>/dev/null || echo "$CW")
-    PPL=$(python3 -c "print(max(1, round($PPC * $CH / max(1, $CW))))" 2>/dev/null || echo "$CH")
+    PPC="$CW"
+    PPL="$CH"
     cha -o buffer.images=true \
         -o display.image-mode=sixel \
         -o display.sixel-colors=256 \
