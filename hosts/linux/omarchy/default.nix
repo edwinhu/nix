@@ -855,17 +855,11 @@ exit 0
     python3 ${./files/mail-inline-images.py} "$DIR" 4 40 "$SCALE" <<< "$PART" > "$DIR/index.html" 2>/dev/null \
       || printf '%s' "$PART" > "$DIR/index.html"
 
-    # Cell size, for sizing images in cells. Measured against Chromium the hero
-    # comes out taller than it should, so these are not exactly right -- but the
-    # pty is not a better source: aerc's pixel-geometry patch populates vaxis's
-    # own model, not the child pty's winsize, so TIOCGWINSZ here returns zeros.
+    # ASK THE TERMINAL for its cell size, rather than assuming one -- see
+    # files/term-cell-size.py for why the pty ioctl cannot answer this.
     CW=16; CH=36
-    if [ -n "''${HERDR_PANE_ID:-}" ]; then
-      INFO=$(python3 ${aercPdfHelper} info \
-        "''${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" \
-        "$HERDR_PANE_ID" 2>/dev/null) || INFO=""
-      [ -n "$INFO" ] && read -r CW CH _ _ <<<"$INFO"
-    fi
+    GEOM=$(python3 ${./files/term-cell-size.py} 2>/dev/null) || GEOM=""
+    [ -n "$GEOM" ] && read -r CW CH <<<"$GEOM"
 
     python3 ${./files/mail-serve.py} "$DIR" > "$DIR/port" 2>/dev/null &
     SRV=$!
