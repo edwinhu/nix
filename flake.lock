@@ -411,15 +411,16 @@
     "mail-bridge-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788101176,
-        "narHash": "sha256-goUDi7xGAGroomV/ZuA5drdXg2RK4RUS7h6CCaFgdv4=",
-        "ref": "refs/heads/main",
-        "rev": "3a941b014351d99456aee88e793675a76b31857a",
-        "revCount": 127,
+        "lastModified": 1788407845,
+        "narHash": "sha256-htHRvWDKOU67f5uGUEZnaqpy9A4dd8SO6IRlplprF3k=",
+        "ref": "gmail-push-trigger",
+        "rev": "05b89561ea4e92a7470f4497aee9f7a9cfeadf9d",
+        "revCount": 136,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
       },
       "original": {
+        "ref": "gmail-push-trigger",
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
       }
@@ -467,15 +468,16 @@
     "nix-secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1787749958,
-        "narHash": "sha256-K1BvVGEvYqZtxfjhzyncQVKSjJ8VcjQGlkeNo7wFtOA=",
-        "ref": "refs/heads/main",
-        "rev": "c76c71285bce9809175d42af74ba270d68a9c11e",
-        "revCount": 39,
+        "lastModified": 1788405652,
+        "narHash": "sha256-F9o9C7Q2xFdHH3e7+kT4e3hya1EqRfKKPznJr1LJeu8=",
+        "ref": "add-mail-bridge-gmail-push-sa",
+        "rev": "7e5186a0247e8d54eff189541151baf1124e7d03",
+        "revCount": 41,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
       },
       "original": {
+        "ref": "add-mail-bridge-gmail-push-sa",
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/nix-secrets.git"
       }
