@@ -50,5 +50,19 @@ if urls:
 
 for u, name in got.items():
     html = html.replace(u, name)
+
+# Centering. A newsletter is a fixed ~640px design and chawan centers it in
+# whole COLUMNS, so the leftover width does not split evenly and the block sits
+# a couple of cells right of centre. A sheet targeting body>* missed (the
+# content is not a direct child of body) and wrapping the whole string put the
+# div before the DOCTYPE, where the parser drops it. Inject INSIDE body, which
+# does not depend on the mail's structure.
+m = re.search(r"(?i)<body\b[^>]*>", html)
+if m:
+    html = html[:m.end()] + '<div align="center">' + html[m.end():]
+    c = re.search(r"(?i)</body\s*>", html)
+    html = (html[:c.start()] + "</div>" + html[c.start():]) if c else html + "</div>"
+else:
+    html = '<div align="center">' + html + "</div>"
 sys.stdout.write(html)
 sys.stderr.write("inlined %d/%d images\n" % (len(got), len(urls)))
