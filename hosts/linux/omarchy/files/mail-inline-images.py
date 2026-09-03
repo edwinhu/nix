@@ -59,6 +59,19 @@ for u, name in got.items():
 # does not depend on the mail's structure.
 m = re.search(r"(?i)<body\b[^>]*>", html)
 if m:
+    # Centre the mail: chawan centres a block in whole COLUMNS, so a fixed
+    # ~640px newsletter does not split the leftover pane width evenly. This
+    # wrapper took it from 744/687 to 728/688 -- about one cell off, which is
+    # the floor for a cell-quantised renderer.
+    #
+    # A hero image still sits one cell (16px) right of the masthead rules and
+    # the photos below. That is the mail's own structure -- a spacer cell --
+    # rendered faithfully and rounded up to a whole column, NOT something the
+    # served document can override. Four rules were measured against it and
+    # every one left the number at exactly 744 vs 728: zeroing the image
+    # margin/padding, zeroing table margins, making images display:block, and
+    # a body>* stylesheet. Do not spend another pass on it without first
+    # confirming chawan can move that image at all.
     html = html[:m.end()] + '<div align="center">' + html[m.end():]
     c = re.search(r"(?i)</body\s*>", html)
     html = (html[:c.start()] + "</div>" + html[c.start():]) if c else html + "</div>"
