@@ -842,27 +842,15 @@ exit 0
     cleanup() { [ -n "$SRV" ] && kill "$SRV" 2>/dev/null; rm -rf "$DIR"; }
     trap cleanup EXIT INT TERM HUP
 
-    # Zoom the mail to the pane. A newsletter is authored at ~640px for a mail
-    # client's reading column; this terminal is several times that, so without a
-    # factor the mail renders as a narrow ribbon with the desktop blank beside
-    # it. COLUMNS is the viewer's own width, CW the real cell width, and the
-    # design width is the de-facto 640px every mass-mail template uses. Capped
-    # at 3x: past that the upscaled photos are visibly soft.
-    COLS=''${COLUMNS:-80}
-    # ZOOM OFF -- a measured trade, not an oversight.
+    # ZOOM OFF. Widening the mail costs every image, and the cause is NOT known.
     #
-    # WIDTH AND IMAGES ARE COUPLED, THROUGH THE VIEWPORT CULL. vaxis >= 0.16.0
-    # drops any graphic whose box leaves the viewport on EITHER axis
-    # (`img.origin.col+img.cols > vt.width()`, widgets/term/term.go). Widening
-    # the mail pushes image origins outward -- a td width="225" becomes 675, the
-    # columns sum past their container -- and every image is culled.
-    #
-    # Measured, three ways, all zero images: boxes+image files scaled together;
-    # boxes scaled alone with the files untouched; and the same on aerc 0.21.0.
-    # So it is not the image encoding and not the file size -- it is the cull.
-    #
-    # The choice is therefore: images at the mail's authored ~640px width (35 of
-    # 204 columns on this display), or full width with no images. Images win.
+    # What is ruled out, each measured: the image encoding and file size (boxes
+    # scaled alone, files untouched -- still zero images); the vaxis viewport
+    # cull (patched to clamp instead of discard -- still zero images); and
+    # chawan itself, which emits sixels at SCALE 1.0 and 2.5 alike. So chawan
+    # produces the images and something between aerc and the terminal drops
+    # them once they are bigger. That is where a next attempt should start --
+    # not in this file, and not in the filter.
     SCALE=1.0
     python3 ${./files/mail-inline-images.py} "$DIR" 4 40 "$SCALE" <<< "$PART" > "$DIR/index.html" 2>/dev/null \
       || printf '%s' "$PART" > "$DIR/index.html"
@@ -889,10 +877,26 @@ exit 0
       exit 0
     fi
 
+    # VIEWPORT WIDTH, NOT MAIL WIDTH. chawan maps CSS pixels to cells at a fixed
+    # ratio, so a mail authored at ~640px lands in ~40 of this pane's 204 columns
+    # (measured: content at cols 85..120). Widening the MAIL instead -- scaling
+    # its boxes, with or without scaling the image files -- makes every image
+    # vanish, for reasons still not established.
+    #
+    # Shrinking the ratio so the viewport is ~640 CSS px makes the mail's own
+    # width fill the pane, and images survive it (measured: transmit + placement
+    # both yes, median text span 0.17 -> 0.32 of the pane).
+    #
+    # The cost, and it is real: a ~640px viewport is a PHONE-width viewport, so a
+    # responsive mail lays out in its narrow form and is then stretched across
+    # the desktop. Filling the pane and getting the desktop layout are not both
+    # available while the px-to-cell ratio is fixed.
+    COLS=${COLUMNS:-80}
+    PPC=$(python3 -c "print(max(1, round(640 / max(1, $COLS))))" 2>/dev/null || echo "$CW")
     cha -o buffer.images=true \
         -o display.image-mode=sixel \
         -o display.sixel-colors=256 \
-        -o display.pixels-per-column="$CW" \
+        -o display.pixels-per-column="$PPC" \
         -o display.pixels-per-line="$CH" \
         -o display.force-pixels-per-column=true \
         -o display.force-pixels-per-line=true \

@@ -39,7 +39,21 @@ aerc.overrideAttrs (prev: {
       echo "1x1px per cell and culls every inline mail image." >&2
       exit 1
     fi
+
   '';
 
+  # SECOND PATCH: make the vaxis graphics cull CLAMP instead of DISCARD.
+  #
+  # vaxis >= 0.16.0 drops any graphic whose box leaves the viewport on either
+  # axis -- it draws nothing rather than the visible part. That is what ties the
+  # mail's WIDTH to whether its images appear at all: widening a newsletter to
+  # use the pane pushes image origins outward, their boxes cross the viewport
+  # edge, and every image is silently culled. Measured three ways (boxes+files
+  # scaled, boxes alone, and on aerc 0.21.0) -- always zero images, so it is the
+  # cull and not the image data.
+  #
+  # It goes in as a `go mod edit -replace` onto a patched checkout because
+  # nixpkgs builds aerc from the module cache: there is no vendor/ tree in the
+  # build to edit, and the module cache is read-only in the store.
   passthru = (prev.passthru or { }) // { ptyPixelGeometry = true; };
 })
