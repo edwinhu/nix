@@ -1,0 +1,37 @@
+aerc: report pixel geometry to the embedded terminal
+
+vaxis >= 0.16.0 sizes a child's sixel in CELLS and derives the cell size from
+the child pty's own pixel fields. aerc never populated them -- the Resize handed
+to vterm.Update carried Cols and Rows only -- so the cell size fell back to
+1x1px, an image was recorded as thousands of cells, and it was culled instead of
+drawn. Inline images in HTML mail therefore never appeared under aerc 0.22.0.
+
+--- a/app/terminal.go	2026-09-03 14:16:51.166830119 -0400
++++ b/app/terminal.go	2026-09-03 14:16:51.175117907 -0400
+@@ -111,7 +111,25 @@
+ 		}
+ 	}
+ 	w, h := ctx.Window().Size()
+-	term.vterm.Update(vaxis.Resize{Cols: w, Rows: h})
++	resize := vaxis.Resize{Cols: w, Rows: h}
++	// Pixel geometry is REQUIRED by vaxis >= 0.16.0 to size a child's sixel in
++	// CELLS: sixelCellPixels() derives the cell size from these fields, and with
++	// them zero it falls back to 1x1px. A 640x400 sixel is then recorded as a
++	// 640-column by 400-row graphic, which visibleGraphics() culls on every
++	// frame -- and positionSixel() emits rows-1 index scrolls that push the
++	// rendered page away with it. The visible result is that an inline image in
++	// HTML mail never appears. The host vaxis knows its own pixel geometry, so
++	// derive a per-cell size from it and scale to this sub-window.
++	if host := ui.Vaxis().Size(); host.Cols > 0 && host.Rows > 0 &&
++		host.XPixel > 0 && host.YPixel > 0 {
++		cellW := host.XPixel / host.Cols
++		cellH := host.YPixel / host.Rows
++		if cellW > 0 && cellH > 0 {
++			resize.XPixel = w * cellW
++			resize.YPixel = h * cellH
++		}
++	}
++	term.vterm.Update(resize)
+ 	term.vterm.Draw(ctx.Window())
+ }
+ 
