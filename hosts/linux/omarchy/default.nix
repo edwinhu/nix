@@ -903,14 +903,23 @@ exit 0
     # still clears the breakpoints, which is also the one that fills the most
     # pane -- a wider viewport shrinks the mail. At 204 cols that is 816px:
     # measured p90 76% of the pane, outer table 80%, nothing clipped.
+    #
+    # BOTH AXES MOVE TOGETHER OR THE IMAGES DISTORT. pixels-per-column does two
+    # jobs: it sets the CSS viewport above, and it converts an image's pixel size
+    # into CELLS. Lowering it alone (leaving pixels-per-line at the true cell
+    # height) stretched every image horizontally by exactly the factor the
+    # viewport shrank by. Scale the line height by the same factor -- i.e. keep
+    # PPL/PPC at the terminal's own CH/CW aspect -- so the mail and its images
+    # zoom together instead of shearing.
     TARGET=700
     COLS=''${COLUMNS:-$(tput cols 2>/dev/null </dev/tty || echo 80)}
     PPC=$(python3 -c "import math; print(max(1, math.ceil($TARGET / max(1, $COLS))))" 2>/dev/null || echo "$CW")
+    PPL=$(python3 -c "print(max(1, round($PPC * $CH / max(1, $CW))))" 2>/dev/null || echo "$CH")
     cha -o buffer.images=true \
         -o display.image-mode=sixel \
         -o display.sixel-colors=256 \
         -o display.pixels-per-column="$PPC" \
-        -o display.pixels-per-line="$CH" \
+        -o display.pixels-per-line="$PPL" \
         -o display.force-pixels-per-column=true \
         -o display.force-pixels-per-line=true \
         "http://127.0.0.1:$PORT/index.html" < /dev/tty
