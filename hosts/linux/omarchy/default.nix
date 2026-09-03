@@ -805,17 +805,51 @@ exit 0
   # stdin is consumed once and both halves need it, so the part is buffered and
   # replayed rather than piped twice.
   aercHtmlSixel = pkgs.writeShellScript "aerc-html-sixel" ''
-    export PATH=${lib.makeBinPath [ pkgs.libsixel pkgs.coreutils ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.libsixel pkgs.imagemagick pkgs.python3 pkgs.coreutils ]}:$PATH
     set -u
     PART="$(cat)"
-    printf '%s' "$PART" | ${lib.getExe mailPreview} --html --text
-    # A render failure must not cost the reader the text half, so every step
-    # below is best-effort and the script always exits 0.
-    PNG="$(printf '%s' "$PART" | ${lib.getExe mailPreview} --html --render-only 2>/dev/null | tail -1)"
-    if [ -n "''${PNG:-}" ] && [ -f "$PNG" ]; then
-      printf '\n'
-      img2sixel "$PNG" 2>/dev/null || true
+
+    # THE RENDER MUST BE SCALED AND CROPPED, OR IT IS A SLIVER. mail-preview
+    # renders the WHOLE message: a real newsletter came back 900x5305, and a
+    # 1:5.9 image shown whole in a 44-row pane collapses to a thumbnail about
+    # 14% of the pane wide, drawn wherever the cursor happens to be -- which is
+    # under the entire text dump, overlapping the status line.
+    #
+    # THE TERMINAL WILL NOT TELL THE FILTER ITS PIXEL SIZE. Measured all three
+    # ways inside aerc: TIOCGWINSZ reports xpixel=0, CSI 14t returns nothing,
+    # CSI 16t returns nothing. img2sixel's -w takes only pixels or a percent,
+    # so there is nothing to hand it and `-w $unknown` silently no-ops.
+    #
+    # herdr knows the cell size and its socket is already in the environment,
+    # so ask it instead: cell_w/cell_h from pane.graphics.info, columns/rows
+    # from the filter's own terminal, and the message view's pixel rect falls
+    # out. The 16x36 fallback is this host's ghostty, used only if herdr is
+    # unreachable.
+    CW=16; CH=36
+    if [ -n "''${HERDR_PANE_ID:-}" ]; then
+      INFO=$(python3 ${aercPdfHelper} info \
+        "''${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" \
+        "$HERDR_PANE_ID" 2>/dev/null) || INFO=""
+      [ -n "$INFO" ] && read -r CW CH _ _ <<<"$INFO"
     fi
+    COLS=''${COLUMNS:-80}; ROWS=''${LINES:-24}
+    # -4 rows: aerc draws the parts list and status line under the viewer.
+    # -2 columns is a safety margin, not a measurement. It was added chasing a
+    # right-edge clip that turned out to be the test harness resizing the pane
+    # between the render and the screenshot; at full width the image fits.
+    W=$(( (COLS - 2) * CW )); H=$(( (ROWS - 4) * CH ))
+
+    # Image FIRST. Emitted after the text it lands below a full screen of
+    # chawan output, which is what made the text look like the real preview.
+    # Every step is best-effort: a render failure must never cost the reader
+    # the text, so the script always exits 0.
+    PNG="$(printf '%s' "$PART" | ${lib.getExe mailPreview} --html --render-only 2>/dev/null | tail -1)"
+    if [ -n "''${PNG:-}" ] && [ -f "$PNG" ] && [ "$W" -gt 50 ] && [ "$H" -gt 50 ]; then
+      magick "$PNG" -resize "''${W}x" -crop "''${W}x''${H}+0+0" +repage png:- 2>/dev/null \
+        | img2sixel 2>/dev/null || true
+      printf '\n'
+    fi
+    printf '%s' "$PART" | ${lib.getExe mailPreview} --html --text
     exit 0
   '';
 
