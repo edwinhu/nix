@@ -938,7 +938,30 @@ exit 0
     # So the only rule kept is the one that makes chawan agree with the browser:
     # images never exceed their column, with aspect preserved.
     WIDEN='img{max-width:100%!important;height:auto!important}'
-    cha -c "$WIDEN" \
+    # REDRAW AFTER EVERY SCROLL, or the images do not move with the text.
+    #
+    # Measured on the wire: a line scroll emits ~1.6KB of repainted TEXT and
+    # ZERO sixels and ZERO erase-display, so an already-drawn image stays
+    # exactly where it was while the words slide out from under it. A page
+    # scroll does re-emit the images but still sends no erase, so vaxis appends
+    # them and the old copies accumulate -- that is the smearing.
+    #
+    # chawan's own redraw does both: it erases and re-emits every image. Binding
+    # it after each motion is what makes an image behave like part of the page.
+    # Verified against a control: the same config with an inert binding, and the
+    # filter with no config at all, both emit zero sixels on the same keys.
+    # pager.cursorNextLine does not exist -- these four are the ones that do.
+    cat > "$DIR/scroll.toml" <<'CHACONF'
+[page]
+'j' = 'pager.cursorDown(); pager.redraw()'
+'k' = 'pager.cursorUp(); pager.redraw()'
+'J' = 'pager.scrollDown(); pager.redraw()'
+'K' = 'pager.scrollUp(); pager.redraw()'
+'C-f' = 'pager.pageDown(); pager.redraw()'
+'C-b' = 'pager.pageUp(); pager.redraw()'
+' ' = 'pager.pageDown(); pager.redraw()'
+CHACONF
+    cha -C "$DIR/scroll.toml" -c "$WIDEN" \
         -o buffer.images=true \
         -o display.image-mode=sixel \
         -o display.sixel-colors=256 \
