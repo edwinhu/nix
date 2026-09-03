@@ -13,9 +13,16 @@ set -uo pipefail
 
 LAN=192.168.4.0/22
 
-# port-spec | proto | comment
+# port-spec | proto | comment  (allowed FROM the LAN subnet)
 RULES=(
   "6002:6003|udp|owntone airplay"
+)
+
+# iface | port | proto | comment  (allowed IN on a specific interface, any source).
+# SSH is opened on tailscale0 ONLY: reachable over the tailnet from anywhere, never
+# exposed to the LAN or the internet.
+IFACE_RULES=(
+  "tailscale0|22|tcp|ssh over tailscale"
 )
 
 check() {
@@ -25,6 +32,15 @@ check() {
     # user.rules writes a range as 6002:6003; a single port appears bare.
     if ! grep -qF -- "$spec" /etc/ufw/user.rules 2>/dev/null; then
       echo "MISSING: $spec/$proto from $LAN  ($comment)"
+      missing=1
+    fi
+  done
+  local iface port
+  for rule in "${IFACE_RULES[@]}"; do
+    IFS='|' read -r iface port proto comment <<<"$rule"
+    # user.rules writes an interface rule as: -A ufw-user-input -i tailscale0 -p tcp --dport 22 ...
+    if ! grep -qE -- "-i ${iface} -p ${proto} --dport ${port}\\b" /etc/ufw/user.rules 2>/dev/null; then
+      echo "MISSING: ${port}/${proto} in on ${iface}  ($comment)"
       missing=1
     fi
   done
@@ -65,4 +81,10 @@ for rule in "${RULES[@]}"; do
   # ufw itself is idempotent ("Skipping adding existing rule") but say so.
   echo "ufw allow from $LAN to any port $spec proto $proto"
   ufw allow from "$LAN" to any port "$spec" proto "$proto" comment "$comment"
+done
+
+for rule in "${IFACE_RULES[@]}"; do
+  IFS='|' read -r iface port proto comment <<<"$rule"
+  echo "ufw allow in on $iface to any port $port proto $proto"
+  ufw allow in on "$iface" to any port "$port" proto "$proto" comment "$comment"
 done
