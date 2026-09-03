@@ -855,6 +855,10 @@ exit 0
     python3 ${./files/mail-inline-images.py} "$DIR" 4 40 "$SCALE" <<< "$PART" > "$DIR/index.html" 2>/dev/null \
       || printf '%s' "$PART" > "$DIR/index.html"
 
+    # Cell size, for sizing images in cells. Measured against Chromium the hero
+    # comes out taller than it should, so these are not exactly right -- but the
+    # pty is not a better source: aerc's pixel-geometry patch populates vaxis's
+    # own model, not the child pty's winsize, so TIOCGWINSZ here returns zeros.
     CW=16; CH=36
     if [ -n "''${HERDR_PANE_ID:-}" ]; then
       INFO=$(python3 ${aercPdfHelper} info \
@@ -907,7 +911,35 @@ exit 0
     COLS=''${COLUMNS:-$(tput cols 2>/dev/null </dev/tty || echo 80)}
     PPC="$CW"
     PPL="$CH"
-    cha -o buffer.images=true \
+    # The mail's own width is fixed in its markup (width="640" plus inline
+    # styles), so at a desktop viewport it renders as a column with a wide empty
+    # margin. This is a USER stylesheet in chawan's sense -- it restyles the
+    # document from outside, the way a browser's user CSS does, and injects
+    # nothing into the mail. Zooming was the alternative and it destroyed the
+    # render (see the natural-size commit), so this is the only lever that
+    # widens the layout without touching the image scale.
+    # Widen the OUTER containers only. Forcing td{width:auto} as well collapses
+    # the newsletter's table grid: images stop sitting beside their blurbs and
+    # strand themselves above full-width paragraphs of ~150 characters. Letting
+    # the cells keep their relative widths preserves the composition while the
+    # table itself expands.
+    # MATCH THE BROWSER. Chromium renders this mail at a 3264px viewport as a
+    # 640px column centred with 1312px margins either side, thumbnails beside
+    # their blurbs, ~60 characters to a line. That IS the correct rendering: the
+    # width is fixed in the mail's own markup and there is no wider layout in it
+    # to recover.
+    #
+    # Widening it from outside was tried and measured against that reference. It
+    # reaches the pane but stops matching the browser: the nested tables flatten,
+    # thumbnails strand above their text, and lines run to 100-140 characters.
+    # Zooming instead (a smaller pixels-per-column) was worse still -- one image
+    # filled the screen and no text fit.
+    #
+    # So the only rule kept is the one that makes chawan agree with the browser:
+    # images never exceed their column, with aspect preserved.
+    WIDEN='img{max-width:100%!important;height:auto!important}'
+    cha -c "$WIDEN" \
+        -o buffer.images=true \
         -o display.image-mode=sixel \
         -o display.sixel-colors=256 \
         -o display.pixels-per-column="$PPC" \
