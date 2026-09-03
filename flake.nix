@@ -8,16 +8,6 @@
     # that our docbuilder derivation extends). Safe to fold into nixpkgs on
     # the next full lock update.
     nixpkgs-onlyoffice.url = "github:nixos/nixpkgs/8c3cede7ddc26bd659d2d383b5610efbd2c7a16e";
-    # Newer nixpkgs pin for aerc only. The main lock carries 0.21.0, whose vaxis
-    # v0.15.0 draws a sixel at the absolute row it was decoded on with no
-    # scrollback anchoring and no offscreen cull, so an inline image stays
-    # pinned while the pager scrolls under it. vaxis v0.16.0 added `sourceRow`
-    # plus `visibleGraphics()`; aerc 0.22.0 pins v0.17.1.
-    #
-    # 0.22.0 ALSO CARRIES THE CheckMail UIDVALIDITY FIX upstream
-    # (worker/imap/checkmail.go asks for imap.StatusUidValidity), which is what
-    # modules/linux/aerc-uidvalidity.nix backported onto 0.21.0.
-    nixpkgs-aerc.url = "github:nixos/nixpkgs/9387b3fcc0c23c86661636da63faabad4235a0a6";
     # Newer nixpkgs pin for stremio-linux-shell only: the main lock (2026-07-05)
     # predates the 1.1.x series, so it carries 1.0.2. 1.1.4 fixes the server
     # process outliving the shell (a stale `node server.js` keeps :11470 and the
@@ -111,7 +101,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-aerc, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -773,11 +763,8 @@
                 # `aerc = prev.aerc` explicitly: callPackage's auto-args resolve
                 # against the FINAL package set, so letting it fill `aerc` in
                 # would point this override at itself (infinite recursion).
-                aerc = prev.callPackage ./modules/linux/aerc-pty-pixels.nix {
-                  aerc = (import inputs.nixpkgs-aerc {
-                    system = prev.stdenv.hostPlatform.system;
-                    config.allowUnfree = true;
-                  }).aerc;
+                aerc = prev.callPackage ./modules/linux/aerc-uidvalidity.nix {
+                  inherit (prev) aerc;
                 };
 
                 # Double Commander Qt6 from official releases (aarch64 only; the

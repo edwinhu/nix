@@ -519,22 +519,6 @@
         "type": "github"
       }
     },
-    "nixpkgs-aerc": {
-      "locked": {
-        "lastModified": 1788372231,
-        "narHash": "sha256-7aqErvrAEz/5OcPA5p3M+tVOqeYc4oJXkNIPXfCqxAw=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "9387b3fcc0c23c86661636da63faabad4235a0a6",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "9387b3fcc0c23c86661636da63faabad4235a0a6",
-        "type": "github"
-      }
-    },
     "nixpkgs-onlyoffice": {
       "locked": {
         "lastModified": 1780930886,
@@ -710,7 +694,6 @@
         "nix-secrets": "nix-secrets",
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-aerc": "nixpkgs-aerc",
         "nixpkgs-onlyoffice": "nixpkgs-onlyoffice",
         "nixpkgs-pipewire": "nixpkgs-pipewire",
         "nixpkgs-stremio": "nixpkgs-stremio",
