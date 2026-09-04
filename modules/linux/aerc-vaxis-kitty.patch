@@ -1,7 +1,7 @@
-diff --git a/widgets/term/action.go b/widgets/term/action.go
+diff --git c/widgets/term/action.go w/widgets/term/action.go
 index 80ed8d9..79e4982 100644
---- a/widgets/term/action.go
-+++ b/widgets/term/action.go
+--- c/widgets/term/action.go
++++ w/widgets/term/action.go
 @@ -41,6 +41,12 @@ func applySequence(vt *Model, seq ansi.Sequence) {
  			sixelAction{seq: seq}.apply(vt)
  		}
@@ -15,11 +15,11 @@ index 80ed8d9..79e4982 100644
  		vt.postEvent(EventAPC{Payload: seq.Data})
  	}
  }
-diff --git a/widgets/term/kitty.go b/widgets/term/kitty.go
+diff --git c/widgets/term/kitty.go w/widgets/term/kitty.go
 new file mode 100644
 index 0000000..e96449b
 --- /dev/null
-+++ b/widgets/term/kitty.go
++++ w/widgets/term/kitty.go
 @@ -0,0 +1,1116 @@
 +package term
 +
@@ -1137,11 +1137,11 @@ index 0000000..e96449b
 +		return r
 +	}, msg)
 +}
-diff --git a/widgets/term/kitty_media.go b/widgets/term/kitty_media.go
+diff --git c/widgets/term/kitty_media.go w/widgets/term/kitty_media.go
 new file mode 100644
 index 0000000..ac0c5ce
 --- /dev/null
-+++ b/widgets/term/kitty_media.go
++++ w/widgets/term/kitty_media.go
 @@ -0,0 +1,247 @@
 +package term
 +
@@ -1390,10 +1390,66 @@ index 0000000..ac0c5ce
 +	}
 +	return strings.HasPrefix(filepath.Clean(path), dir+string(filepath.Separator))
 +}
-diff --git a/widgets/term/term.go b/widgets/term/term.go
-index e37955e..648a3de 100644
---- a/widgets/term/term.go
-+++ b/widgets/term/term.go
+diff --git c/widgets/term/mouse.go w/widgets/term/mouse.go
+index 506a0f4..3adb4bc 100644
+--- c/widgets/term/mouse.go
++++ w/widgets/term/mouse.go
+@@ -72,7 +72,7 @@ func (vt *Model) handleMouse(msg vaxis.Mouse) string {
+ 	case mouseFormatURXVT:
+ 		return fmt.Sprintf("\x1b[%d;%d;%dM", button+32, msg.Col+1, msg.Row+1)
+ 	case mouseFormatSGRPixels:
+-		x, y := msg.XPixel, msg.YPixel
++		x, y := vt.mousePixels(msg)
+ 		return fmt.Sprintf("\x1b[<%d;%d;%d%c", button, x, y, mouseFinal(msg))
+ 	}
+ 
+@@ -90,6 +90,42 @@ func (vt *Model) handleMouse(msg vaxis.Mouse) string {
+ 	return "\x1b[M" + string(rune(button+32)) + encodedCol + encodedRow
+ }
+ 
++// mousePixels is the position to report for msg in SGR-pixel mouse mode
++// (DECSET 1016).
++//
++// A child that turns 1016 on is answered in PIXELS. The vaxis.Mouse an
++// embedding application delivers, though, was decoded from a HOST terminal that
++// is not itself in 1016 mode, so it carries cell coordinates and leaves
++// XPixel/YPixel at zero -- and reporting those verbatim puts every event at
++// pixel 0,0. Measured against terminal-browser, which enables 1003, 1006 and
++// 1016 in one handshake: four wheel-down events at 0;0 leave window.scrollY at
++// 0, while the same four at any in-viewport pixel move it by 240. The page
++// renders and the wheel does nothing, which reads as a hung pane rather than a
++// bug.
++//
++// So aim at the middle of the cell the event landed in, using the widget's own
++// pixel geometry, and only report the raw zeroes when no cell size is known.
++func (vt *Model) mousePixels(msg vaxis.Mouse) (int, int) {
++	if msg.XPixel != 0 || msg.YPixel != 0 {
++		return msg.XPixel, msg.YPixel
++	}
++	cellWidth, cellHeight := vt.mouseCellPixels()
++	if cellWidth <= 0 || cellHeight <= 0 {
++		return msg.XPixel, msg.YPixel
++	}
++	col, row := max(msg.Col, 0), max(msg.Row, 0)
++	return col*cellWidth + cellWidth/2 + 1, row*cellHeight + cellHeight/2 + 1
++}
++
++// mouseCellPixels is the pixel size of one cell, or 0,0 when the embedder has
++// not told this terminal how big a pixel is.
++func (vt *Model) mouseCellPixels() (int, int) {
++	if vt.size.Cols <= 0 || vt.size.Rows <= 0 {
++		return 0, 0
++	}
++	return vt.size.XPixel / vt.size.Cols, vt.size.YPixel / vt.size.Rows
++}
++
+ func supportedMouseButton(button vaxis.MouseButton) bool {
+ 	switch button {
+ 	case vaxis.MouseLeftButton,
+diff --git c/widgets/term/term.go w/widgets/term/term.go
+index e37955e..2c699c8 100644
+--- c/widgets/term/term.go
++++ w/widgets/term/term.go
 @@ -40,6 +40,16 @@ type Model struct {
  	// protocol state through the terminal widget. Only enable this when the
  	// host terminal supports Kitty keyboard encoding.
@@ -1443,3 +1499,33 @@ index e37955e..648a3de 100644
  }
  
  func (vt *Model) Close() {
+@@ -1567,6 +1581,15 @@ func (vt *Model) visibleGraphics() []positionedImage {
+ 	topSourceRow := vt.topViewportSourceRow()
+ 	visible := make([]positionedImage, 0, len(vt.graphics))
+ 	for _, img := range vt.graphics {
++		// A freed frame must never reach the draw path. releaseKittyPixels
++		// nils img.img once an image has left the graphics list, and Draw
++		// dereferences a SNAPSHOT of these pointers after the lock is
++		// released -- so an image pruned in between arrives here with no
++		// pixels, and vx.NewImage(nil) then segfaults inside resizeImage.
++		// aerc crashed exactly this way.
++		if img.img == nil {
++			continue
++		}
+ 		viewportRow := img.sourceRow - topSourceRow
+ 		if viewportRow < 0 || viewportRow+img.rows > vt.height() {
+ 			continue
+@@ -1603,6 +1626,13 @@ outer:
+ 			vxImg.Draw(win)
+ 			continue outer
+ 		}
++		// Belt and braces with the visibleGraphics check above: the
++		// snapshot Draw hands us was taken under the lock and is used
++		// after it, so a frame can be freed in the window between. One
++		// nil here is a segfault in resizeImage, not a missing picture.
++		if img.img == nil {
++			continue
++		}
+ 		// We haven't encountered this vaxis before
+ 		vxImg, err := vx.NewImage(img.img)
+ 		if err != nil {
