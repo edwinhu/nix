@@ -149,14 +149,16 @@ let
     }
     trap cleanup EXIT INT TERM HUP
 
-    # Every chrome switch off: this is a message view inside aerc's pane, so a
-    # toolbar, tab strip, context menu or toast would draw over the mail and the
-    # browser's keys would fight aerc's.
+    # Chrome off, but NOT --no-shortcuts. That flag disables the browser's own
+    # key handling, which is also what scrolls the page -- with it the mail
+    # renders and then cannot be moved, which is how it was first reported. The
+    # reason it was there (browser keys fighting aerc's) does not apply: this
+    # pane belongs to the browser while it runs, and aerc's $ex prefix (Ctrl-x)
+    # still escapes to :close regardless of what the child does with keys.
     "$BROWSER" open "$URL" \
       --app-mode \
       --no-toolbar \
       --no-frame \
-      --no-shortcuts \
       --no-overlays \
       --no-context-menu
   '';
