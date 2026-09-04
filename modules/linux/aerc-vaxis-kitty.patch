@@ -1447,7 +1447,7 @@ index 506a0f4..3adb4bc 100644
  	switch button {
  	case vaxis.MouseLeftButton,
 diff --git c/widgets/term/term.go w/widgets/term/term.go
-index e37955e..2c699c8 100644
+index e37955e..1cb0e9a 100644
 --- c/widgets/term/term.go
 +++ w/widgets/term/term.go
 @@ -40,6 +40,16 @@ type Model struct {
@@ -1499,7 +1499,53 @@ index e37955e..2c699c8 100644
  }
  
  func (vt *Model) Close() {
-@@ -1567,6 +1581,15 @@ func (vt *Model) visibleGraphics() []positionedImage {
+@@ -1477,8 +1491,18 @@ func (vt *Model) Draw(win vaxis.Window) {
+ 	if snapshot.cursorVisible {
+ 		win.ShowCursor(snapshot.cursorCol, snapshot.cursorRow, snapshot.cursorStyle)
+ 	}
+-	vt.removeGraphicsPlacements(snapshot.vx, snapshot.allGraphics)
++	// DRAW FIRST, THEN RETIRE. The child re-sends a full-pane frame on every
++	// scroll and our decoder builds a fresh *Image for it, so the previous one
++	// leaves the graphics list and its placement has to go. Deleting before
++	// placing costs a rendered frame with nothing in it -- measured as a
++	// complete SYNC-BEGIN -> DELETE -> SYNC-END between two frames, which is
++	// the flash on every scroll. Placing first means the new picture is already
++	// on screen when the old placement is dropped.
++	//
++	// Only images that are NOT being drawn are retired: with the order swapped,
++	// deleting a still-visible one would remove what was just placed.
+ 	vt.drawGraphics(win, snapshot.vx, snapshot.graphics)
++	vt.removeGraphicsPlacements(snapshot.vx, retiredGraphics(snapshot.allGraphics, snapshot.graphics))
+ }
+ 
+ // Snapshot returns the terminal's current visible cells and cursor state.
+@@ -1547,6 +1571,25 @@ func (vt *Model) snapshotDraw(vx *vaxis.Vaxis) drawSnapshot {
+ 	return snapshot
+ }
+ 
++// retiredGraphics is the images in all that are NOT in visible.
++func retiredGraphics(all []*Image, visible []positionedImage) []*Image {
++	if len(all) == 0 {
++		return nil
++	}
++	keep := make(map[*Image]struct{}, len(visible))
++	for _, p := range visible {
++		keep[p.img] = struct{}{}
++	}
++	retired := make([]*Image, 0, len(all))
++	for _, img := range all {
++		if _, ok := keep[img]; ok {
++			continue
++		}
++		retired = append(retired, img)
++	}
++	return retired
++}
++
+ func (vt *Model) removeGraphicsPlacements(vx *vaxis.Vaxis, graphics []*Image) {
+ 	if vx == nil {
+ 		return
+@@ -1567,6 +1610,15 @@ func (vt *Model) visibleGraphics() []positionedImage {
  	topSourceRow := vt.topViewportSourceRow()
  	visible := make([]positionedImage, 0, len(vt.graphics))
  	for _, img := range vt.graphics {
@@ -1515,7 +1561,7 @@ index e37955e..2c699c8 100644
  		viewportRow := img.sourceRow - topSourceRow
  		if viewportRow < 0 || viewportRow+img.rows > vt.height() {
  			continue
-@@ -1603,6 +1626,13 @@ outer:
+@@ -1603,6 +1655,13 @@ outer:
  			vxImg.Draw(win)
  			continue outer
  		}
