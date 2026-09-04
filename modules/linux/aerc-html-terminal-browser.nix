@@ -70,6 +70,25 @@ writeShellScript "aerc-html-terminal-browser" ''
   # --no-merge because each filter invocation is its own short-lived pane;
   # merging into a neighbouring instance would render the mail into a tab of
   # some other message's window.
+  # THIS FILTER DOES NOT WORK, AND THE REASON IS NOT FIXABLE HERE. Measured
+  # 2026-09-03: terminal-browser renders into a pane it can IDENTIFY through
+  # ghostty/herdr, never into the pty it was handed. Run with HERDR_* set it
+  # attaches to aerc's OWN outer pane and paints over the whole window
+  # (`terminal-browser ls` shows it registered there, and this pty stays blank);
+  # run with HERDR_* unset it refuses outright with "could not work out which
+  # ghostty pane you are in". An aerc filter is a pty inside aerc, which is not
+  # an identifiable pane either way, so no invocation from here reaches the
+  # message view. It also needs a ~26-query terminal handshake (DA1, XTVERSION,
+  # kitty keyboard, DECRQM 1016/5522/2031, OSC 10/11, the full 16-colour
+  # palette, in-band resize mode 2048) before it will paint at all.
+  #
+  # What it renders when it DOES paint, for whoever picks this up: one
+  # full-pane RGBA frame per repaint, kitty a=T with t=f naming an .rgba file
+  # (3264x1656x4 = 21620736 bytes here), wrapped in synchronized output. That
+  # is exactly what modules/linux/aerc-vaxis-kitty.nix taught vaxis to decode,
+  # so the decoder is not what is missing -- a way to aim the browser at this
+  # pty is. That needs upstream support for rendering to its own stdout.
+
   "$BROWSER" open \
     --app-mode \
     --no-toolbar \
