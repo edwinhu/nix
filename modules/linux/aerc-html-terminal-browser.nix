@@ -84,6 +84,17 @@ let
 
     BROWSER="${terminalBrowser}"
 
+    # SAY SOMETHING IMMEDIATELY. terminal-browser is Electron and its cold start
+    # runs to the better part of a minute before the first frame arrives; with a
+    # blank pane and no cursor that is indistinguishable from aerc having hung,
+    # which is exactly how it was first reported. Print before doing anything
+    # slow, and name the way out, because while the browser owns this pane every
+    # key except aerc's $ex prefix goes to it.
+    printf '\033[2J\033[H'
+    printf 'Rendering this message with terminal-browser...\n'
+    printf 'Electron cold start takes ~30-60s the first time; the page replaces this text.\n\n'
+    printf 'To leave: press your aerc $ex key (Ctrl-x), then type  :close  and Enter.\n'
+
     # THE MULTIPLEXER MUST BE OUT OF THE PICTURE. With HERDR_* (or TMUX, or a
     # kitty/wezterm pane id) in the environment terminal-browser selects that
     # adapter and looks THIS pty up among its panes. aerc's :term pty is not one
@@ -103,18 +114,22 @@ let
       *) echo "aerc-html-terminal-browser: stdin is $TTY, not a pts."
          echo "Run this through aerc's :term, not as a text/html filter --"
          echo "a filter gets pipes and terminal-browser cannot name a pane."
-         read -r _ || true; exit 1 ;;
+         echo
+         echo "Press Ctrl-x then :close to leave this tab."
+         sleep 10; exit 1 ;;
     esac
 
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
     DIR=$(sed -n 2p "${urlFile}" 2>/dev/null || true)
     if [ -z "$URL" ]; then
       echo "no mail has been served yet -- the :pipe step did not run."
-      read -r _ || true; exit 1
+      echo "Press Ctrl-x then :close to leave this tab."
+      sleep 10; exit 1
     fi
     if [ ! -x "$BROWSER" ]; then
       echo "terminal-browser is not installed at $BROWSER"
-      read -r _ || true; exit 1
+      echo "Press Ctrl-x then :close to leave this tab."
+      sleep 10; exit 1
     fi
     # The served copy is this message's; drop it when the browser closes.
     trap 'case "$DIR" in /tmp/aerc-mail-*) rm -rf "$DIR" ;; esac' EXIT
