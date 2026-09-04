@@ -92,6 +92,24 @@ func aercKittyFileMediaAllowed(cmd *exec.Cmd) bool {
 	}
 	return false
 }
+
+// aercKittyKeyboardFor reports whether this child should get kitty KEYBOARD
+// passthrough. Everything keeps the host-derived default except the
+// terminal-browser filter, which must not have it.
+//
+// vaxis enables passthrough whenever the host advertises the protocol, and
+// ghostty does. terminal-browser negotiates it too (it sends CSI >1u), but does
+// not act on keys delivered in that encoding: the page renders and then cannot
+// be scrolled. Measured both ways against a real aerc -- with the host
+// advertising kitty keyboard the rendered frame is byte-identical after arrow
+// keys, space and j; with it withheld the frame changes and the page moves.
+// Legacy keys it handles correctly, so withhold the protocol for this one child.
+func aercKittyKeyboardFor(cmd *exec.Cmd, host bool) bool {
+	if aercKittyFileMediaAllowed(cmd) {
+		return false
+	}
+	return host
+}
   '';
 in
 aerc.overrideAttrs (prev: {
@@ -114,9 +132,11 @@ aerc.overrideAttrs (prev: {
     # needs "strings", and rewriting terminal.go's import block from a shell is
     # how a patch starts landing hunks in the wrong place.
     cp ${kittyFileMediaGate} app/kitty_file_media.go
+    # WithVaxis must come FIRST: it sets EnableKittyKeyboard from the host's
+    # capability, so a WithKittyKeyboard passed before it would be overwritten.
     substituteInPlace app/terminal.go \
       --replace-fail 'term.New(term.WithVaxis(ui.Vaxis()))' \
-                     'term.New(term.WithVaxis(ui.Vaxis()), term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)))' \
+                     'term.New(term.WithVaxis(ui.Vaxis()), term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)), term.WithKittyKeyboard(aercKittyKeyboardFor(cmd, ui.Vaxis() != nil && ui.Vaxis().CanKittyKeyboard())))' \
       --replace-fail 'vterm = term.New()' \
                      'vterm = term.New(term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)))'
 
@@ -124,6 +144,12 @@ aerc.overrideAttrs (prev: {
       echo "aerc: WithKittyFileMedia is enabled unconditionally. Every embedded" >&2
       echo "terminal, including the one that renders untrusted HTML mail, would" >&2
       echo "then accept a child-supplied file path as an image source." >&2
+      exit 1
+    fi
+    if ! grep -q 'aercKittyKeyboardFor' app/terminal.go; then
+      echo "aerc: kitty-keyboard passthrough is not gated per child. The" >&2
+      echo "terminal-browser filter would render a page that cannot be" >&2
+      echo "scrolled, which looks like a hang rather than a bug." >&2
       exit 1
     fi
     if ! grep -q 'aerc-html-terminal-browser' app/kitty_file_media.go; then
