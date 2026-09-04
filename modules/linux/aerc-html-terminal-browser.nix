@@ -66,6 +66,7 @@ let
     # The server outlives this script on purpose: the browser has to be able to
     # fetch from it after :pipe has returned. It exits with the document dir.
     setsid python3 ${mailServe} "$DIR" > "$DIR/port" 2>/dev/null &
+    SRV_PID=$!
     PORT=""
     for _ in $(seq 1 60); do
       PORT=$(tr -d '\n' < "$DIR/port" 2>/dev/null)
@@ -74,8 +75,14 @@ let
     done
     [ -n "$PORT" ] || exit 1
 
+    # Three lines: the URL, the document dir, and the SERVER PID. The server is
+    # setsid'd so it outlives :pipe -- the browser has to fetch from it after
+    # this script returns -- which means nothing would ever reap it unless its
+    # pid is handed on. Every O press used to leak one python server and one
+    # temp dir; five were still resident after a session of testing.
     printf 'http://127.0.0.1:%s/index.html\n' "$PORT" > "${urlFile}"
     printf '%s\n' "$DIR" >> "${urlFile}"
+    printf '%s\n' "$SRV_PID" >> "${urlFile}"
   '';
 
   launch = writeShellScript "aerc-html-terminal-browser" ''
@@ -121,6 +128,7 @@ let
 
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
     DIR=$(sed -n 2p "${urlFile}" 2>/dev/null || true)
+    SRV=$(sed -n 3p "${urlFile}" 2>/dev/null || true)
     if [ -z "$URL" ]; then
       echo "no mail has been served yet -- the :pipe step did not run."
       echo "Press Ctrl-x then :close to leave this tab."
@@ -132,7 +140,14 @@ let
       sleep 10; exit 1
     fi
     # The served copy is this message's; drop it when the browser closes.
-    trap 'case "$DIR" in /tmp/aerc-mail-*) rm -rf "$DIR" ;; esac' EXIT
+    # Reap BOTH on the way out: the loopback server for this message and its
+    # document. The trap fires whether the browser exits cleanly, the tab is
+    # closed, or aerc dies and takes the pane with it.
+    cleanup() {
+      case "$SRV" in [0-9]*) kill "$SRV" 2>/dev/null || true ;; esac
+      case "$DIR" in */aerc-mail-*) rm -rf "$DIR" ;; esac
+    }
+    trap cleanup EXIT INT TERM HUP
 
     # Every chrome switch off: this is a message view inside aerc's pane, so a
     # toolbar, tab strip, context menu or toast would draw over the mail and the
