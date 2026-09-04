@@ -30,6 +30,7 @@
 # into an http document, and the mail's remote images would otherwise phone home
 # from the reading pane.
 { lib
+, writeText
 , writeShellScript
 , python3
 , coreutils
@@ -47,6 +48,41 @@
 # records a URL, and `:term` then launches the browser on it. The keybinding in
 # ~/dotfiles/.config/aerc/binds.conf chains the two.
 let
+  # PAGER KEYS. A browser binds arrows, space and PageDown to scrolling and
+  # nothing else -- j and k are a pager convention it has never heard of.
+  # Measured against a real aerc pane: Down and space repaint in ~0.3s, while j
+  # and k produce no bytes at all, which reads as "scrolling doesn't work" even
+  # though the page scrolls perfectly with the keys the browser does know.
+  #
+  # terminal-browser's --preload runs this in the page's isolated world before
+  # load, which is the supported way to add behaviour without touching the mail.
+  pagerKeys = writeText "aerc-pager-keys.js" ''
+    // Capture phase, so a page that handles its own keys does not swallow these.
+    window.addEventListener("keydown", (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const line = Math.max(40, Math.round(window.innerHeight * 0.12));
+      const half = Math.round(window.innerHeight * 0.5);
+      let dy = null;
+      let abs = null;
+      switch (e.key) {
+        case "j": dy = line; break;
+        case "k": dy = -line; break;
+        case "d": dy = half; break;
+        case "u": dy = -half; break;
+        case "g": abs = 0; break;
+        case "G": abs = document.body.scrollHeight; break;
+        default: return;
+      }
+      if (abs !== null) {
+        window.scrollTo({ top: abs, behavior: "instant" });
+      } else {
+        window.scrollBy({ top: dy, behavior: "instant" });
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+  '';
+
   # Where the serve step leaves the URL for the launch step. Per-user runtime
   # dir, not /tmp: it is already per-user and cleaned on logout.
   urlFile = "\${XDG_RUNTIME_DIR:-/tmp}/aerc-mail-browser-url";
@@ -156,6 +192,7 @@ let
     # pane belongs to the browser while it runs, and aerc's $ex prefix (Ctrl-x)
     # still escapes to :close regardless of what the child does with keys.
     "$BROWSER" open "$URL" \
+      --preload=${pagerKeys} \
       --app-mode \
       --no-toolbar \
       --no-frame \
