@@ -773,12 +773,27 @@
                 # `aerc = prev.aerc` explicitly: callPackage's auto-args resolve
                 # against the FINAL package set, so letting it fill `aerc` in
                 # would point this override at itself (infinite recursion).
-                aerc = prev.callPackage ./modules/linux/aerc-pty-pixels.nix {
-                  aerc = (import inputs.nixpkgs-aerc {
-                    system = prev.stdenv.hostPlatform.system;
-                    config.allowUnfree = true;
-                  }).aerc;
+                # Then the vaxis kitty-graphics decoder on top: v0.17.1's
+                # embedded terminal turns a child's kitty image into an
+                # EventAPC nobody consumes, so terminal-browser -- which emits
+                # kitty and no sixel -- shows text and loses every picture.
+                # See modules/linux/aerc-vaxis-kitty.nix.
+                aerc = prev.callPackage ./modules/linux/aerc-vaxis-kitty.nix {
+                  aerc = prev.callPackage ./modules/linux/aerc-pty-pixels.nix {
+                    aerc = (import inputs.nixpkgs-aerc {
+                      system = prev.stdenv.hostPlatform.system;
+                      config.allowUnfree = true;
+                    }).aerc;
+                  };
                 };
+
+                # The consumer of that decoder: aerc's text/html filter rendered
+                # by terminal-browser, which emits kitty graphics and no sixel.
+                # Its store path carries the "aerc-html-terminal-browser" marker
+                # that aerc-vaxis-kitty.nix's allowlist matches on, so this is
+                # the only child permitted the kitty file/shm media.
+                aerc-html-terminal-browser =
+                  prev.callPackage ./modules/linux/aerc-html-terminal-browser.nix { };
 
                 # Double Commander Qt6 from official releases (aarch64 only; the
                 # official release tarball below is arm64. On x86_64 use the stock

@@ -1,0 +1,1445 @@
+diff --git a/widgets/term/action.go b/widgets/term/action.go
+index 80ed8d9..79e4982 100644
+--- a/widgets/term/action.go
++++ b/widgets/term/action.go
+@@ -41,6 +41,12 @@ func applySequence(vt *Model, seq ansi.Sequence) {
+ 			sixelAction{seq: seq}.apply(vt)
+ 		}
+ 	case ansi.APC:
++		// Kitty graphics arrive as an APC. Try to decode them first, and
++		// fall back to the generic event for any other APC so existing
++		// EventAPC consumers keep working.
++		if vt.kittyGraphics(seq.Data) {
++			return
++		}
+ 		vt.postEvent(EventAPC{Payload: seq.Data})
+ 	}
+ }
+diff --git a/widgets/term/kitty.go b/widgets/term/kitty.go
+new file mode 100644
+index 0000000..e96449b
+--- /dev/null
++++ b/widgets/term/kitty.go
+@@ -0,0 +1,1116 @@
++package term
++
++import (
++	"bytes"
++	"compress/zlib"
++	"encoding/base64"
++	"errors"
++	"fmt"
++	"image"
++	"image/draw"
++	// PNG is the only compressed format the kitty graphics protocol defines
++	// (f=100), so it is the only decoder that needs registering.
++	_ "image/png"
++	"io"
++	"strconv"
++	"strings"
++	"sync"
++	"sync/atomic"
++
++	"go.rockorager.dev/vaxis/log"
++)
++
++// Limits on what a child may make us allocate. The control data is
++// attacker-controlled, so s=65535,v=65535,f=32 is a 17 GiB allocation request
++// unless it is bounded here.
++const (
++	kittyMaxPixels = 64 << 20 // 64Mpx, ~256 MiB at 4 bytes per pixel
++	// kittyMaxInflate bounds an o=z payload only when the command declares no
++	// geometry to derive a tighter bound from (f=100 carries its own size).
++	// zlib over zeros compresses about 1000:1, so any ceiling far above what
++	// the command can actually consume is an amplifier: the sender pays a few
++	// hundred kilobytes and the terminal pays the ceiling.
++	kittyMaxInflate = 64 << 20
++	// kittyInflateSlack allows a PNG's headers, palette and filter bytes on top
++	// of the raw pixels its declared s=/v= imply.
++	kittyInflateSlack = 1 << 16
++)
++
++// kittyCommand is one parsed kitty graphics escape code: the control key/value
++// pairs plus the (still base64) payload.
++type kittyCommand struct {
++	action     byte // a=, default 't'
++	medium     byte // t=, default 'd'
++	format     int  // f=, default 32
++	deleteWhat byte // d=, default 'a'
++
++	width  int // s=, source pixel width for raw formats
++	height int // v=, source pixel height for raw formats
++	size   int // S=, bytes to read from a file/shm source
++	offset int // O=, byte offset into a file/shm source
++
++	id        uint32 // i=
++	number    uint32 // I=
++	placement uint32 // p=
++
++	cols int // c=, display width in cells
++	rows int // r=, display height in cells
++
++	// x=, y=, w=, h= select the source rectangle: the region of the
++	// transmitted image this placement draws. w= or h= of zero means "to the
++	// far edge", which is how the protocol spells "the whole image".
++	srcX int
++	srcY int
++	srcW int
++	srcH int
++
++	// z=, the placement's z-index. The draw path places images on whole cells
++	// and has no depth, so this is recorded rather than acted on -- but it is
++	// part of a placement's identity and a sender that sends it must not have
++	// it silently reinterpreted as something else.
++	z int
++
++	quiet      int  // q=, 1 suppresses OK, 2 suppresses everything
++	more       bool // m=1, another chunk follows
++	compressed bool // o=z
++
++	// moreSet records whether the sender named m= at all. Carrying m= is what
++	// makes a command part of a chunked transfer -- m=0 ends one and m=1
++	// continues it -- so a command without the key is a whole command of its
++	// own and must never be folded into a transfer left in flight.
++	moreSet bool
++
++	// C=. 1 means "do not move the cursor". cursorMovementSet records
++	// whether the sender named C= at all, because placement here only moves
++	// the cursor when it was asked to; see moveCursorAfterKittyImage.
++	cursorMovement    int
++	cursorMovementSet bool
++
++	payload string
++}
++
++// parseKittyCommand parses the data vaxis's ANSI parser hands us for an APC
++// sequence. That is the raw control string with the leading 'G' retained and
++// no ESC_ / ESC\ framing: "G<k=v,...>[;<base64 payload>]". The ';' and the
++// payload are absent entirely for commands that carry no data, such as a=d and
++// a=p.
++//
++// ok is false when the data is not a kitty graphics command at all, so the
++// caller can fall back to posting an EventAPC. Unknown control keys are
++// ignored rather than fatal, per the protocol's forward-compatibility rule.
++func parseKittyCommand(data string) (kittyCommand, bool) {
++	if !strings.HasPrefix(data, "G") {
++		return kittyCommand{}, false
++	}
++	rest := data[1:]
++
++	controls := rest
++	payload := ""
++	if i := strings.IndexByte(rest, ';'); i >= 0 {
++		controls = rest[:i]
++		payload = rest[i+1:]
++	}
++
++	cmd := kittyCommand{
++		action:     't',
++		medium:     'd',
++		format:     32,
++		deleteWhat: 'a',
++		payload:    payload,
++	}
++
++	for _, pair := range strings.Split(controls, ",") {
++		if pair == "" {
++			continue
++		}
++		eq := strings.IndexByte(pair, '=')
++		if eq != 1 || len(pair) < 3 {
++			// Not key=value with a single-letter key: this is not a
++			// kitty control string.
++			return kittyCommand{}, false
++		}
++		key := pair[0]
++		value := pair[2:]
++		if !isASCIILetter(key) {
++			return kittyCommand{}, false
++		}
++
++		switch key {
++		case 'a':
++			cmd.action = value[0]
++		case 't':
++			cmd.medium = value[0]
++		case 'd':
++			cmd.deleteWhat = value[0]
++		case 'o':
++			cmd.compressed = value == "z"
++		case 'f':
++			cmd.format = kittyInt(value, cmd.format)
++		case 's':
++			cmd.width = kittyInt(value, cmd.width)
++		case 'v':
++			cmd.height = kittyInt(value, cmd.height)
++		case 'S':
++			cmd.size = kittyInt(value, cmd.size)
++		case 'O':
++			cmd.offset = kittyInt(value, cmd.offset)
++		case 'c':
++			cmd.cols = kittyInt(value, cmd.cols)
++		case 'r':
++			cmd.rows = kittyInt(value, cmd.rows)
++		case 'x':
++			cmd.srcX = kittyInt(value, cmd.srcX)
++		case 'y':
++			cmd.srcY = kittyInt(value, cmd.srcY)
++		case 'w':
++			cmd.srcW = kittyInt(value, cmd.srcW)
++		case 'h':
++			cmd.srcH = kittyInt(value, cmd.srcH)
++		case 'z':
++			cmd.z = kittyInt(value, cmd.z)
++		case 'q':
++			cmd.quiet = kittyInt(value, cmd.quiet)
++		case 'C':
++			cmd.cursorMovement = kittyInt(value, cmd.cursorMovement)
++			cmd.cursorMovementSet = true
++		case 'm':
++			cmd.more = kittyInt(value, 0) == 1
++			cmd.moreSet = true
++		case 'i':
++			cmd.id = kittyUint32(value, cmd.id)
++		case 'I':
++			cmd.number = kittyUint32(value, cmd.number)
++		case 'p':
++			cmd.placement = kittyUint32(value, cmd.placement)
++		default:
++			// Unknown key: ignore it. A future protocol revision adding
++			// keys must not make existing images undecodable.
++		}
++	}
++
++	return cmd, true
++}
++
++func isASCIILetter(b byte) bool {
++	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
++}
++
++func kittyInt(value string, fallback int) int {
++	n, err := strconv.Atoi(value)
++	if err != nil {
++		return fallback
++	}
++	return n
++}
++
++func kittyUint32(value string, fallback uint32) uint32 {
++	n, err := strconv.ParseUint(value, 10, 32)
++	if err != nil {
++		return fallback
++	}
++	return uint32(n)
++}
++
++// kittyGraphics handles an APC sequence as a kitty graphics command. It reports
++// whether the sequence was one; a false return means the caller must fall back
++// to the generic EventAPC path so existing consumers keep working.
++func (vt *Model) kittyGraphics(data string) bool {
++	cmd, ok := parseKittyCommand(data)
++	if !ok {
++		return false
++	}
++	// Reclaim before acting, not only when a placement is made: a=q, a=d and a
++	// mid-transfer chunk are all commands that leave the graphics list alone,
++	// and any of them may be the first thing to arrive after a scroll dropped
++	// the images the records point at.
++	vt.reclaimKittyPlacements(lookupKittyState(vt))
++	cmd, complete := vt.assembleKittyChunks(cmd)
++	if complete {
++		vt.applyKittyCommand(cmd)
++	}
++	// An incomplete command was a chunk of a larger transfer. It was still a
++	// kitty command, so it is consumed rather than leaked to the application,
++	// but nothing may be displayed until the final chunk lands.
++	releaseKittyState(vt)
++	return true
++}
++
++// Per-model kitty state: the transfer being assembled, the images transmitted
++// so far, and where each of them has been placed.
++//
++// It lives here rather than on Model because Model is not this change's to
++// extend. Everything in it is bounded -- bytes per transfer, images per model,
++// and models with any state at all -- so a child cannot grow it without limit.
++const (
++	kittyMaxChunkedBytes = 32 << 20 // base64 text accumulated for one image
++	kittyMaxStates       = 8        // models holding kitty state
++	kittyMaxStoredImages = 32       // images retained per model for a later a=p
++	kittyMaxStoredBytes  = 64 << 20 // decoded pixels retained per model for a later a=p
++	kittyMaxPlacements   = 64       // kitty images live in the graphics list at once
++)
++
++type kittyAssembly struct {
++	// cmd holds the FIRST chunk's controls, which are authoritative for the
++	// whole transfer; its payload field is empty and unused.
++	cmd kittyCommand
++	// payload accumulates the base64 text. Non-final chunks are guaranteed
++	// to be a multiple of 4 bytes, so concatenating the encoded text and
++	// decoding once at the end is safe. A Builder appends without recopying
++	// what is already there, which matters on a terminal's input path.
++	payload strings.Builder
++}
++
++// kittyStoredImage is an image transmitted with a=t or a=T. The protocol lets
++// a sender transmit once and display repeatedly, so the pixels have to outlive
++// the command that carried them.
++type kittyStoredImage struct {
++	id     uint32 // i=
++	number uint32 // I=, a separate namespace from i=
++	img    image.Image
++	bytes  int // decoded size, so the retained set can be capped by memory
++}
++
++// kittyImageBytes estimates what a decoded image costs to keep. The concrete
++// types the decode path produces are 4 bytes per pixel; anything else an
++// image.Decode returns is close enough for a memory ceiling.
++func kittyImageBytes(img image.Image) int {
++	b := img.Bounds()
++	return b.Dx() * b.Dy() * 4
++}
++
++// releaseKittyPixels drops a placement's reference to its decoded frame once the
++// image has left the graphics list. Image.destroy() frees only the host-side
++// handles; without this the *Image -- reachable from a placement record -- keeps
++// a full frame alive for as long as the record does.
++func releaseKittyPixels(img *Image) {
++	img.destroy()
++	img.img = nil
++}
++
++// kittyPlacement records that a *Image in vt.graphics came from a kitty
++// command, so a=d can find it again. Image itself carries no identity and is
++// shared with the sixel path, which has none.
++type kittyPlacement struct {
++	id        uint32
++	placement uint32
++	z         int
++	img       *Image
++}
++
++type kittyState struct {
++	seq        uint64
++	inflight   *kittyAssembly
++	stored     []kittyStoredImage // oldest first
++	placements []kittyPlacement
++}
++
++func (s *kittyState) empty() bool {
++	return s.inflight == nil && len(s.stored) == 0 && len(s.placements) == 0
++}
++
++var (
++	// kittyStateMu guards the map only. A state's own fields are touched
++	// solely from Model.update, which holds the model's own lock.
++	kittyStateMu  sync.Mutex
++	kittyStates   = map[*Model]*kittyState{}
++	kittyStateSeq uint64
++
++	// kittyStateCount mirrors len(kittyStates). reclaimKittyGraphics is called
++	// from the scroll and resize paths of every term widget in the process,
++	// almost none of which have ever seen a kitty image; reading a counter lets
++	// those bail without contending on kittyStateMu.
++	kittyStateCount atomic.Int64
++)
++
++// lookupKittyState returns a model's state without creating one.
++func lookupKittyState(vt *Model) *kittyState {
++	kittyStateMu.Lock()
++	defer kittyStateMu.Unlock()
++	return kittyStates[vt]
++}
++
++func kittyStateOf(vt *Model) *kittyState {
++	kittyStateMu.Lock()
++	defer kittyStateMu.Unlock()
++	if s := kittyStates[vt]; s != nil {
++		return s
++	}
++	if len(kittyStates) >= kittyMaxStates {
++		evictOldestKittyStateLocked()
++	}
++	kittyStateSeq++
++	s := &kittyState{seq: kittyStateSeq}
++	kittyStates[vt] = s
++	kittyStateCount.Store(int64(len(kittyStates)))
++	return s
++}
++
++// releaseKittyState drops a model's entry once it holds nothing, so a widget
++// that saw one image does not sit in the map for the life of the process.
++func releaseKittyState(vt *Model) {
++	kittyStateMu.Lock()
++	defer kittyStateMu.Unlock()
++	if s := kittyStates[vt]; s != nil && s.empty() {
++		delete(kittyStates, vt)
++		kittyStateCount.Store(int64(len(kittyStates)))
++	}
++}
++
++// evictOldestKittyStateLocked keeps a model that is discarded mid-transfer from
++// pinning its buffer forever. Callers must hold kittyStateMu.
++func evictOldestKittyStateLocked() {
++	var oldest *Model
++	var oldestSeq uint64
++	for m, s := range kittyStates {
++		if oldest == nil || s.seq < oldestSeq {
++			oldest, oldestSeq = m, s.seq
++		}
++	}
++	if oldest != nil {
++		delete(kittyStates, oldest)
++		kittyStateCount.Store(int64(len(kittyStates)))
++	}
++}
++
++// assembleKittyChunks folds a chunked transmission back into a single command.
++//
++// complete is false when the sequence was a non-final chunk, or when a
++// malformed transfer was dropped: in both cases there is nothing to act on yet.
++// When it is true for a chunked transfer, the returned command carries the
++// first chunk's controls and the reassembled payload.
++func (vt *Model) assembleKittyChunks(cmd kittyCommand) (kittyCommand, bool) {
++	s := lookupKittyState(vt)
++	if s == nil || s.inflight == nil {
++		if !cmd.more {
++			// The common case: a whole image in one sequence. The byte
++			// ceiling has to bound this path as well as the accumulator,
++			// or a sender simply declines to chunk and opts out of it.
++			if len(cmd.payload) > kittyMaxChunkedBytes {
++				log.Error("[term] kitty graphics: payload exceeds %d bytes, dropped", kittyMaxChunkedBytes)
++				vt.replyKitty(cmd, fmt.Errorf("EINVAL:payload exceeds %d bytes", kittyMaxChunkedBytes))
++				return kittyCommand{}, false
++			}
++			return cmd, true
++		}
++		s = kittyStateOf(vt)
++		first := cmd
++		first.payload = ""
++		in := &kittyAssembly{cmd: first}
++		if in.append(cmd.payload) {
++			s.inflight = in
++		}
++		return kittyCommand{}, false
++	}
++
++	in := s.inflight
++	if !isKittyContinuation(in.cmd, cmd) {
++		// A sender must finish one image before sending any other
++		// graphics command. Something else arrived, so the partial
++		// transfer is abandoned rather than spliced into an unrelated
++		// command, and the interrupting command is handled on its own.
++		log.Error("[term] kitty graphics: partial transfer interrupted, dropped")
++		s.inflight = nil
++		return vt.assembleKittyChunks(cmd)
++	}
++
++	if !in.append(cmd.payload) {
++		log.Error("[term] kitty graphics: chunked payload exceeds %d bytes, dropped", kittyMaxChunkedBytes)
++		s.inflight = nil
++		return kittyCommand{}, false
++	}
++	if cmd.more {
++		return kittyCommand{}, false
++	}
++
++	done := in.cmd
++	done.payload = in.payload.String()
++	done.more = false
++	s.inflight = nil
++	return done, true
++}
++
++// isKittyContinuation reports whether cmd continues the transfer first opened.
++//
++// The m= key is the whole test: the protocol says continuation chunks carry
++// only m and optionally q, so a command WITHOUT m= is a complete command of its
++// own, never a continuation. Treating an m-less command as one means a single
++// lost final chunk swallows every image that follows it, forever.
++//
++// Real senders are looser about the rest -- vaxis's own encoder repeats f= and
++// i= on every chunk -- so beyond m= a chunk continues the transfer as long as it
++// neither names a different image nor asks for a different action.
++func isKittyContinuation(first, cmd kittyCommand) bool {
++	if !cmd.moreSet {
++		return false
++	}
++	if cmd.id != 0 && cmd.id != first.id {
++		return false
++	}
++	if cmd.number != 0 && cmd.number != first.number {
++		return false
++	}
++	// 't' is the default for a=, so an omitted action parses as 't'.
++	return cmd.action == 't' || cmd.action == first.action
++}
++
++func (a *kittyAssembly) append(payload string) bool {
++	if len(payload) > kittyMaxChunkedBytes-a.payload.Len() {
++		return false
++	}
++	a.payload.WriteString(payload)
++	return true
++}
++
++func (vt *Model) applyKittyCommand(cmd kittyCommand) {
++	switch cmd.action {
++	case 'q':
++		// A query loads the image to find out whether it could be
++		// loaded, reports the result, and displays nothing. Senders
++		// probe with this before using the protocol at all, so an
++		// unanswered query reads as "no kitty support". It must not
++		// store the image either, or a query would clobber an existing
++		// image carrying the same id.
++		_, err := vt.loadKittyImage(cmd)
++		vt.replyKitty(cmd, err)
++	case 'T', 't':
++		img, err := vt.loadKittyImage(cmd)
++		if err != nil {
++			log.Error("[term] kitty graphics: %v", err)
++			vt.replyKitty(cmd, err)
++			return
++		}
++		// a=t transmits and stores WITHOUT displaying; a=T does both.
++		vt.storeKittyImage(img, cmd)
++		if cmd.action == 'T' {
++			err = vt.placeKittyImage(img, cmd)
++		}
++		vt.replyKitty(cmd, err)
++	case 'p':
++		// Display an image transmitted earlier. Answering ENOENT rather
++		// than dropping this silently is what tells a sender to
++		// re-transmit; a client that never hears back redraws forever.
++		img := vt.storedKittyImage(cmd)
++		if img == nil {
++			vt.replyKitty(cmd, errors.New("ENOENT:no image with the given id"))
++			return
++		}
++		vt.replyKitty(cmd, vt.placeKittyImage(img, cmd))
++	case 'd':
++		vt.deleteKittyImages(cmd)
++	default:
++		// The animation actions (a=f, a=a, a=c) are not handled. They
++		// are still kitty commands, so they are consumed rather than
++		// leaked to the application as an EventAPC -- but consuming one
++		// in silence leaves a sender that asked for a response waiting
++		// for a reply that never arrives, instead of falling back to
++		// something this terminal does support.
++		vt.replyKitty(cmd, fmt.Errorf("ENOTSUP:action a=%s not supported", string(cmd.action)))
++	}
++}
++
++// storeKittyImage keeps the pixels so a later a=p can display them again.
++//
++// Per the protocol, re-transmitting data for an id that already exists deletes
++// the old image and every placement of it.
++func (vt *Model) storeKittyImage(src image.Image, cmd kittyCommand) {
++	if cmd.id == 0 && cmd.number == 0 {
++		// Nothing could address this image later, so retaining it would
++		// only consume memory.
++		return
++	}
++	s := kittyStateOf(vt)
++	if cmd.id != 0 {
++		vt.removeKittyPlacements(s, func(p kittyPlacement) bool { return p.id == cmd.id })
++		kept := s.stored[:0]
++		for _, stored := range s.stored {
++			if stored.id == cmd.id {
++				continue
++			}
++			kept = append(kept, stored)
++		}
++		clearKittyStoredTail(s.stored, len(kept))
++		s.stored = kept
++	}
++	if len(s.stored) >= kittyMaxStoredImages {
++		s.stored = append(s.stored[:0], s.stored[1:]...)
++		clearKittyStoredTail(s.stored[:cap(s.stored)], len(s.stored))
++	}
++	s.stored = append(s.stored, kittyStoredImage{
++		id:     cmd.id,
++		number: cmd.number,
++		img:    src,
++		bytes:  kittyImageBytes(src),
++	})
++	// A count alone is not a memory bound: kittyMaxStoredImages
++	// full-resolution frames is hundreds of megabytes. Drop the oldest until
++	// the retained pixels fit, always keeping the image just transmitted.
++	total := 0
++	for _, stored := range s.stored {
++		total += stored.bytes
++	}
++	drop := 0
++	for drop < len(s.stored)-1 && total > kittyMaxStoredBytes {
++		total -= s.stored[drop].bytes
++		drop++
++	}
++	if drop > 0 {
++		s.stored = append(s.stored[:0], s.stored[drop:]...)
++		clearKittyStoredTail(s.stored[:cap(s.stored)], len(s.stored))
++	}
++}
++
++// storedKittyImage finds the image a=p or a=d names. i= is exact; I= names the
++// most recently transmitted image carrying that number, so the search runs
++// newest first.
++func (vt *Model) storedKittyImage(cmd kittyCommand) image.Image {
++	s := lookupKittyState(vt)
++	if s == nil {
++		return nil
++	}
++	for i := len(s.stored) - 1; i >= 0; i-- {
++		stored := s.stored[i]
++		switch {
++		case cmd.id != 0 && stored.id == cmd.id:
++			return stored.img
++		case cmd.id == 0 && cmd.number != 0 && stored.number == cmd.number:
++			return stored.img
++		}
++	}
++	return nil
++}
++
++// deleteKittyImages implements a=d. The d= key selects what goes; lowercase
++// removes placements and keeps the pixels so a later a=p still works, while
++// uppercase frees the image data too.
++func (vt *Model) deleteKittyImages(cmd kittyCommand) {
++	s := lookupKittyState(vt)
++	if s == nil {
++		return
++	}
++	what := cmd.deleteWhat
++	freeData := what >= 'A' && what <= 'Z'
++	if freeData {
++		what += 'a' - 'A'
++	}
++
++	switch what {
++	case 'a':
++		vt.removeKittyPlacements(s, func(kittyPlacement) bool { return true })
++		if freeData {
++			s.stored = nil
++		}
++	case 'i':
++		vt.removeKittyPlacements(s, func(p kittyPlacement) bool {
++			if p.id != cmd.id {
++				return false
++			}
++			// p= narrows the delete to a single placement.
++			return cmd.placement == 0 || p.placement == cmd.placement
++		})
++		if freeData {
++			vt.forgetKittyImages(s, func(stored kittyStoredImage) bool { return stored.id == cmd.id })
++		}
++	case 'n':
++		vt.removeKittyPlacements(s, func(p kittyPlacement) bool {
++			if p.id == 0 || p.id != vt.newestKittyIDForNumber(s, cmd.number) {
++				return false
++			}
++			return cmd.placement == 0 || p.placement == cmd.placement
++		})
++		if freeData {
++			vt.forgetKittyImages(s, func(stored kittyStoredImage) bool { return stored.number == cmd.number })
++		}
++	case 'c':
++		vt.removeKittyPlacements(s, func(p kittyPlacement) bool {
++			return vt.kittyPlacementAtCursor(p)
++		})
++	default:
++		// d=f deletes animation frames, which are unsupported, and the
++		// remaining selectors address geometry this widget does not
++		// track. Deleting nothing is safer than deleting the wrong
++		// image.
++	}
++}
++
++func (vt *Model) newestKittyIDForNumber(s *kittyState, number uint32) uint32 {
++	for i := len(s.stored) - 1; i >= 0; i-- {
++		if s.stored[i].number == number {
++			return s.stored[i].id
++		}
++	}
++	return 0
++}
++
++func (vt *Model) forgetKittyImages(s *kittyState, match func(kittyStoredImage) bool) {
++	kept := s.stored[:0]
++	for _, stored := range s.stored {
++		if match(stored) {
++			continue
++		}
++		kept = append(kept, stored)
++	}
++	clearKittyStoredTail(s.stored, len(kept))
++	s.stored = kept
++}
++
++func (vt *Model) kittyPlacementAtCursor(p kittyPlacement) bool {
++	row, col := int(vt.cursor.row), int(vt.cursor.col)
++	if row < p.img.origin.row || row >= p.img.origin.row+p.img.rows {
++		return false
++	}
++	return col >= p.img.origin.col && col < p.img.origin.col+p.img.cols
++}
++
++// removeKittyPlacements drops the matching placements from the graphics list,
++// releasing the host-side images the draw path cached for them -- the same
++// discipline clearGraphicsLocked follows.
++func (vt *Model) removeKittyPlacements(s *kittyState, match func(kittyPlacement) bool) {
++	if s == nil || len(s.placements) == 0 {
++		return
++	}
++	var doomed map[*Image]struct{}
++	kept := s.placements[:0]
++	for _, p := range s.placements {
++		if match(p) {
++			if doomed == nil {
++				doomed = map[*Image]struct{}{}
++			}
++			doomed[p.img] = struct{}{}
++			continue
++		}
++		kept = append(kept, p)
++	}
++	clearKittyPlacementTail(s.placements, len(kept))
++	s.placements = kept
++	if len(doomed) == 0 {
++		return
++	}
++	keptGraphics := vt.graphics[:0]
++	for _, img := range vt.graphics {
++		if _, ok := doomed[img]; ok {
++			for _, cached := range img.vaxii {
++				cached.vx.RemoveImage(cached.vxImage)
++			}
++			delete(doomed, img)
++			releaseKittyPixels(img)
++			continue
++		}
++		keptGraphics = append(keptGraphics, img)
++	}
++	vt.graphics = keptGraphics
++	// Anything still in doomed had already left the graphics list, so nothing
++	// draws it and its pixels are pure retention.
++	for img := range doomed {
++		releaseKittyPixels(img)
++	}
++}
++
++// evictOldestKittyPlacements bounds the kitty share of the graphics list.
++//
++// Kitty placement deliberately never scrolls, so none of the scroll-driven
++// reclamation paths (shiftGraphicsSourceRows, reflowGraphics, validateGraphics)
++// ever run against these images. A sender using a fresh i= per frame -- the
++// ordinary convention, and what a browser child does -- would otherwise retain
++// every frame it ever sent, each holding a full decoded image.
++func (vt *Model) evictOldestKittyPlacements(s *kittyState) {
++	if len(s.placements) <= kittyMaxPlacements {
++		return
++	}
++	doomed := make(map[*Image]struct{}, len(s.placements)-kittyMaxPlacements)
++	for _, p := range s.placements[:len(s.placements)-kittyMaxPlacements] {
++		doomed[p.img] = struct{}{}
++	}
++	vt.removeKittyPlacements(s, func(p kittyPlacement) bool {
++		_, ok := doomed[p.img]
++		return ok
++	})
++}
++
++// reclaimKittyGraphics releases the frames held by placement records whose
++// image has just been dropped from the graphics list.
++//
++// Reclamation has to follow REMOVAL rather than arrival. A placement holds a raw
++// *Image and Image.destroy() frees only the host-side handles, so a decoded frame
++// stays resident until something clears img.img -- and the only other caller of
++// reclaimKittyPlacements is the arrival of the next kitty command, which never
++// comes once a child stops sending. Every path in term.go that shrinks or clears
++// vt.graphics calls this, so a page that scrolls away releases its pixels.
++func (vt *Model) reclaimKittyGraphics() {
++	if kittyStateCount.Load() == 0 {
++		return
++	}
++	vt.reclaimKittyPlacements(lookupKittyState(vt))
++}
++
++// reclaimKittyPlacements discards records whose image has already left the
++// graphics list -- a scrollback trim, a reflow or a clear drops images without
++// telling us -- and releases the frame each of those records was still holding.
++//
++// It is deliberately NOT gated on the record list outnumbering the graphics
++// list. The graphics list also carries sixel images, so a widget showing five
++// sixels and three dead kitty records satisfies that comparison while retaining
++// three full frames; the count says nothing about which images are which.
++func (vt *Model) reclaimKittyPlacements(s *kittyState) {
++	if s == nil || len(s.placements) == 0 {
++		return
++	}
++	live := make(map[*Image]struct{}, len(vt.graphics))
++	for _, img := range vt.graphics {
++		live[img] = struct{}{}
++	}
++	kept := s.placements[:0]
++	for _, p := range s.placements {
++		if _, ok := live[p.img]; !ok {
++			// Out of the graphics list: nothing draws it, so the record
++			// was all that still held the frame.
++			releaseKittyPixels(p.img)
++			continue
++		}
++		kept = append(kept, p)
++	}
++	clearKittyPlacementTail(s.placements, len(kept))
++	s.placements = kept
++}
++
++// clearKittyPlacementTail zeroes the slots a filter left beyond the new length.
++// Reslicing shortens the view, not the backing array, so without this every
++// dropped record keeps its *Image -- and with it a whole decoded frame -- alive
++// in memory the slice still owns.
++func clearKittyPlacementTail(placements []kittyPlacement, n int) {
++	for i := n; i < len(placements); i++ {
++		placements[i] = kittyPlacement{}
++	}
++}
++
++// clearKittyStoredTail does the same for the retained-image list, where each
++// dropped slot holds a decoded image.Image.
++func clearKittyStoredTail(stored []kittyStoredImage, n int) {
++	for i := n; i < len(stored); i++ {
++		stored[i] = kittyStoredImage{}
++	}
++}
++
++// loadKittyImage turns a command's payload into pixels.
++//
++// t=d carries the pixels inline. The other media carry only a name -- a file
++// path or a shared memory object -- which the child chooses, so they are handled
++// in kitty_media.go behind the EnableKittyFileMedia gate.
++func (vt *Model) loadKittyImage(cmd kittyCommand) (image.Image, error) {
++	var (
++		raw []byte
++		err error
++	)
++	switch cmd.medium {
++	case 'd':
++		raw, err = decodeKittyPayload(cmd.payload)
++	case 'f', 't', 's':
++		raw, err = vt.loadKittyMedia(cmd)
++	default:
++		return nil, fmt.Errorf("EINVAL:transmission medium %q not supported", string(cmd.medium))
++	}
++	if err != nil {
++		return nil, err
++	}
++	if cmd.compressed {
++		raw, err = inflateKitty(raw, kittyInflateLimit(cmd))
++		if err != nil {
++			return nil, err
++		}
++	}
++	return decodeKittyPixels(cmd, raw)
++}
++
++func decodeKittyPayload(payload string) ([]byte, error) {
++	// Some senders omit the trailing padding. Pick the encoding from the
++	// length rather than decoding twice: Go reports a padding error only after
++	// decoding the whole body, so a try-then-fall-back costs every unpadded
++	// sender a full second pass over a payload that can be megabytes.
++	enc := base64.StdEncoding
++	if len(payload)%4 != 0 {
++		enc = base64.RawStdEncoding
++	}
++	raw, err := enc.DecodeString(payload)
++	if err != nil {
++		return nil, fmt.Errorf("EINVAL:bad base64 payload: %v", err)
++	}
++	return raw, nil
++}
++
++// kittyInflateLimit is the largest inflated payload the command could actually
++// consume, derived from f= and s=/v=. A raw format needs exactly width*height*bpp
++// bytes and everything past that is discarded by decodeKittyPixels, so there is
++// no reason to materialise it; a PNG carries its own dimensions, so it is bounded
++// by the declared geometry when the sender gave one and by kittyMaxInflate when
++// it did not.
++func kittyInflateLimit(cmd kittyCommand) int64 {
++	w, h := cmd.width, cmd.height
++	if w > 0 && h > 0 && w <= kittyMaxPixels/h {
++		px := int64(w) * int64(h)
++		switch cmd.format {
++		case 24:
++			return px * 3
++		case 32:
++			return px * 4
++		default:
++			return px*4 + kittyInflateSlack
++		}
++	}
++	if cmd.format == 24 || cmd.format == 32 {
++		// A raw format with no usable s=/v= decodes to nothing however many
++		// bytes arrive, so inflating any of them is wasted work.
++		return 0
++	}
++	return kittyMaxInflate
++}
++
++func inflateKitty(raw []byte, limit int64) ([]byte, error) {
++	zr, err := zlib.NewReader(bytes.NewReader(raw))
++	if err != nil {
++		return nil, fmt.Errorf("EINVAL:bad zlib payload: %v", err)
++	}
++	defer zr.Close()
++	out, err := io.ReadAll(io.LimitReader(zr, limit+1))
++	if err != nil {
++		return nil, fmt.Errorf("EINVAL:bad zlib payload: %v", err)
++	}
++	if int64(len(out)) > limit {
++		return nil, errors.New("EINVAL:decompressed payload exceeds what s=, v= and f= declare")
++	}
++	return out, nil
++}
++
++// decodeKittyPixels interprets raw bytes according to the f= key: 24 is packed
++// RGB, 32 is packed RGBA, and 100 is PNG. The raw formats carry no dimensions
++// of their own, so s= and v= supply them.
++func decodeKittyPixels(cmd kittyCommand, raw []byte) (image.Image, error) {
++	switch cmd.format {
++	case 100:
++		// The declared dimensions have to be checked BEFORE any pixels are
++		// allocated. A PNG carries its own size, so a payload of a few
++		// kilobytes of zeros can ask for a 9000x9000 image and hundreds of
++		// megabytes with it. DecodeConfig reads only the header.
++		cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
++		if err != nil {
++			return nil, fmt.Errorf("EINVAL:cannot decode image header: %v", err)
++		}
++		if cfg.Width <= 0 || cfg.Height <= 0 {
++			return nil, errors.New("EINVAL:image declares empty dimensions")
++		}
++		if cfg.Width > kittyMaxPixels/cfg.Height {
++			return nil, errors.New("EINVAL:image dimensions too large")
++		}
++		img, _, err := image.Decode(bytes.NewReader(raw))
++		if err != nil {
++			return nil, fmt.Errorf("EINVAL:cannot decode image: %v", err)
++		}
++		return img, nil
++	case 24, 32:
++		bpp := 3
++		if cmd.format == 32 {
++			bpp = 4
++		}
++		w, h := cmd.width, cmd.height
++		if w <= 0 || h <= 0 {
++			return nil, fmt.Errorf("EINVAL:f=%d requires s= and v=", cmd.format)
++		}
++		if w > kittyMaxPixels/h {
++			return nil, errors.New("EINVAL:image dimensions too large")
++		}
++		need := w * h * bpp
++		if len(raw) < need {
++			return nil, fmt.Errorf("EINVAL:got %d pixel bytes, need %d", len(raw), need)
++		}
++		img := image.NewNRGBA(image.Rect(0, 0, w, h))
++		if bpp == 4 {
++			copy(img.Pix, raw[:need])
++			return img, nil
++		}
++		for i, j := 0, 0; i < need; i, j = i+3, j+4 {
++			img.Pix[j] = raw[i]
++			img.Pix[j+1] = raw[i+1]
++			img.Pix[j+2] = raw[i+2]
++			img.Pix[j+3] = 0xFF
++		}
++		return img, nil
++	default:
++		return nil, fmt.Errorf("EINVAL:unsupported format f=%d", cmd.format)
++	}
++}
++
++// placeKittyImage anchors a decoded image at the cursor and adds it to the
++// graphics list.
++//
++// This deliberately does not reuse positionSixel: that advances the cursor
++// rows-1 unconditionally and gates on DECSDM and DEC-8452, neither of which has
++// any meaning in the kitty protocol, where the sender controls cursor movement
++// with C=. Only the pixel-to-cell arithmetic and the scrollback-absolute
++// sourceRow idiom carry over, and sourceRow must stay scrollback-absolute
++// because visibleGraphics and the scrollback trim both depend on it.
++func (vt *Model) placeKittyImage(src image.Image, cmd kittyCommand) error {
++	src, err := cropKittySource(src, cmd)
++	if err != nil {
++		return err
++	}
++	bounds := src.Bounds()
++	img := &Image{img: src}
++	img.cols = vt.sixelCellCols(bounds.Dx())
++	img.rows = vt.sixelCellRows(bounds.Dy())
++
++	// c= and r= override the natural cell footprint. When only one is given
++	// the other follows from the source aspect ratio.
++	switch {
++	case cmd.cols > 0 && cmd.rows > 0:
++		img.cols, img.rows = cmd.cols, cmd.rows
++	case cmd.cols > 0:
++		img.rows = max(1, cmd.cols*img.rows/img.cols)
++		img.cols = cmd.cols
++	case cmd.rows > 0:
++		img.cols = max(1, cmd.rows*img.cols/img.rows)
++		img.rows = cmd.rows
++	}
++
++	img.origin.row = int(vt.cursor.row)
++	img.origin.col = int(vt.cursor.col)
++	img.sourceRow = vt.activeScreen.scrollbackLen() + int(vt.cursor.row)
++
++	s := kittyStateOf(vt)
++	// A placement is identified by the (image id, placement id) pair, and
++	// sending the same pair again replaces the earlier placement instead of
++	// stacking a second copy on top of it. A zero in either half is "no id",
++	// which never replaces anything.
++	if cmd.id != 0 && cmd.placement != 0 {
++		vt.removeKittyPlacements(s, func(p kittyPlacement) bool {
++			return p.id == cmd.id && p.placement == cmd.placement
++		})
++	}
++
++	vt.graphics = append(vt.graphics, img)
++	s.placements = append(s.placements, kittyPlacement{
++		id:        cmd.id,
++		placement: cmd.placement,
++		z:         cmd.z,
++		img:       img,
++	})
++	vt.reclaimKittyPlacements(s)
++	vt.evictOldestKittyPlacements(s)
++
++	vt.moveCursorAfterKittyImage(img, cmd)
++	return nil
++}
++
++// cropKittySource narrows a transmitted image to the source rectangle a
++// placement asked for with x=, y=, w= and h=.
++//
++// Without this a sender that transmits one atlas and places tiles out of it gets
++// the whole atlas drawn at every placement: c= and r= still give the footprint
++// the right size, so the mistake shows up as wrong pixels rather than wrong
++// geometry. An absent or zero w=/h= means "to the far edge", which is how the
++// protocol spells the whole image, and the rectangle is intersected with the
++// bounds so an oversized or out-of-range one cannot read past them.
++func cropKittySource(src image.Image, cmd kittyCommand) (image.Image, error) {
++	if cmd.srcX == 0 && cmd.srcY == 0 && cmd.srcW == 0 && cmd.srcH == 0 {
++		return src, nil
++	}
++	bounds := src.Bounds()
++	rect := image.Rect(
++		bounds.Min.X+cmd.srcX,
++		bounds.Min.Y+cmd.srcY,
++		endOfKittySpan(bounds.Min.X+cmd.srcX, cmd.srcW, bounds.Max.X),
++		endOfKittySpan(bounds.Min.Y+cmd.srcY, cmd.srcH, bounds.Max.Y),
++	).Intersect(bounds)
++	if rect.Empty() {
++		return nil, errors.New("EINVAL:source rectangle lies outside the image")
++	}
++	if rect == bounds {
++		return src, nil
++	}
++	// The concrete types this package decodes to all implement SubImage, which
++	// shares the backing pixels instead of copying a region out of a frame that
++	// may be megabytes on a per-placement path.
++	if sub, ok := src.(interface {
++		SubImage(image.Rectangle) image.Image
++	}); ok {
++		return sub.SubImage(rect), nil
++	}
++	dst := image.NewNRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
++	draw.Draw(dst, dst.Bounds(), src, rect.Min, draw.Src)
++	return dst, nil
++}
++
++// endOfKittySpan resolves one edge of the source rectangle: a zero w= or h=
++// extends the span to the edge of the image rather than selecting nothing.
++func endOfKittySpan(start, span, limit int) int {
++	if span <= 0 {
++		return limit
++	}
++	return start + span
++}
++
++// moveCursorAfterKittyImage moves the cursor past the image, but only when the
++// sender explicitly asked for that with C=0.
++//
++// The protocol's own default is C=0, i.e. move. Inside an embedded terminal
++// that default reads as "shove the page down on every image", so movement is
++// opt-in here: a sender that wants it says so. What is NOT done either way is
++// positionSixel's rows-1 advance, which is neither this rule nor the protocol's.
++func (vt *Model) moveCursorAfterKittyImage(img *Image, cmd kittyCommand) {
++	if !cmd.cursorMovementSet || cmd.cursorMovement != 0 {
++		return
++	}
++	// ind() rather than a bare row increment, so the scroll region and the
++	// scrollback are honoured. origin.row was recorded before this, and
++	// sourceRow is scrollback-absolute, so a scroll here leaves both correct.
++	startCol := vt.cursor.col
++	for i := 0; i < img.rows; i += 1 {
++		vt.ind()
++	}
++	vt.cursor.col = min(startCol+column(img.cols), column(vt.width()-1))
++	vt.lastCol = false
++}
++
++// replyKitty answers the sender. The protocol requires a response to a=q, and
++// to any command carrying a non-zero image id or number; q=1 suppresses the OK
++// responses and q=2 suppresses failures as well.
++func (vt *Model) replyKitty(cmd kittyCommand, err error) {
++	if cmd.action != 'q' && cmd.id == 0 && cmd.number == 0 {
++		return
++	}
++	if err == nil && cmd.quiet >= 1 {
++		return
++	}
++	if err != nil && cmd.quiet >= 2 {
++		return
++	}
++
++	var b strings.Builder
++	b.WriteString("\x1B_Gi=")
++	b.WriteString(strconv.FormatUint(uint64(cmd.id), 10))
++	if cmd.number != 0 {
++		b.WriteString(",I=")
++		b.WriteString(strconv.FormatUint(uint64(cmd.number), 10))
++	}
++	if cmd.placement != 0 {
++		b.WriteString(",p=")
++		b.WriteString(strconv.FormatUint(uint64(cmd.placement), 10))
++	}
++	b.WriteByte(';')
++	if err == nil {
++		b.WriteString("OK")
++	} else {
++		b.WriteString(sanitizeKittyReply(err.Error()))
++	}
++	b.WriteString("\x1B\\")
++
++	vt.enqueueReplyString(b.String())
++}
++
++// sanitizeKittyReply keeps an error message from terminating or extending the
++// APC we are writing back into the child's input stream.
++func sanitizeKittyReply(msg string) string {
++	return strings.Map(func(r rune) rune {
++		if r < 0x20 || r == 0x7F {
++			return ' '
++		}
++		return r
++	}, msg)
++}
+diff --git a/widgets/term/kitty_media.go b/widgets/term/kitty_media.go
+new file mode 100644
+index 0000000..ac0c5ce
+--- /dev/null
++++ b/widgets/term/kitty_media.go
+@@ -0,0 +1,247 @@
++package term
++
++import (
++	"errors"
++	"fmt"
++	"io"
++	"os"
++	"path/filepath"
++	"strings"
++
++	"go.rockorager.dev/vaxis/log"
++)
++
++// WithKittyFileMedia controls whether a child's kitty graphics command may name
++// a file or a POSIX shared-memory object as the source of its pixels (t=f, t=t,
++// t=s) rather than carrying them inline.
++//
++// It is off by default. Those media read a path taken directly from the child's
++// escape stream, so enabling them for a child that relays untrusted bytes turns
++// the terminal into an arbitrary-file-read primitive.
++func WithKittyFileMedia(enabled bool) Option {
++	return func(m *Model) {
++		m.EnableKittyFileMedia = enabled
++	}
++}
++
++const (
++	// kittyMaxMediaBytes caps a single non-inline transfer independently of
++	// the sender's S= key, which is itself attacker-controlled.
++	kittyMaxMediaBytes = 64 << 20
++
++	// kittyShmDir is where Linux keeps POSIX shared-memory objects: shm_open
++	// is a libc function implemented as open() against this tmpfs, and
++	// neither the standard library nor golang.org/x/sys binds it, so this
++	// path is the only route to t=s without cgo.
++	kittyShmDir = "/dev/shm"
++
++	// kittyTempMarker is the substring the protocol requires in the name of
++	// a t=t source before a terminal may delete it.
++	kittyTempMarker = "tty-graphics-protocol"
++)
++
++// kittyStagingDirs are the only directories a legitimate sender stages pixels
++// in. Reads are confined to them by allowlist rather than kept out of a list of
++// sensitive trees: naming the forbidden places leaves everything unnamed --
++// $HOME, the mail store, the git checkout -- readable by any child that can
++// write an escape sequence, and aerc runs an untrusted mail body through a
++// filter on this widget.
++func kittyStagingDirs() []string {
++	named := []string{"/tmp", kittyShmDir, os.TempDir()}
++	if tmp := os.Getenv("TMPDIR"); tmp != "" {
++		named = append(named, tmp)
++	}
++	// Carry the symlink-resolved form of each root as well: a source path is
++	// resolved before it is checked, so a staging root reached through a
++	// symlink would otherwise never match its own contents.
++	dirs := make([]string, 0, 2*len(named))
++	for _, dir := range named {
++		dirs = append(dirs, dir)
++		if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
++			dirs = append(dirs, resolved)
++		}
++	}
++	return dirs
++}
++
++// isKittyInStagingDir reports whether an already-resolved path lies inside one
++// of those directories.
++func isKittyInStagingDir(resolved string) bool {
++	for _, dir := range kittyStagingDirs() {
++		if isKittyWithin(dir, resolved) {
++			return true
++		}
++	}
++	return false
++}
++
++// kittyStagedFile reports whether a resolved path is one a graphics sender
++// deliberately staged: inside a staging directory AND carrying the protocol's
++// own tty-graphics-protocol marker in its FILENAME.
++//
++// Containment alone is not enough. A temp directory is shared with every other
++// program on the machine -- editor swap files, downloaded attachments, another
++// session's scratch tree -- so "somewhere under /tmp" still names plenty worth
++// stealing. The marker is what distinguishes a file staged for this protocol
++// from a file that merely happens to sit next to one.
++//
++// Both halves are checked on the resolved path, so a marker-named symlink
++// pointing out of the staging tree fails on containment and a symlink into it
++// fails on the marker.
++func kittyStagedFile(resolved string) bool {
++	return isKittyInStagingDir(resolved) &&
++		strings.Contains(filepath.Base(resolved), kittyTempMarker)
++}
++
++// loadKittyMedia reads the pixel bytes for the non-inline transmission media.
++//
++// For t=f and t=t the payload is a base64-encoded filesystem PATH; for t=s it is
++// a base64-encoded shared-memory object NAME. Either way the bytes come out of
++// the child's escape stream, so every one of these media is refused unless the
++// embedder opted in with WithKittyFileMedia.
++func (vt *Model) loadKittyMedia(cmd kittyCommand) ([]byte, error) {
++	if !vt.EnableKittyFileMedia {
++		// Refused silently as far as the screen is concerned: nothing is
++		// read, nothing is placed. The sender still learns why.
++		return nil, errors.New("EPERM:file and shared memory transmission media are disabled")
++	}
++	decoded, err := decodeKittyPayload(cmd.payload)
++	if err != nil {
++		return nil, err
++	}
++	switch cmd.medium {
++	case 's':
++		return readKittySharedMemory(string(decoded), cmd)
++	case 'f', 't':
++		return readKittyFileMedium(string(decoded), cmd)
++	default:
++		return nil, fmt.Errorf("EINVAL:transmission medium %q not supported", string(cmd.medium))
++	}
++}
++
++// readKittyFileMedium reads a file named by the child.
++//
++// t=t additionally asks the terminal to delete the source afterwards. That
++// deletion is an attacker-influenced os.Remove, so it happens only under the
++// protocol's own guard: a known temporary directory AND the tty-graphics-protocol
++// marker, both checked on the symlink-resolved path. t=f is never deleted -- it
++// is "a simple file" the client owns -- and neither is a shared memory object.
++func readKittyFileMedium(path string, cmd kittyCommand) ([]byte, error) {
++	resolved, err := resolveKittyPath(path)
++	if err != nil {
++		return nil, err
++	}
++	if !kittyStagedFile(resolved) {
++		return nil, errors.New("EPERM:only files staged for the graphics protocol " +
++			"in a temporary directory may be read")
++	}
++	data, err := readKittySource(resolved, cmd)
++	if err != nil {
++		return nil, err
++	}
++	if cmd.medium == 't' && kittyDeletableTempFile(resolved) {
++		if err := os.Remove(resolved); err != nil {
++			log.Error("[term] kitty graphics: cannot delete temporary source: %v", err)
++		}
++	}
++	return data, nil
++}
++
++// readKittySharedMemory reads a POSIX shared-memory object by name.
++//
++// The name is a flat namespace with a conventional leading '/', so anything left
++// looking like a path after that slash is a traversal attempt: without this
++// check "/../../etc/shadow" resolves out of the tmpfs entirely.
++func readKittySharedMemory(name string, cmd kittyCommand) ([]byte, error) {
++	name = strings.TrimPrefix(name, "/")
++	if name == "" || name == "." || name == ".." ||
++		strings.ContainsRune(name, '/') || strings.ContainsRune(name, 0) {
++		return nil, errors.New("EINVAL:invalid shared memory object name")
++	}
++	resolved, err := resolveKittyPath(filepath.Join(kittyShmDir, name))
++	if err != nil {
++		return nil, err
++	}
++	// A symlink planted in the tmpfs must not carry the read back out of it.
++	if !isKittyWithin(kittyShmDir, resolved) {
++		return nil, errors.New("EPERM:shared memory object resolves outside " + kittyShmDir)
++	}
++	return readKittySource(resolved, cmd)
++}
++
++// resolveKittyPath follows symlinks, as the protocol requires, and reports the
++// symlink loop or missing file as an error rather than reading something else.
++func resolveKittyPath(path string) (string, error) {
++	if path == "" || strings.ContainsRune(path, 0) {
++		return "", errors.New("EINVAL:invalid path")
++	}
++	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
++	if err != nil {
++		return "", fmt.Errorf("ENOENT:cannot resolve source: %v", err)
++	}
++	return resolved, nil
++}
++
++// readKittySource reads the pixel bytes, honouring the O= offset and S= size
++// keys under a hard ceiling of its own.
++func readKittySource(path string, cmd kittyCommand) ([]byte, error) {
++	if cmd.offset < 0 {
++		return nil, errors.New("EINVAL:negative offset")
++	}
++	fi, err := os.Stat(path)
++	if err != nil {
++		return nil, fmt.Errorf("ENOENT:cannot stat source: %v", err)
++	}
++	// Device files, FIFOs and sockets are not images; opening a FIFO would
++	// also block the terminal's input path forever.
++	if !fi.Mode().IsRegular() {
++		return nil, errors.New("EPERM:only regular files may be read")
++	}
++	f, err := os.Open(path)
++	if err != nil {
++		return nil, fmt.Errorf("ENOENT:cannot open source: %v", err)
++	}
++	defer f.Close()
++	// Re-check on the open handle: the name could have been swapped for
++	// something else between the stat and the open.
++	opened, err := f.Stat()
++	if err != nil || !opened.Mode().IsRegular() {
++		return nil, errors.New("EPERM:only regular files may be read")
++	}
++	if cmd.offset > 0 {
++		if _, err := f.Seek(int64(cmd.offset), io.SeekStart); err != nil {
++			return nil, fmt.Errorf("EINVAL:cannot seek to offset %d: %v", cmd.offset, err)
++		}
++	}
++	limit := int64(kittyMaxMediaBytes)
++	if cmd.size > 0 && int64(cmd.size) < limit {
++		limit = int64(cmd.size)
++	}
++	data, err := io.ReadAll(io.LimitReader(f, limit+1))
++	if err != nil {
++		return nil, fmt.Errorf("EIO:cannot read source: %v", err)
++	}
++	if int64(len(data)) > limit {
++		return nil, fmt.Errorf("EINVAL:source exceeds %d bytes", limit)
++	}
++	return data, nil
++}
++
++// kittyDeletableTempFile implements the protocol's deletion guard for t=t: a
++// known temporary directory AND the tty-graphics-protocol marker on the
++// filename. That is the same predicate the read is confined by, so a t=t source
++// the terminal was allowed to read is also one it may remove; deletion stays
++// narrower only because it is reached from the t=t arm alone.
++func kittyDeletableTempFile(path string) bool {
++	return kittyStagedFile(path)
++}
++
++// isKittyWithin reports whether path lies strictly inside dir, comparing whole
++// path elements so that /tmpfoo does not count as being under /tmp.
++func isKittyWithin(dir string, path string) bool {
++	dir = filepath.Clean(dir)
++	if dir == "/" {
++		return true
++	}
++	return strings.HasPrefix(filepath.Clean(path), dir+string(filepath.Separator))
++}
+diff --git a/widgets/term/term.go b/widgets/term/term.go
+index e37955e..648a3de 100644
+--- a/widgets/term/term.go
++++ b/widgets/term/term.go
+@@ -40,6 +40,16 @@ type Model struct {
+ 	// protocol state through the terminal widget. Only enable this when the
+ 	// host terminal supports Kitty keyboard encoding.
+ 	EnableKittyKeyboard bool
++
++	// EnableKittyFileMedia allows a child's kitty graphics command to name a
++	// FILE or a POSIX shared-memory object as the source of its pixels
++	// (t=f, t=t, t=s) instead of carrying them inline.
++	//
++	// Off by default, and that default is load-bearing: those media turn any
++	// child that echoes untrusted bytes into an arbitrary-file-read primitive,
++	// since the path is taken straight from the escape stream. Enable it only
++	// for children you trust.
++	EnableKittyFileMedia bool
+ 	// AllowKeyboardActionMode allows ANSI KAM (SM 2) to suppress keyboard input.
+ 	// It is disabled by default because applications can otherwise make the
+ 	// terminal ignore user typing.
+@@ -967,6 +977,7 @@ func (vt *Model) reflowGraphics(oldPrimary screenBuffer, oldWidth int, droppedSo
+ 		kept = append(kept, img)
+ 	}
+ 	vt.graphics = kept
++	vt.reclaimKittyGraphics()
+ }
+ 
+ func (vt *Model) validateGraphics() {
+@@ -979,6 +990,7 @@ func (vt *Model) validateGraphics() {
+ 		kept = append(kept, img)
+ 	}
+ 	vt.graphics = kept
++	vt.reclaimKittyGraphics()
+ }
+ 
+ func (vt *Model) graphicFits(img *Image) bool {
+@@ -1428,6 +1440,7 @@ func (vt *Model) shiftGraphicsSourceRows(dropped int) {
+ 		kept = append(kept, img)
+ 	}
+ 	vt.graphics = kept
++	vt.reclaimKittyGraphics()
+ }
+ 
+ func (vt *Model) clearGraphicsLocked() {
+@@ -1438,6 +1451,7 @@ func (vt *Model) clearGraphicsLocked() {
+ 		img.destroy()
+ 	}
+ 	vt.graphics = nil
++	vt.reclaimKittyGraphics()
+ }
+ 
+ func (vt *Model) Close() {

@@ -14,3 +14,8 @@ __pycache__/
 # Temp work, per CLAUDE.md. Never tracked; this only stops it cluttering
 # `git status`.
 scratch/
+
+# vaxis checkout the kitty-graphics patch is developed against; the patch
+# itself is committed under modules/linux, this tree is not.
+.vaxis-kitty/
+.claude/plans/
