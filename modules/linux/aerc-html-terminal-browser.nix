@@ -121,6 +121,47 @@ let
     printf '%s\n' "$SRV_PID" >> "${urlFile}"
   '';
 
+  # THE NATIVE PATH. Same mail, same browser, but in its OWN pane instead of
+  # inside aerc's :term -- so terminal-browser writes its kitty frames straight
+  # to ghostty and nothing decodes or re-places them.
+  #
+  # That is the whole difference in feel. Through aerc, every scroll is parsed,
+  # decoded to pixels, re-encoded and re-transmitted, and the old placement has
+  # to be deleted first: measured at 15 kitty deletes and ~0.9 MB for two
+  # scrolls, with a blank frame before each replacement. Run directly there is
+  # no middleman, so a scroll is one atomic replace and it does not flash.
+  #
+  # The cost is where the mail appears: a split pane rather than aerc's own
+  # message view. Both binds exist so the trade can be judged by feel.
+  launchSplit = writeShellScript "aerc-html-terminal-browser-split" ''
+    export PATH=${lib.makeBinPath [ coreutils ]}:$PATH
+    set -u
+
+    BROWSER="${terminalBrowser}"
+    URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
+    if [ -z "$URL" ] || [ ! -x "$BROWSER" ]; then
+      echo "no served mail, or terminal-browser is not installed"
+      sleep 5; exit 1
+    fi
+
+    # Deliberately KEEPING the multiplexer environment here -- it is what lets
+    # terminal-browser find a pane to split, which is exactly the mechanism the
+    # in-aerc launcher has to strip.
+    # Every chrome switch, same as the in-aerc launcher. Omitting --no-overlays
+    # and --no-context-menu here was an oversight: terminal-browser draws its
+    # toasts and HUDs over the page, which is the "extra junk on top" this
+    # variant was reported with.
+    exec "$BROWSER" open "$URL" \
+      --split right \
+      --size 0.6 \
+      --preload=${pagerKeys} \
+      --app-mode \
+      --no-toolbar \
+      --no-frame \
+      --no-overlays \
+      --no-context-menu
+  '';
+
   launch = writeShellScript "aerc-html-terminal-browser" ''
     export PATH=${lib.makeBinPath [ coreutils ]}:$PATH
     set -u
@@ -207,5 +248,6 @@ symlinkJoin {
     mkdir -p $out/bin
     ln -s ${serve} $out/bin/aerc-mail-serve
     ln -s ${launch} $out/bin/aerc-html-terminal-browser
+    ln -s ${launchSplit} $out/bin/aerc-html-terminal-browser-split
   '';
 }
