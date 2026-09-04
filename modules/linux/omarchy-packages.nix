@@ -111,6 +111,15 @@ let
     chawan
     w3m
 
+    # `O` in aerc's [view] opens the message in terminal-browser inside aerc's
+    # own :term. Two scripts, because :term is given a pty but no stdin from the
+    # mail: aerc-mail-serve takes the message over `:pipe -m -b` and records a
+    # URL, aerc-html-terminal-browser launches the browser on it. See
+    # modules/linux/aerc-html-terminal-browser.nix for why a text/html FILTER
+    # cannot do this -- a filter gets pipes, and terminal-browser names its pane
+    # from the pts on its stdin.
+    aerc-html-terminal-browser
+
     # Outlook mailbox as loopback IMAP + sendmail(1) (gh:edwinhu/mail-bridge).
     # Source-built, so unlike the Bun-release CLIs below it needs no x86_64 gate.
     mail-bridge

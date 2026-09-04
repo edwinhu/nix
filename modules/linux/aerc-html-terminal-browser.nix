@@ -33,6 +33,7 @@
 , writeShellScript
 , python3
 , coreutils
+, symlinkJoin
 , mailServe ? ../../hosts/linux/omarchy/files/mail-serve.py
 , mailInlineImages ? ../../hosts/linux/omarchy/files/mail-inline-images.py
   # terminal-browser is not in nixpkgs; it installs itself under $HOME. Keep the
@@ -40,88 +41,102 @@
 , terminalBrowser ? "$HOME/.local/share/terminal-browser/app/bin/terminal-browser"
 }:
 
-writeShellScript "aerc-html-terminal-browser" ''
-  export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
-  set -u
+# TWO SCRIPTS, because :term cannot be handed the message. aerc runs a :term
+# command with a pty but no stdin from the mail, so the message reaches the
+# browser in two steps: `:pipe -m -b` gives the mail to the server, which
+# records a URL, and `:term` then launches the browser on it. The keybinding in
+# ~/dotfiles/.config/aerc/binds.conf chains the two.
+let
+  # Where the serve step leaves the URL for the launch step. Per-user runtime
+  # dir, not /tmp: it is already per-user and cleaned on logout.
+  urlFile = "\${XDG_RUNTIME_DIR:-/tmp}/aerc-mail-browser-url";
 
-  # Double-quoted, not escapeShellArg: the default location is under $HOME and
-  # has to expand at run time, in the user's environment rather than the build's.
-  BROWSER="${terminalBrowser}"
-  PART="$(cat)"
-  DIR="$(mktemp -d)"
-  SRV=""
-  cleanup() { [ -n "$SRV" ] && kill "$SRV" 2>/dev/null; rm -rf "$DIR"; }
-  trap cleanup EXIT INT TERM HUP
+  serve = writeShellScript "aerc-mail-serve" ''
+    export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
+    set -u
 
-  # 4s per image, 40 images, no zoom -- the mail renders at its authored size,
-  # which is what a browser does and what scratchpad/browser-3264.png shows.
-  python3 ${mailInlineImages} "$DIR" 4 40 1.0 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
-    || printf '%s' "$PART" > "$DIR/index.html"
+    PART="$(cat)"
+    DIR="$(mktemp -d -t aerc-mail-XXXXXX)"
 
-  python3 ${mailServe} "$DIR" > "$DIR/port" 2>/dev/null &
-  SRV=$!
-  PORT=""
-  for _ in $(seq 1 40); do
-    PORT=$(tr -d '\n' < "$DIR/port" 2>/dev/null)
-    [ -n "$PORT" ] && break
-    sleep 0.1
-  done
+    # 4s per image, 40 images, no zoom -- the mail renders at its authored size,
+    # which is what a browser does.
+    python3 ${mailInlineImages} "$DIR" 4 40 1.0 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
+      || printf '%s' "$PART" > "$DIR/index.html"
 
-  # No server or no browser means no images. Fall back to the raw part rather
-  # than a blank pane -- an empty message view reads as aerc hanging.
-  if [ -z "$PORT" ] || [ ! -x "$BROWSER" ]; then
-    printf '%s' "$PART"
-    exit 0
-  fi
+    # The server outlives this script on purpose: the browser has to be able to
+    # fetch from it after :pipe has returned. It exits with the document dir.
+    setsid python3 ${mailServe} "$DIR" > "$DIR/port" 2>/dev/null &
+    PORT=""
+    for _ in $(seq 1 60); do
+      PORT=$(tr -d '\n' < "$DIR/port" 2>/dev/null)
+      [ -n "$PORT" ] && break
+      sleep 0.1
+    done
+    [ -n "$PORT" ] || exit 1
 
-  # --app-mode with every chrome switch off: this is a message VIEW inside
-  # aerc's pane, so a toolbar, tab strip, context menu or toast would be drawn
-  # over the mail and aerc's own keys would fight the browser's.
-  # --no-merge because each filter invocation is its own short-lived pane;
-  # merging into a neighbouring instance would render the mail into a tab of
-  # some other message's window.
-  # STDIN MUST BE THE REAL PTS DEVICE. terminal-browser works out which pane it
-  # is in by calling ttyname() on its own STDIN (ownTtyPath() ?? callerTty()),
-  # so what it inherits there decides whether it renders at all:
-  #
-  #   the pts itself  -> renders inline, exactly like any other TUI
-  #   /dev/tty        -> hangs; ttyname() yields the literal "/dev/tty", which
-  #                      matches no pane, and it waits forever
-  #   a pipe or null  -> "could not work out which ghostty pane you are in"
-  #
-  # An aerc filter is handed the MAIL on stdin, so it must give the browser
-  # something else -- and `< /dev/tty`, which is right for chawan, is the one
-  # wrong answer here. Resolve the actual /dev/pts/N through stdout, which aerc
-  # connects to the message view's pty, and hand the browser that.
-  # AND THE MULTIPLEXER MUST BE OUT OF THE PICTURE. Given HERDR_* in the
-  # environment it selects the herdr adapter and looks this pty up among herdr's
-  # panes -- but aerc's message view is a pty INSIDE aerc, not a herdr pane, so
-  # the lookup fails and nothing renders. aerc inherits those variables from the
-  # pane it was launched in, so the filter has to drop them. With no multiplexer
-  # detected and a real pts on stdin it renders inline, the way any TUI does.
-  unset HERDR_PANE_ID HERDR_SOCKET_PATH HERDR_SESSION HERDR_TAB_ID HERDR_CONFIG_PATH HERDR_BIN_PATH
-  unset TMUX ZELLIJ WEZTERM_PANE KITTY_WINDOW_ID CMUX_SURFACE_ID CMUX_WORKSPACE_ID
+    printf 'http://127.0.0.1:%s/index.html\n' "$PORT" > "${urlFile}"
+    printf '%s\n' "$DIR" >> "${urlFile}"
+  '';
 
-  # Under :term stdin is already the pts, which is the whole reason this works;
-  # keep a check so a mis-invocation degrades to the raw part instead of hanging.
-  BROWSER_TTY=$(readlink /proc/self/fd/0 2>/dev/null || true)
-  case "$BROWSER_TTY" in
-    /dev/pts/*) ;;
-    *) BROWSER_TTY="" ;;
-  esac
-  if [ -z "$BROWSER_TTY" ]; then
-    printf '%s' "$PART"
-    exit 0
-  fi
+  launch = writeShellScript "aerc-html-terminal-browser" ''
+    export PATH=${lib.makeBinPath [ coreutils ]}:$PATH
+    set -u
 
-  "$BROWSER" open \
-    --app-mode \
-    --no-toolbar \
-    --no-frame \
-    --no-shortcuts \
-    --no-overlays \
-    --no-context-menu \
-    --no-merge \
-    "http://127.0.0.1:$PORT/index.html"
-  exit 0
-''
+    BROWSER="${terminalBrowser}"
+
+    # THE MULTIPLEXER MUST BE OUT OF THE PICTURE. With HERDR_* (or TMUX, or a
+    # kitty/wezterm pane id) in the environment terminal-browser selects that
+    # adapter and looks THIS pty up among its panes. aerc's :term pty is not one
+    # of them, so the lookup fails and nothing renders. Unset them and it falls
+    # back to the pts on stdin, which under :term is exactly what we want.
+    unset HERDR_PANE_ID HERDR_SOCKET_PATH HERDR_SESSION HERDR_TAB_ID \
+          HERDR_CONFIG_PATH HERDR_BIN_PATH \
+          TMUX ZELLIJ WEZTERM_PANE KITTY_WINDOW_ID \
+          CMUX_SURFACE_ID CMUX_WORKSPACE_ID
+
+    # stdin under :term IS the pts, and that is the whole reason this works --
+    # terminal-browser names its pane with ttyname() on fd 0. Check it, so a
+    # mis-invocation says so instead of hanging forever.
+    TTY=$(readlink /proc/self/fd/0 2>/dev/null || true)
+    case "$TTY" in
+      /dev/pts/*) ;;
+      *) echo "aerc-html-terminal-browser: stdin is $TTY, not a pts."
+         echo "Run this through aerc's :term, not as a text/html filter --"
+         echo "a filter gets pipes and terminal-browser cannot name a pane."
+         read -r _ || true; exit 1 ;;
+    esac
+
+    URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
+    DIR=$(sed -n 2p "${urlFile}" 2>/dev/null || true)
+    if [ -z "$URL" ]; then
+      echo "no mail has been served yet -- the :pipe step did not run."
+      read -r _ || true; exit 1
+    fi
+    if [ ! -x "$BROWSER" ]; then
+      echo "terminal-browser is not installed at $BROWSER"
+      read -r _ || true; exit 1
+    fi
+    # The served copy is this message's; drop it when the browser closes.
+    trap 'case "$DIR" in /tmp/aerc-mail-*) rm -rf "$DIR" ;; esac' EXIT
+
+    # Every chrome switch off: this is a message view inside aerc's pane, so a
+    # toolbar, tab strip, context menu or toast would draw over the mail and the
+    # browser's keys would fight aerc's.
+    "$BROWSER" open "$URL" \
+      --app-mode \
+      --no-toolbar \
+      --no-frame \
+      --no-shortcuts \
+      --no-overlays \
+      --no-context-menu
+  '';
+in
+symlinkJoin {
+  name = "aerc-html-terminal-browser";
+  paths = [ ];
+  postBuild = ''
+    mkdir -p $out/bin
+    ln -s ${serve} $out/bin/aerc-mail-serve
+    ln -s ${launch} $out/bin/aerc-html-terminal-browser
+  '';
+}
