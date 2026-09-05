@@ -778,7 +778,19 @@
                 # EventAPC nobody consumes, so terminal-browser -- which emits
                 # kitty and no sixel -- shows text and loses every picture.
                 # See modules/linux/aerc-vaxis-kitty.nix.
-                aerc = prev.callPackage ./modules/linux/aerc-vaxis-kitty.nix {
+                # ...and :exec-tty on top, which runs a program on aerc's OWN
+                # terminal instead of relaying it through a second pty. That is
+                # what makes terminal-browser usable for mail: the images go
+                # straight to ghostty rather than being decoded and re-staged
+                # frame by frame. See modules/linux/aerc-exec-tty.nix.
+                # The kitty-graphics decoder that used to sit here is GONE. It
+                # existed only so terminal-browser could render inside aerc's
+                # :term, and that path is retired: :exec-tty runs the browser on
+                # aerc's own terminal, where the images reach ghostty directly
+                # and nothing decodes or re-stages them. aerc-pty-pixels STAYS --
+                # it is what makes chawan's inline SIXEL images work in the
+                # message view, which is the everyday reading path.
+                aerc = prev.callPackage ./modules/linux/aerc-exec-tty.nix {
                   aerc = prev.callPackage ./modules/linux/aerc-pty-pixels.nix {
                     aerc = (import inputs.nixpkgs-aerc {
                       system = prev.stdenv.hostPlatform.system;
@@ -792,8 +804,14 @@
                 # Its store path carries the "aerc-html-terminal-browser" marker
                 # that aerc-vaxis-kitty.nix's allowlist matches on, so this is
                 # the only child permitted the kitty file/shm media.
+                # `aerc` comes from FINAL, not prev: the aerc-with-browser
+                # wrapper execs it by store path, and prev's aerc is the
+                # unpatched one — running that would silently lose the kitty
+                # decoder the embedded `O` path depends on.
                 aerc-html-terminal-browser =
-                  prev.callPackage ./modules/linux/aerc-html-terminal-browser.nix { };
+                  prev.callPackage ./modules/linux/aerc-html-terminal-browser.nix {
+                    inherit (final) aerc;
+                  };
 
                 # The filter that actually reaches the message view. See its
                 # header: terminal-browser cannot, so a headless browser renders
