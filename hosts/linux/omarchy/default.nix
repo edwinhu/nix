@@ -1369,6 +1369,9 @@ CHACONF
       desc = "Claude morning briefing — spawn the day's 🦞 assistant session";
       cwd = "%h/areas/assistant";
       onCalendar = "*-*-* 07:00:00";
+      # A boot after 07:00 still spawns: the session is the day's workspace, and
+      # an outage across the timer otherwise leaves no assistant until tomorrow.
+      persistent = true;
       spawner = true;
       script = pkgs.writeShellScript "claude-morning-briefing" ''
         set -uo pipefail
@@ -1563,9 +1566,11 @@ CHACONF
   };
   mkRoutineTimer = r: {
     Unit.Description = "${r.desc} (timer)";
-    # Persistent=false: don't fire a stale routine on a late boot/wake — a
-    # briefing that missed 08:00 shouldn't spawn at noon.
-    Timer = { OnCalendar = r.onCalendar; Persistent = false; };
+    # Persistent defaults to false: don't fire a stale routine on a late boot/wake —
+    # a wrapup that missed 22:00 shouldn't run at noon. A routine that CREATES the
+    # day's session opts in, because a missed spawn costs every routine that routes
+    # into it, and systemd drops a missed firing silently.
+    Timer = { OnCalendar = r.onCalendar; Persistent = r.persistent or false; };
     Install.WantedBy = [ "timers.target" ];
   };
 
