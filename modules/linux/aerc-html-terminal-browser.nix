@@ -146,7 +146,7 @@ let
       || printf '%s' "$PART" > "$DIR/index.html"
 
     # The server outlives this script on purpose: the browser has to be able to
-    # fetch from it after :pipe has returned. It exits with the document dir.
+    # fetch from it after :pipe has returned. The next preview owns its cleanup.
     setsid python3 ${mailServe} "$DIR" > "$DIR/port" 2>/dev/null &
     SRV_PID=$!
     PORT=""
@@ -157,11 +157,47 @@ let
     done
     [ -n "$PORT" ] || exit 1
 
-    # Three lines: the URL, the document dir, and the SERVER PID. The server is
-    # setsid'd so it outlives :pipe -- the browser has to fetch from it after
-    # this script returns -- which means nothing would ever reap it unless its
-    # pid is handed on. Every O press used to leak one python server and one
-    # temp dir; five were still resident after a session of testing.
+    # Only one preview is live. Two consecutive opens leave BOTH servers and
+    # dirs resident unless the next serve step consumes the previous record.
+    # Check the script AND its document, not just a PID that may have been
+    # reused; a pidfd keeps that check tied to the process we actually signal.
+    python3 - "${urlFile}" "${mailServe}" <<'PYEOF'
+import os, re, shutil, signal, sys, tempfile
+from pathlib import Path
+
+try:
+    previous = os.fsdecode(Path(sys.argv[1]).read_bytes()).splitlines()
+except OSError:
+    previous = []
+directory = previous[1] if len(previous) > 1 else ""
+pid = previous[2] if len(previous) > 2 else ""
+root = tempfile.gettempdir().rstrip("/")
+# A truncated or stale record is not authority to remove an arbitrary path.
+if (re.fullmatch(re.escape(root) + r"/aerc-mail-[A-Za-z0-9]{6}", directory)
+        and os.path.realpath(directory) == directory
+        and os.path.isdir(directory)
+        and os.stat(directory).st_uid == os.getuid()):
+    if re.fullmatch(r"[1-9][0-9]*", pid):
+        try:
+            fd = os.pidfd_open(int(pid))
+            try:
+                proc = Path("/proc") / pid
+                argv = (proc / "cmdline").read_bytes().split(b"\0")[:-1]
+                if (len(argv) == 3
+                        and (argv[1] == os.fsencode(sys.argv[2])
+                             or re.fullmatch(rb"/nix/store/[a-z0-9]{32}-mail-serve\.py", argv[1]))
+                        and argv[2] == os.fsencode(directory)
+                        and os.readlink(proc / "cwd") == directory
+                        and proc.stat().st_uid == os.getuid()):
+                    signal.pidfd_send_signal(fd, signal.SIGTERM)
+            finally:
+                os.close(fd)
+        except (OSError, OverflowError):
+            pass
+    shutil.rmtree(directory)
+PYEOF
+
+    # Three lines: the URL, the document dir, and the SERVER PID.
     printf 'http://127.0.0.1:%s/index.html\n' "$PORT" > "${urlFile}"
     printf '%s\n' "$DIR" >> "${urlFile}"
     printf '%s\n' "$SRV_PID" >> "${urlFile}"
