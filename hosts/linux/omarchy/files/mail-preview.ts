@@ -352,6 +352,33 @@ function findMailTab(tb: string): { browser: string; tab: number } | null {
  * this process has exited, so deleting it here is a race that shows a blank
  * pane; it lives in a mkdtemp under TMPDIR and goes with the boot.
  */
+/**
+ * Block until the tab is actually showing `want` and has finished parsing it,
+ * or the budget runs out.
+ *
+ * Bounded and best-effort by design: a preview that waits forever on a browser
+ * that will never answer is worse than one that returns early, and the caller
+ * has already done everything that can fail. Returning at the deadline costs
+ * exactly the stale frame this exists to avoid, which is the old behaviour.
+ */
+function waitForUrl(tb: string, browser: string, tab: number, want: string): void {
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
+    const probe = Bun.spawnSync(
+      [tb, "action", "--browser", browser, "--tab", String(tab),
+       "--", "eval", "location.href + ' ' + document.readyState"],
+      { stdout: "pipe", stderr: "ignore" },
+    );
+    if (probe.exitCode === 0) {
+      const out = probe.stdout.toString();
+      // `complete`, not `interactive`: the mail's own images and styles are
+      // what make it look like the message rather than a flash of text.
+      if (out.includes(want) && out.includes("complete")) return;
+    }
+    Bun.sleepSync(50);
+  }
+}
+
 function showBrowser(head: string, body: string): void {
   const tb = Bun.which("terminal-browser");
   if (!tb) die("mail-preview: no terminal-browser on PATH");
@@ -375,6 +402,13 @@ function showBrowser(head: string, body: string): void {
       { stdout: "ignore", stderr: "pipe" },
     );
     if (nav.exitCode === 0) {
+      // WAIT FOR THE LOAD, DO NOT JUST ISSUE IT. Assigning location.href
+      // returns as soon as the assignment is made, not when the new document
+      // has parsed and painted, and this process then exits -- so the pane
+      // went on showing the PREVIOUS message. That reads as a stale preview,
+      // and pressing the key again "fixes" it only by granting the first
+      // navigation the time it needed.
+      waitForUrl(tb, existing.browser, existing.tab, open);
       console.log(file);
       return;
     }
@@ -394,6 +428,12 @@ function showBrowser(head: string, body: string): void {
   if (proc.exitCode !== 0) {
     die(`mail-preview: terminal-browser failed: ${proc.stderr.toString().trim()}`);
   }
+  // Same wait as the reuse path, for the same reason. `open` returns once the
+  // browser is SPAWNED, so the pane exists before Electron has a document in
+  // it -- which is the blank screen on the first preview of a session, the one
+  // that comes right the second time.
+  const made = findMailTab(tb);
+  if (made) waitForUrl(tb, made.browser, made.tab, open);
   console.log(file);
 }
 

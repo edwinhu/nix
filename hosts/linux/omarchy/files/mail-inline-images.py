@@ -15,7 +15,26 @@ import os, re, sys, urllib.request
 DIR, TIMEOUT, MAX = sys.argv[1], float(sys.argv[2]), int(sys.argv[3])
 # Zoom factor. 1.0 renders the mail at its authored size.
 SCALE = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
-raw = sys.stdin.read()
+# BYTES, NOT TEXT. sys.stdin.read() decodes against the locale, so a part
+# declaring windows-1252 or latin-1 -- where the smart quotes are the single
+# bytes 92, 93, 94 and 97 -- died with UnicodeDecodeError. The caller's
+# `|| printf '%s' "$PART"` then wrote those raw bytes out undeclared and
+# chawan rendered mojibake, which is why curly quotes in particular came out
+# wrong. The mail declares its own charset; honour that rather than the locale.
+raw = sys.stdin.buffer.read()
+
+
+def decode_loose(data):
+    """Bytes to text for input that is NOT a message, so nothing declares a
+    charset. cp1252 is the fallback because it is what mail that lies about
+    being latin-1 actually is, and it decodes every byte, so this cannot
+    raise."""
+    for enc in ("utf-8", "cp1252"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", "replace")
 
 
 # STDIN IS THE WHOLE MESSAGE, NOT THE HTML PART.
@@ -28,21 +47,25 @@ raw = sys.stdin.read()
 #
 # Only `-m` can resolve cid: images: a text/html part alone has no access to
 # the related attachments its own <img> tags point at.
-def extract_html(text):
+def extract_html(data):
     # Not a message: an earlier caller's already-extracted part. Pass it on.
-    if not re.match(r"(?i)^[!-9;-~]+:", text.strip()[:200] or "x"):
-        return text
-    msg = email.message_from_string(text, policy=email.policy.default)
+    head = decode_loose(data[:200]).strip() or "x"
+    if not re.match(r"(?i)^[!-9;-~]+:", head):
+        return decode_loose(data)
+    # from_bytes, not from_string: the parser reads each part's declared
+    # charset and decodes it correctly, which is the whole point of getting
+    # here with bytes still intact.
+    msg = email.message_from_bytes(data, policy=email.policy.default)
     if not msg.get("Content-Type") and not msg.get("MIME-Version"):
-        return text
+        return decode_loose(data)
 
     body = msg.get_body(preferencelist=("html", "plain"))
     if body is None:
-        return text
+        return decode_loose(data)
     try:
         content = body.get_content()
     except Exception:
-        return text
+        return decode_loose(data)
 
     if body.get_content_type() == "text/plain":
         # No HTML alternative. Wrap it so the browser renders text as text
@@ -139,5 +162,19 @@ if SCALE > 1.01:
     html = re.sub(r'(?i)(<(?:table|td|th|div)\b[^>]*?\s(?:width)=")(\d+)', _scale_px, html)
     html = re.sub(r"(?i)\b((?:max-|min-)?width\s*:\s*)(\d+)(?=px)", _scale_px, html)
 
-sys.stdout.write(html)
+# SAY WHAT WE ACTUALLY WROTE. The text above is decoded, and it goes out as
+# UTF-8 below whatever the locale is -- but a part that declared windows-1252
+# still CARRIES that declaration, and chawan believes the document over the
+# bytes. Left alone, correctly decoded curly quotes get re-mojibaked at render.
+# Drop any charset the mail declared and state ours once, first.
+html = re.sub(
+    r"(?is)<meta[^>]*?charset[^>]*?>", "", html)
+html = re.sub(
+    r"(?is)(<head\b[^>]*>)", r'\1<meta charset="utf-8">', html, count=1)
+if "<meta charset=" not in html:
+    html = '<meta charset="utf-8">' + html
+
+# Bytes, for the same reason stdin was read as bytes: sys.stdout encodes
+# against the locale, and aerc does not guarantee a UTF-8 one.
+sys.stdout.buffer.write(html.encode("utf-8", "replace"))
 sys.stderr.write("inlined %d/%d images\n" % (len(got), len(urls)))
