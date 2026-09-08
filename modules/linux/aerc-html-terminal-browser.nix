@@ -308,7 +308,7 @@ PYEOF
   # The multiplexer env still has to go: with HERDR_* set terminal-browser
   # hunts for a pane to split instead of taking the terminal it was given.
   tty = writeShellScript "aerc-mail-tty" ''
-    export PATH=${lib.makeBinPath [ coreutils ]}:$PATH
+    export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
     set -u
 
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
@@ -316,8 +316,63 @@ PYEOF
       echo "no served mail, or terminal-browser is not installed"; sleep 3; exit 1
     fi
 
+    # Bare --app-mode labels every tab "app". Give o its own name so it cannot
+    # take B's "mail" tab, which has a different renderer and preload. Use only
+    # --app-name: combining it with --app-id makes terminal-browser report app=null.
+    # `open` adds a tab, even with --tab; eval navigates the selected one in place.
+    timeout -k 1 9 python3 - "${terminalBrowser}" "$URL" <<'PYEOF'
+import json, os, subprocess, sys, time
+
+browser, url = sys.argv[1:]
+
+def call(args, budget):
+    return subprocess.run([browser, *args], capture_output=True, text=True,
+                          timeout=budget, check=False)
+
+try:
+    listing = call(["ls", "--all", "--json"], 2)
+    if listing.returncode:
+        raise RuntimeError("cannot list browser tabs")
+    # Outside a multiplexer inCurrentTab is false; match our own tty instead.
+    tty = os.ttyname(1) if os.isatty(1) else None
+    existing = next(((b["key"], t["id"])
+                     for b in json.loads(listing.stdout).get("browsers", [])
+                     if b.get("inCurrentTab") or (tty and b.get("tty") == tty)
+                     for t in b.get("tabs", [])
+                     if (t.get("app") or {}).get("id") == "aerc-mail-tty"), None)
+    if existing is None:
+        sys.exit(10)
+    key, tab = existing
+    target = ["action", "--browser", key, "--tab", str(tab)]
+    nav = call([*target, "--follow", "--", "eval",
+                "location.href=" + json.dumps(url)], 2)
+    if nav.returncode:
+        raise RuntimeError("cannot navigate preview tab")
+    # Assignment returns before the document loads. Wait for this URL AND
+    # complete (images/styles included), not a successful navigation request.
+    deadline = time.monotonic() + 4
+    while (remaining := deadline - time.monotonic()) > 0:
+        probe = call([*target, "--", "eval",
+                      "location.href + ' ' + document.readyState"], remaining)
+        if probe.returncode == 0 and json.loads(probe.stdout) == url + " complete":
+            sys.exit(0)
+        time.sleep(0.05)
+    raise RuntimeError("preview did not finish loading within 4s")
+except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, RuntimeError) as error:
+    print(f"aerc-mail-tty: {error}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+    status=$?
+    [ "$status" -eq 0 ] && exit 0
+    # A failed/ambiguous request may already have navigated. Do not add another
+    # hidden tab on error; only a successful listing with no match creates one.
+    [ "$status" -eq 10 ] || exit "$status"
+
+    # Keep exec here: :exec-tty's direct child must retain aerc's foreground
+    # process group and paint straight to its terminal, without a relay.
     exec "${terminalBrowser}" open "$URL" \
-      --app-mode --no-toolbar --no-frame --no-overlays --no-context-menu \
+      --app-mode --app-name=aerc-mail-tty \
+      --no-toolbar --no-frame --no-overlays --no-context-menu \
       --preload=${pagerKeys}
   '';
 
