@@ -13,6 +13,15 @@
 # never builds, and @readwise/cli's install aborts. Don't "unify" them onto
 # mise without re-testing `qmd collection list` and `readwise --help`.
 #
+# zg is on bun for a different reason: mise's npm backend shells out to npm,
+# and Arch ships /usr/bin/node with no npm beside it, so that route needs a
+# global node pinned in mise purely as a side effect. bun blocks zg's native
+# postinstalls (@zvec/zvec, onnxruntime-node, node-llama-cpp) and it does not
+# matter — each ships a prebuilt platform binary, e.g. the engine loads from
+# @zvec/bindings-linux-x64. Re-verify after a version bump by indexing a
+# scratch dir with `zg index --embedding local/potion-code-16m-v2`, then a
+# plain `zg query`: hits must say matchedBy=fts+vector, not fts alone.
+#
 # Install all:   bash ~/nix/scripts/setup-ai-tools.sh
 # Install one:   bash ~/nix/scripts/setup-ai-tools.sh claude
 # Update all:    bash ~/nix/scripts/setup-ai-tools.sh --force
@@ -36,10 +45,10 @@ for arg in "$@"; do
   case "$arg" in
     -f|--force) FORCE=1 ;;
     -h|--help)
-      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy|herdr) TOOLS+=("$arg") ;;
+    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy|herdr|zg) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -47,7 +56,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy herdr)
+  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy herdr zg)
   # Per-host opt-out. AI_TOOLS_SKIP is a space-separated tool list, set from
   # `userInfo.aiToolsSkip` in flake.nix, for hosts that don't want part of the
   # default set (e.g. rjds has no use for readwise, and installing it there
@@ -159,6 +168,20 @@ install_gemini() { install_agy; }
 install_atuin() {
   purge_nix_wrapper atuin
   mise_stub atuin
+}
+
+# zg (zvec-grep) — ripgrep, BM25 and local vector search behind one interface,
+# usable from the shell or as an MCP server for agents. Complements qmd, which
+# only indexes ~/notes; this indexes whatever workspace it is pointed at, into
+# a .zvec-grep/ directory under that root (add it to ~/.config/git/ignore).
+install_zg() {
+  purge_nix_wrapper zg
+  local bun
+  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
+  if want "zg" zg; then
+    echo "${YELLOW}→ Installing zg (bun global)...${NC}"
+    "$bun" install -g @zvec/zvec-grep@latest
+  fi
 }
 
 # cli-proxy-api (router-for-me/CLIProxyAPI) — the local OpenAI-compatible
@@ -345,6 +368,7 @@ for t in "${TOOLS[@]}"; do
     atuin)        install_atuin ;;
     cliproxy)     install_cliproxy ;;
     herdr)        install_herdr ;;
+    zg)           install_zg ;;
   esac
 done
 
