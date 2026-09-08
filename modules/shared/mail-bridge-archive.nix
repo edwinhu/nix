@@ -26,7 +26,7 @@
 # while an account is TEMPORARILY INBOUND-ONLY UNTIL PROVIDER FLAGS ARE FIXED.
 # Only the command differs — unit names, cadence, jitter, Persistent, token
 # environment and the seven finite budgets are the same either way.
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, nix-secrets, ... }:
 
 let
   cfg = config.services.mail-bridge;
@@ -176,10 +176,86 @@ let
         type = budgetsType;
         description = "Cumulative finite ceilings for one cycle.";
       };
+
+      # The provider-driven trigger. Off by default: it is the ONE archive unit
+      # besides the cycle that carries a token, and it is reachable from the
+      # public internet through the tunnel, so it is opted into per account
+      # rather than appearing with the rest.
+      graphWebhookEnabled = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Run a Graph change-notification receiver for this account, so mail
+          arrives when the provider says so instead of at the next timer fire.
+          The timer stays regardless: a missed, refused or expired notification
+          must degrade to the old cadence rather than to silence.
+        '';
+      };
+      graphWebhookUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          The PUBLIC URL Graph posts to, which must reach this host's receiver.
+          Graph validates it synchronously when the subscription is created, so
+          the tunnel route has to exist before the unit can succeed.
+        '';
+      };
+      graphWebhookPort = lib.mkOption {
+        type = lib.types.port;
+        default = 8787;
+        description = ''
+          Loopback port the receiver binds. Must agree with the tunnel's
+          ingress rule; the cloudflared config in reader-services.nix carries
+          the matching value.
+        '';
+      };
+      # Gmail's trigger. Same shape as the Graph one and deliberately separate:
+      # the two providers share no transport. Gmail publishes to Pub/Sub and
+      # this PULLS, so there is no public endpoint and no inbound surface.
+      gmailPushEnabled = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Run a Gmail Pub/Sub pull subscriber for this account. The timer stays
+          regardless: `users.watch` lapses SILENTLY after seven days, so a
+          renewal that fails must degrade to the old cadence, not to silence.
+        '';
+      };
+      gmailPushSubscription = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = "Full PULL subscription name, projects/<p>/subscriptions/<s>.";
+      };
+      gmailPushTopic = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          Full topic name `users.watch` publishes to, projects/<p>/topics/<t>.
+          The subscriber re-calls watch against this before the seven-day lapse.
+        '';
+      };
+
+      # The clientState secret is NOT an option: it is agenix-decrypted below,
+      # to one path, and reaches the unit as an EnvironmentFile. A file rather
+      # than an argument because argv is world-readable through `ps`, and not a
+      # per-account knob because a second spelling of "where the secret lives"
+      # is a second thing that can be wrong.
     };
   };
 
   exe = lib.getExe cfg.package;
+
+  # Any account driving a receiver needs the one clientState secret; it is
+  # decrypted once, not per account, because it identifies the tunnel route
+  # rather than a mailbox.
+  anyGraphWebhook = lib.any (a: a.graphWebhookEnabled) (lib.attrValues cfg.accounts);
+  graphClientStatePath = "${config.home.homeDirectory}/.config/mail-bridge/graph-client-state.env";
+
+  # The Gmail subscriber's service-account key. agenix-managed for the same
+  # reason the clientState is: a credential nothing tracks is a credential
+  # nobody rotates. mail-bridge refuses this file unless it is 0600.
+  anyGmailPush = lib.any (a: a.gmailPushEnabled) (lib.attrValues cfg.accounts);
+  gmailKeyPath = "${config.home.homeDirectory}/.config/mail-bridge/gmail-push-sa.json";
 
   # Serve: provider-free by construction. No token environment, no broker, no
   # network dependency — it reads the archive and nothing else.
@@ -282,6 +358,111 @@ let
     Install.WantedBy = lib.optionals (a.mode == "archive") [ "default.target" ];
   };
 
+  # The webhook spells ONE ceiling differently from the timer: `--max-retries`
+  # there, `--max-retries-per-request` here. Both parsers refuse an unpermitted
+  # flag outright, so a shared list would fail one unit at parse on every start.
+  # The divergence is the packaged CLI's, not this module's; it is reproduced
+  # rather than corrected so the argv matches the parser that reads it.
+  #
+  # All SEVEN are passed. The archive's requireBudgets demands every field, and
+  # a cycle triggered by a notification refuses itself with `budget-required`
+  # if one is missing — visible only as mail that never arrives, since the
+  # receiver still answers 200.
+  webhookBudgetFlags = a: [
+    "--max-requests ${toString a.budgets.maxRequests}"
+    "--max-pages ${toString a.budgets.maxPages}"
+    "--max-messages ${toString a.budgets.maxMessages}"
+    "--max-raw-bytes ${toString a.budgets.maxRawBytes}"
+    "--max-retries-per-request ${toString a.budgets.maxRetries}"
+    "--max-elapsed-ms ${toString a.budgets.maxElapsedMs}"
+    "--max-operations ${toString a.budgets.maxOperations}"
+  ];
+
+  # `graph-webhook`, a TOP-LEVEL subcommand with its own parser — not part of
+  # the `archive account` namespace, so it takes neither `--keep-generations`
+  # nor the archive parser's flag spellings.
+  graphWebhookCommand = a: lib.concatStringsSep " " ([
+    exe
+    "graph-webhook"
+    "--account ${a.address}"
+    "--provider ${a.provider}"
+    "--state ${stateDb}"
+    "--notification-url ${a.graphWebhookUrl}"
+    "--port ${toString a.graphWebhookPort}"
+  ] ++ webhookBudgetFlags a);
+
+  # Gmail's subscriber. `--sa-key` takes a PATH, never the key: the binary reads
+  # the file and refuses it unless it is 0600. The budget flag NAMES are the
+  # webhook's, not the archive's, so webhookBudgetFlags is reused verbatim.
+  gmailPushCommand = a: lib.concatStringsSep " " ([
+    exe
+    "gmail-push"
+    "--account ${a.address}"
+    "--provider ${a.provider}"
+    "--state ${stateDb}"
+    "--subscription ${a.gmailPushSubscription}"
+    "--topic ${a.gmailPushTopic}"
+    "--sa-key ${gmailKeyPath}"
+  ] ++ webhookBudgetFlags a);
+
+  gmailPushUnit = name: a: lib.nameValuePair "mail-bridge-gmail-push-${name}" {
+    Unit = {
+      Description = "mail-bridge Gmail Pub/Sub subscriber for ${a.address}";
+      # Same agenix ordering as the Graph receiver, for the same measured
+      # reason: the key must be on disk before the process is spawned.
+      After = [ "network-online.target" "agenix.service" ];
+      Wants = [ "network-online.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStartPre = ensureStateDir;
+      Environment = [ ''"${a.tokenEnvironmentVariable}=${a.tokenCommand}"'' ];
+      ExecStart = gmailPushCommand a;
+      # A lapsed watch or a Pub/Sub blip must not become a dead unit; the timer
+      # keeps delivering meanwhile, so retrying costs nothing.
+      Restart = "on-failure";
+      RestartSec = 30;
+    };
+    Install.WantedBy =
+      lib.optionals (a.mode == "archive" && a.gmailPushEnabled) [ "default.target" ];
+  };
+
+  # The second unit that carries a token, and the only one reachable from the
+  # public internet. It binds loopback and the tunnel is the sole path in; the
+  # clientState secret arrives by EnvironmentFile because argv is readable by
+  # every process on the box.
+  graphWebhookUnit = name: a: lib.nameValuePair "mail-bridge-graph-webhook-${name}" {
+    Unit = {
+      Description = "mail-bridge Graph change-notification receiver for ${a.address}";
+      # agenix.service, not just the network. systemd reads EnvironmentFile
+      # BEFORE ExecStartPre, so a wait inside the unit body is too late: the
+      # clientState has to be on disk when the unit is spawned. Measured
+      # 2026-09-02 21:44:11 — the first start lost this race and died with
+      # `Failed to load environment files: No such file or directory`, and only
+      # the 30s Restart=on-failure retry saved it. Ordering, not Wants: agenix
+      # is a oneshot that has already run outside an activation transaction,
+      # and pulling it in would re-decrypt every secret for no reason.
+      After = [ "network-online.target" "agenix.service" ];
+      Wants = [ "network-online.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStartPre = ensureStateDir;
+      # Same quoting rule as the cycle unit: systemd splits an unquoted
+      # Environment= on whitespace and would drop every argument after the
+      # broker binary.
+      Environment = [ ''"${a.tokenEnvironmentVariable}=${a.tokenCommand}"'' ];
+      EnvironmentFile = graphClientStatePath;
+      ExecStart = graphWebhookCommand a;
+      # A subscription Graph refuses, or a tunnel not yet up, must not become a
+      # dead unit: the timer keeps delivering meanwhile, so retrying is free.
+      Restart = "on-failure";
+      RestartSec = 30;
+    };
+    Install.WantedBy =
+      lib.optionals (a.mode == "archive" && a.graphWebhookEnabled) [ "default.target" ];
+  };
+
   # One gate for both cycle units: a cycle is wired only while the account is in
   # archive mode AND its cycle is not paused. The service's own enablement list
   # is empty either way — the timer is its only enabler — so the gate is stated
@@ -328,10 +509,24 @@ let
     Timer = {
       # A calendar cadence rather than an interval, so Persistent has something
       # to catch up against after a suspend or a reboot.
+      #
+      # This interval IS the mail-arrival latency: the listeners hold no
+      # provider credential, so nothing reaches the archive between ticks and
+      # IDLE can only push what a cycle has already committed. Measured on the
+      # five-minute grid, a message took 1m55s and 2m40s to surface in aerc.
+      #
+      # Deliberately NOT shortened toward real-time: polling harder is the wrong
+      # lever, and this stays a safety net for a provider-driven trigger.
       OnCalendar = "*:0/5";
-      # Two accounts on one five-minute grid would otherwise wake, hit two
-      # providers, and contend for the writer lease at the same instant.
-      RandomizedDelaySec = "60s";
+      # Staggering the two accounts is flock's job, not the timer's -- it waits
+      # before exec, so the wait is not charged to the cycle's budget, and -w
+      # bounds it. The jitter that used to serve this purpose is retained only
+      # to keep two accounts off the same instant, not to separate whole runs,
+      # which is why it is seconds rather than a minute.
+      RandomizedDelaySec = "5s";
+      # systemd's default is 1min, which silently added up to another minute on
+      # top of the interval and the jitter above.
+      AccuracySec = "1s";
       Persistent = true;
       Unit = "mail-bridge-archive-cycle-${name}.service";
     };
@@ -398,7 +593,32 @@ in
     systemd.user.services =
       (lib.mapAttrs' serveUnit cfg.accounts)
       // (lib.mapAttrs' cycleUnit cfg.accounts)
-      // (lib.mapAttrs' retainUnit cfg.accounts);
+      // (lib.mapAttrs' retainUnit cfg.accounts)
+      # Unlike the other three, this one is emitted ONLY where it is enabled.
+      # A receiver unit for an account that opted out would be written with an
+      # empty --notification-url: harmless while nothing starts it, and a trap
+      # the first time somebody starts it by hand.
+      // (lib.mapAttrs' graphWebhookUnit
+            (lib.filterAttrs (_: a: a.graphWebhookEnabled) cfg.accounts))
+      // (lib.mapAttrs' gmailPushUnit
+            (lib.filterAttrs (_: a: a.gmailPushEnabled) cfg.accounts));
+
+    age.secrets.mail-bridge-gmail-push-sa = lib.mkIf anyGmailPush {
+      file = "${nix-secrets}/mail-bridge-gmail-push-sa.age";
+      path = gmailKeyPath;
+      mode = "600";
+      symlink = false;
+    };
+
+    # An EnvironmentFile, so the plaintext holds `MAIL_BRIDGE_GRAPH_CLIENT_STATE=<secret>`
+    # rather than a bare value. 0600 and symlink=false for the same reason the
+    # cloudflared creds are: systemd reads it as the user, before the unit runs.
+    age.secrets.mail-bridge-graph-client-state = lib.mkIf anyGraphWebhook {
+      file = "${nix-secrets}/mail-bridge-graph-client-state.age";
+      path = graphClientStatePath;
+      mode = "600";
+      symlink = false;
+    };
 
     systemd.user.timers =
       (lib.mapAttrs' cycleTimer cfg.accounts) // (lib.mapAttrs' retainTimer cfg.accounts);
@@ -514,6 +734,42 @@ in
             message =
               "services.mail-bridge.accounts.${name}: port ${toString a.port} is "
               + "claimed by more than one account; a port has exactly one owner.";
+          }
+          # A receiver missing either half is a unit that starts and then dies,
+          # or worse, one that accepts unauthenticated notifications. Both are
+          # decidable here, so neither reaches a switch.
+          {
+            assertion = a.graphWebhookEnabled -> (a.graphWebhookUrl != "");
+            message =
+              "services.mail-bridge.accounts.${name}: graphWebhookEnabled needs "
+              + "graphWebhookUrl. Graph validates the notification URL when the "
+              + "subscription is created, so an empty one cannot succeed.";
+          }
+          {
+            # Only ENABLED receivers contend for a port. Every account carries
+            # the same default, so comparing against accounts that never opted
+            # in made the default itself a collision and aborted evaluation.
+            assertion =
+              a.graphWebhookEnabled
+              -> lib.all
+                   (o:
+                     !cfg.accounts.${o}.graphWebhookEnabled
+                     || cfg.accounts.${o}.graphWebhookPort != a.graphWebhookPort)
+                   (others name);
+            message =
+              "services.mail-bridge.accounts.${name}: graphWebhookPort "
+              + "${toString a.graphWebhookPort} is claimed by more than one "
+              + "account running a receiver.";
+          }
+          {
+            assertion =
+              a.gmailPushEnabled
+              -> (a.gmailPushSubscription != "" && a.gmailPushTopic != "");
+            message =
+              "services.mail-bridge.accounts.${name}: gmailPushEnabled needs "
+              + "both gmailPushSubscription and gmailPushTopic. The subscriber "
+              + "pulls from the one and re-calls users.watch against the other; "
+              + "without the topic the watch lapses after seven days in silence.";
           }
         ];
       in

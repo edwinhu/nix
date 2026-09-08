@@ -153,11 +153,26 @@ let
   cfCredsPath = "${home}/.cloudflared/${tunnelId}.json";
   cfCertPath = "${home}/.cloudflared/cert.pem";
   cloudflaredBin = "${pkgs.cloudflared}/bin/cloudflared";
+  # mail-bridge's Graph change-notification receiver shares this hostname by PATH.
+  # It is not a reader service; it lives here because the tunnel does, and a
+  # second tunnel would need its own replica, hostname and credentials to carry
+  # one route. Keep in step with GRAPH_WEBHOOK_DEFAULT_PORT in mail-bridge's
+  # src/cli.ts; the unit passes --port explicitly so the two cannot drift apart
+  # silently.
+  graphWebhookPort = "8787";
   cloudflaredConfig = pkgs.writeText "cloudflared-config.yml" ''
     tunnel: ${tunnelId}
     credentials-file: ${cfCredsPath}
 
     ingress:
+      # ORDER IS LOAD-BEARING. cloudflared matches top to bottom, first match
+      # wins, so the path rule MUST precede the bare-hostname rule below —
+      # placed after it, that rule matches every path and /graph would be
+      # delivered to the readwise webhook, which answers 404 and drops the
+      # notification silently.
+      - hostname: webhook.eddyhu.com
+        path: ^/graph(/.*)?$
+        service: http://localhost:${graphWebhookPort}
       - hostname: webhook.eddyhu.com
         service: http://localhost:${webhookPort}
       - service: http_status:404
