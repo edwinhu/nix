@@ -9,12 +9,75 @@ relative names the same server serves.
 Fetching is bounded and best-effort: a mail with a dead or slow CDN must still
 render its text rather than hang the message view.
 """
-import concurrent.futures as cf, hashlib, os, re, sys, urllib.request
+import base64, concurrent.futures as cf, email, email.policy, hashlib, html as _html
+import os, re, sys, urllib.request
 
 DIR, TIMEOUT, MAX = sys.argv[1], float(sys.argv[2]), int(sys.argv[3])
 # Zoom factor. 1.0 renders the mail at its authored size.
 SCALE = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
-html = sys.stdin.read()
+raw = sys.stdin.read()
+
+
+# STDIN IS THE WHOLE MESSAGE, NOT THE HTML PART.
+#
+# The `o` keybind pipes with `:pipe -m`, so what arrives is full RFC822 --
+# headers, MIME boundaries and base64 blobs. Everything below this point works
+# on markup, so handing it the raw message rendered the SOURCE: `index.html`
+# came out byte-identical to the .eml, opening with `Delivered-To:`. Extract
+# the part first.
+#
+# Only `-m` can resolve cid: images: a text/html part alone has no access to
+# the related attachments its own <img> tags point at.
+def extract_html(text):
+    # Not a message: an earlier caller's already-extracted part. Pass it on.
+    if not re.match(r"(?i)^[!-9;-~]+:", text.strip()[:200] or "x"):
+        return text
+    msg = email.message_from_string(text, policy=email.policy.default)
+    if not msg.get("Content-Type") and not msg.get("MIME-Version"):
+        return text
+
+    body = msg.get_body(preferencelist=("html", "plain"))
+    if body is None:
+        return text
+    try:
+        content = body.get_content()
+    except Exception:
+        return text
+
+    if body.get_content_type() == "text/plain":
+        # No HTML alternative. Wrap it so the browser renders text as text
+        # rather than collapsing every newline.
+        content = (
+            "<meta charset=\"utf-8\"><pre style=\"white-space:pre-wrap;"
+            "font:14px/1.5 ui-monospace,monospace\">"
+            + _html.escape(content)
+            + "</pre>"
+        )
+
+    # cid: images live as sibling parts and no server can serve them by name,
+    # so they become data: URIs here. Bounded by the same MAX as remote images.
+    cids = {}
+    for part in msg.walk():
+        cid = (part.get("Content-ID") or "").strip().strip("<>")
+        if not cid or part.get_content_maintype() != "image":
+            continue
+        if len(cids) >= MAX:
+            break
+        try:
+            payload = part.get_payload(decode=True)
+        except Exception:
+            continue
+        if not payload:
+            continue
+        ctype = part.get_content_type()
+        cids[cid] = "data:%s;base64,%s" % (
+            ctype, base64.b64encode(payload).decode("ascii"))
+    for cid, uri in cids.items():
+        content = content.replace("cid:" + cid, uri)
+    return content
+
+
+html = extract_html(raw)
 
 urls, seen = [], set()
 for m in re.finditer(r'(?i)<img\b[^>]*?\bsrc\s*=\s*["\']([^"\']+)["\']', html):
