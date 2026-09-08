@@ -3536,6 +3536,11 @@ in
         # fail per-request rather than refuse to run.
         After = [ "docker.service" "cli-proxy-api.service" ];
         Wants = [ "cli-proxy-api.service" ];
+        # Give up after 10 failures in 5 min. Without a limit a standing fault
+        # (e.g. the user dropped out of the docker group) restarts silently
+        # forever — this one logged 57k failures before anyone noticed.
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
       };
       Service = {
         ExecStart = ''/usr/bin/docker run --rm --name atuin-ai --network host -v %h/.config/atuin-ai/config.toml:/etc/atuin-ai/config.toml ghcr.io/atuinsh/atuin-ai-server:latest'';
