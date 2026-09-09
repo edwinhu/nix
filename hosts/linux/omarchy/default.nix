@@ -763,6 +763,11 @@ exit 0
     text = ''
       export CHA_HTML=${aercChawanHtml}
       export BUN_WEBVIEW_LIB=${bunWebview}/lib/bun-webview
+      # The pager keys, including `q`. --app-mode strips terminal-browser's own
+      # shortcuts, so this preload is the only way to close the split pane.
+      # Same file aerc-mail-tty passes, never a second copy.
+      export MAIL_PREVIEW_PRELOAD=${pkgs.writeText "aerc-pager-keys.js"
+        (builtins.readFile ./files/aerc-pager-keys.js)}
       exec bun ${./files/mail-preview.ts} "$@"
     '';
   };

@@ -49,85 +49,11 @@ let
   #
   # terminal-browser's --preload runs this in the page's isolated world before
   # load, which is the supported way to add behaviour without touching the mail.
-  pagerKeys = writeText "aerc-pager-keys.js" ''
-    // SMOOTH THE WHEEL. terminal-browser only scrolls by pixel-precise deltas
-    // when a NATIVE SCROLL HELPER feeds it high-resolution events -- and that
-    // helper is a Swift file its build compiles ONLY on macOS
-    // (engine/crates/pixel-core/build.rs returns early off darwin; release.sh
-    // leaves NATIVE_SCROLL_HELPER empty on Linux). With no helper the wheel
-    // takes input.ts's wheelTick() path: Math.sign() times WHEEL_DETENT_PX,
-    // which is 120px on Linux against 40 on macOS. Every notch is one coarse
-    // 120px jump, which is what reads as a laggy, stuttering wheel -- and it is
-    // equally coarse however the browser is launched, which is why the same
-    // scroll through aerc and run directly measure identically.
-    //
-    // Nothing here can supply the helper, but the page can animate the jump:
-    // swallow the wheel event and ease the same distance over a few frames.
-    let target = null;
-    let raf = 0;
-    window.addEventListener("wheel", (e) => {
-      if (e.ctrlKey) return;               // leave zoom alone
-      e.preventDefault();
-      e.stopPropagation();
-      const from = window.scrollY;
-      if (target === null) target = from;
-      // deltaY arrives as the 120px detent; scale it to something a page reads
-      // as a scroll rather than a leap.
-      target = Math.max(
-        0,
-        Math.min(document.body.scrollHeight, target + e.deltaY * 0.55),
-      );
-      if (raf) return;
-      const step = () => {
-        const now = window.scrollY;
-        const rest = target - now;
-        if (Math.abs(rest) < 1) {
-          window.scrollTo({ top: target, behavior: "instant" });
-          raf = 0;
-          target = null;
-          return;
-        }
-        window.scrollTo({ top: now + rest * 0.28, behavior: "instant" });
-        raf = requestAnimationFrame(step);
-      };
-      raf = requestAnimationFrame(step);
-    }, { passive: false, capture: true });
-
-    // Capture phase, so a page that handles its own keys does not swallow these.
-    window.addEventListener("keydown", (e) => {
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      const line = Math.max(40, Math.round(window.innerHeight * 0.12));
-      const half = Math.round(window.innerHeight * 0.5);
-      let dy = null;
-      let abs = null;
-      switch (e.key) {
-        case "j": dy = line; break;
-        case "k": dy = -line; break;
-        case "d": dy = half; break;
-        case "u": dy = -half; break;
-        case "g": abs = 0; break;
-        case "G": abs = document.body.scrollHeight; break;
-        // q closes the window. terminal-browser's own "q" shortcut does not
-        // reach it once a page is focused -- reported as "q doesn't work", and
-        // Ctrl-q does nothing either -- so bind it here, in the same capture
-        // phase as the pager keys, and call the documented API:
-        // globalThis.terminalBrowser.quit().
-        case "q":
-          e.preventDefault();
-          e.stopPropagation();
-          globalThis.terminalBrowser?.quit?.();
-          return;
-        default: return;
-      }
-      if (abs !== null) {
-        window.scrollTo({ top: abs, behavior: "instant" });
-      } else {
-        window.scrollBy({ top: dy, behavior: "instant" });
-      }
-      e.preventDefault();
-      e.stopPropagation();
-    }, true);
-  '';
+  # The JS lives in its own file so mail-preview can pass the SAME preload:
+  # two copies of the pager keys would drift, and the `q` handler is the only
+  # way out of an --app-mode window.
+  pagerKeys = writeText "aerc-pager-keys.js"
+    (builtins.readFile ../../hosts/linux/omarchy/files/aerc-pager-keys.js);
 
   # Where the serve step leaves the URL for the launch step. Per-user runtime
   # dir, not /tmp: it is already per-user and cleaned on logout.
@@ -142,7 +68,7 @@ let
 
     # 4s per image, 40 images, no zoom -- the mail renders at its authored size,
     # which is what a browser does.
-    python3 ${mailInlineImages} "$DIR" 4 40 1.0 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
+    python3 ${mailInlineImages} <<< "$PART" > "$DIR/index.html" 2>/dev/null \
       || printf '%s' "$PART" > "$DIR/index.html"
 
     # The server outlives this script on purpose: the browser has to be able to
@@ -311,7 +237,36 @@ PYEOF
     export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
     set -u
 
-    URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
+    # WAIT FOR A RECORD NEWER THAN THIS PRESS. `:pipe -m -b` backgrounds the
+    # serve step while `:exec-tty` fires immediately, so reading the record now
+    # returns what the PREVIOUS press left -- the previous message, or nothing
+    # at all on the first press of a session. Measured: 50ms after the keypress
+    # the record still named the old port, and only became the new one seconds
+    # later. That is the blank-or-stale preview.
+    #
+    # mtime against this process's own start, not the presence of the file: a
+    # complete record from the last press is present and wrong. Three lines,
+    # because the record is written with three appends and a reader can catch
+    # one or two.
+    # `-nt` against a marker created NOW, not stat arithmetic: it is a builtin
+    # test, so the wait costs no processes, and it needs no sub-second format
+    # from stat. `-s` first, because `wc -l < missing` makes the SHELL report a
+    # failed redirection -- stderr the command's own 2>/dev/null cannot reach --
+    # and the empty result then breaks the numeric test. That crashed the
+    # launcher with "No such file or directory" on the first press of a session,
+    # which is exactly the case this wait exists to handle.
+    MARK=$(mktemp -t aerc-mail-mark-XXXXXX)
+    URL=""
+    for _ in $(seq 1 300); do
+      if [ -s "${urlFile}" ] \
+         && [ "$(wc -l < "${urlFile}")" -ge 3 ] \
+         && [ "${urlFile}" -nt "$MARK" ]; then
+        URL=$(sed -n 1p "${urlFile}")
+        break
+      fi
+      sleep 0.1
+    done
+    rm -f "$MARK"
     if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
       echo "no served mail, or terminal-browser is not installed"; sleep 3; exit 1
     fi

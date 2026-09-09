@@ -422,7 +422,13 @@ function showBrowser(head: string, body: string): void {
     // --app-name alone sets BOTH name and id; passing --app-id as well makes
     // the tab come back with app=null, so findMailTab never matches it again
     // and every preview opens a new tab. Measured.
-    [tb, "open", "--split", "right", "--size", "0.5", "--app-mode", `--app-name=${APP_ID}`, file],
+    // --preload, or the pane cannot be closed. --app-mode strips
+    // terminal-browser's own shortcuts and `q` is implemented in that script
+    // (globalThis.terminalBrowser.quit()), so without it the split opens and
+    // stays. Same file the aerc-mail-tty launcher passes, not a copy.
+    [tb, "open", "--split", "right", "--size", "0.5", "--app-mode", `--app-name=${APP_ID}`,
+     ...(process.env.MAIL_PREVIEW_PRELOAD ? [`--preload=${process.env.MAIL_PREVIEW_PRELOAD}`] : []),
+     file],
     { stdout: "ignore", stderr: "pipe" },
   );
   if (proc.exitCode !== 0) {

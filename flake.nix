@@ -363,6 +363,10 @@
           runtimeInputs = [ bun p.chafa p.imagemagick himalaya ];
           text = ''
             export CHA_HTML=${p.callPackage ./modules/shared/chawan-html.nix {}}
+            # The pager keys, including `q`. --app-mode strips terminal-browser's
+            # own shortcuts, so this preload is the only way out of the window.
+            export MAIL_PREVIEW_PRELOAD=${p.writeText "aerc-pager-keys.js"
+              (builtins.readFile ./hosts/linux/omarchy/files/aerc-pager-keys.js)}
             export BUN_WEBVIEW_LIB=${p.callPackage ./modules/shared/bun-webview.nix { inherit bun; }}/lib/bun-webview
             exec bun ${./hosts/linux/omarchy/files/mail-preview.ts} "$@"
           '';
