@@ -929,6 +929,17 @@ exit 0
     # does not have this problem, which is how it passed review and failed in
     # aerc.)
     #
+    # NO `< /dev/tty`. That redirect is what garbled the render -- "Max," and
+    # "Warmly," painted onto one row, two paragraphs interleaved. Inside aerc's
+    # embedded terminal /dev/tty is the OUTER terminal, so chawan sized itself
+    # to the whole ghostty window and drew that geometry into the smaller
+    # region aerc gave it, overwriting its own lines.
+    #
+    # It is not needed: the `!` prefix in aerc.conf runs this in aerc's own
+    # pty, so stdin ALREADY is a terminal, and the document arrives as a
+    # filename argument rather than on stdin -- which is the reason the temp
+    # file exists. Leave stdin alone and chawan measures the region it is in.
+    #
     # No contrast post-processing either: it was a pipe, and a pipe takes the
     # terminal away from an interactive pager.
     PART="$(cat)"
@@ -940,7 +951,7 @@ exit 0
         -o buffer.images=false \
         -o display.pixels-per-column=16 \
         -o display.force-pixels-per-column=true \
-        -I UTF-8 -O UTF-8 "$DIR/index.html" < /dev/tty
+        -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';
 
