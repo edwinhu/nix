@@ -2379,7 +2379,20 @@ in
   #
   # binds.conf is deliberately NOT declared here — it is owned by dotfiles
   # (~/dotfiles/.config/aerc/binds.conf) so it stays hand-editable.
-  # THE SIDEBAR OF EACH ACCOUNT, as queries rather than directories.
+  # THE SIDEBAR IS THE SPLIT INBOX, and nothing else.
+  #
+  # Every row is a slice of INBOX. No Archive/Sent/Drafts/Junk/Deleted, no
+  # Bills/Work/Travel, no Unread/Today/Flagged/Attachments: the notmuch backend
+  # takes an arbitrary query at `:cf`, so `:cf folder:"work/Sent Items"` or
+  # `:cf tag:flagged` reaches any of them without either account carrying twenty
+  # rows to scroll past every day.
+  #
+  # Dropped as splits that rarely earn a row rather than as clutter: Invoice
+  # (7), Pitch (4) and Marketing (10) on Work, and Forums, which matched exactly
+  # one message. Add a line back if one starts being a reason to open the client.
+  #
+  # (Kept for the next reader: this was the sidebar of each account, as queries
+  # rather than directories.)
   #
   # Order here IS order in aerc. `folder:` is relative to the notmuch database
   # root (~/areas/mail), so the account name is the first path element.
@@ -2412,48 +2425,20 @@ in
   # since Gmail sends starred as \Flagged and every user label as its own
   # folder.
   xdg.configFile."aerc/queries-work".text = ''
-    INBOX=folder:work/INBOX
     Focused=folder:work/INBOX and tag:focused
     Other=folder:work/INBOX and tag:other
     Respond=folder:work/INBOX and tag:respond
     Waiting=folder:work/INBOX and tag:waiting
     Meeting=folder:work/INBOX and tag:meeting
-    Invoice=folder:work/INBOX and tag:invoice
-    Pitch=folder:work/INBOX and tag:pitch
     News=folder:work/INBOX and tag:news
-    Marketing=folder:work/INBOX and tag:marketing
-    Unread=folder:work/INBOX and tag:unread
-    ToScreen=folder:work/ToScreen
-    Today=folder:work/INBOX and date:today
-    Flagged=folder:work/INBOX and tag:flagged
-    Attachments=folder:work/INBOX and tag:attachment
-    Archive=folder:work/Archive
-    Sent=folder:"work/Sent Items"
-    Drafts=folder:work/Drafts
-    Junk=folder:"work/Junk Email"
-    Deleted=folder:"work/Deleted Items"
   '';
 
   xdg.configFile."aerc/queries-personal".text = ''
-    INBOX=folder:personal/INBOX
     Important=folder:personal/INBOX and tag:important
     Primary=folder:personal/INBOX and tag:primary
     Updates=folder:personal/INBOX and tag:updates
     Promotions=folder:personal/INBOX and tag:promotions
     Social=folder:personal/INBOX and tag:social
-    Unread=folder:personal/INBOX and tag:unread
-    Today=folder:personal/INBOX and date:today
-    Flagged=folder:personal/INBOX and tag:flagged
-    Attachments=folder:personal/INBOX and tag:attachment
-    Bills=folder:personal/Bills
-    Bills Paid=folder:"personal/Bills/Paid"
-    Work=folder:personal/Work
-    Travel=folder:"personal/Work/Travel"
-    Research Budget=folder:"personal/Research Budget"
-    Sent=folder:"personal/[Gmail]/Sent Mail"
-    Drafts=folder:"personal/[Gmail]/Drafts"
-    Spam=folder:"personal/[Gmail]/Spam"
-    Trash=folder:"personal/[Gmail]/Trash"
   '';
 
   xdg.configFile."notmuch/default/config".text = ''
@@ -2520,6 +2505,12 @@ in
       # from the notmuch database too.
       source            = notmuch://
       query-map         = /home/eh/.config/aerc/queries-personal
+      # The sidebar is the query map and NOTHING else. `enable-maildir`
+      # defaults to TRUE, which lists every directory under the notmuch root
+      # ON TOP of the queries -- p/Bills, p/G/Trash, w/Deleted Items and the
+      # rest, twenty-odd rows of things nobody opens. `:cf <query>` still
+      # reaches any of them.
+      enable-maildir    = false
       # SENDING still goes through the mail-bridge sendmail shim -- a maildir
       # cannot send. The composed bytes are base64url'd into
       # users.messages.send under ortie's brokered Google token. NO APP
@@ -2531,7 +2522,10 @@ in
       # and threads on its own id -- but it is why the send probe reports that
       # header rather than asserting it.
       outgoing          = ${lib.getExe pkgs.mail-bridge} sendmail --provider gmail --account eddyhu@gmail.com
-      default           = INBOX
+      # `default` must name a row in the QUERY MAP. There is no INBOX row any
+      # more -- the category rows are slices of it -- and aerc opens onto
+      # nothing if this names a view that does not exist.
+      default           = Important
       # `:recall` refuses outright unless the selected message is in the
       # POSTPONE directory, so this has to be the real on-disk drafts maildir.
       postpone          = [Gmail]/Drafts
@@ -2543,8 +2537,12 @@ in
       # grants no SMTP.
       source        = notmuch://
       query-map     = /home/eh/.config/aerc/queries-work
+      # See [Personal]: without this the maildir directory list is drawn on top
+      # of the query map.
+      enable-maildir = false
       outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
-      default       = INBOX
+      # See [Personal]: names a query-map row, not a folder.
+      default       = Focused
 
     '';
   };
