@@ -1,0 +1,631 @@
+diff --git a/player/engine.go b/player/engine.go
+index 6257459..ad35de7 100644
+--- a/player/engine.go
++++ b/player/engine.go
+@@ -18,6 +18,9 @@ type Engine interface {
+ 	PreloadForGeneration(path string, knownDuration time.Duration, generation uint64) error
+ 	PreloadYTDLForGeneration(pageURL string, knownDuration time.Duration, generation uint64) error
+ 	ClearPreload()
++	// WarmYTDL pre-resolves a yt-dlp page URL so a later switch to it starts
++	// without paying for extraction. Best-effort and non-blocking.
++	WarmYTDL(pageURL string)
+ 	Stop()
+ 	Close()
+ 	TogglePause()
+diff --git a/player/player.go b/player/player.go
+index 48016e2..6851c71 100644
+--- a/player/player.go
++++ b/player/player.go
+@@ -65,6 +65,7 @@ type Player struct {
+ 	lastPlayedDuration time.Duration // real duration of the track finished by the last gapless swap
+ 
+ 	streamTitle      atomic.Value               // stores string, set by ICY reader callback
++	ytdlURLs         *ytdlURLCache              // resolved yt-dlp media URLs, warmed for playlist neighbours
+ 	customFactories  map[string]StreamerFactory // URI scheme prefix -> factory (e.g. "spotify:" -> fn)
+ 	bufferedURLMatch func(string) bool          // optional: returns true for URLs needing navBuffer pipeline
+ 	sourceResolvers  map[string]SourceResolver  // URI scheme prefix -> play-time source resolver (e.g. "tidal://")
+@@ -114,6 +115,7 @@ func New(q Quality) (*Player, error) {
+ 		tapBufferFrames:     tapRingFrames(sr.N(time.Duration(q.BufferMs) * time.Millisecond)),
+ 		speakerBufferFrames: sr.N(time.Duration(q.BufferMs) * time.Millisecond),
+ 	}
++	p.ytdlURLs = newYTDLURLCache()
+ 	p.volMin.Store(math.Float64bits(-50))
+ 	p.speed.Store(math.Float64bits(1.0))
+ 	p.gapless = &gaplessStreamer{}
+diff --git a/player/ytdl.go b/player/ytdl.go
+index d7307cd..b37a955 100644
+--- a/player/ytdl.go
++++ b/player/ytdl.go
+@@ -3,6 +3,7 @@ package player
+ import (
+ 	"bufio"
+ 	"context"
++	"errors"
+ 	"fmt"
+ 	"io"
+ 	"os"
+@@ -32,6 +33,19 @@ const ytdlCauseGrace = 3 * time.Second
+ 
+ const ytdlPipelineMaxAttempts = 3
+ 
++// ytdlFormatSelector is the format preference shared by the streaming path and
++// the URL cache's resolver, so a cached URL names the same audio the cold path
++// would have selected. Direct HTTPS/HTTP is preferred over HLS: HLS needs
++// segment downloading and muxing, which does not pipe cleanly to stdout. Live
++// streams expose no audio-only formats at all, only muxed video+audio over
++// HLS, so "best" remains the last resort; the ffmpeg stage outputs PCM audio
++// and drops the video.
++const ytdlFormatSelector = "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio/best"
++
++// errNotDirectURL marks a resolution that produced nothing the ffmpeg fast
++// path can use, so the caller falls back to the yt-dlp pipe.
++var errNotDirectURL = errors.New("yt-dlp did not yield a direct media URL")
++
+ // YTDLPAvailable reports whether yt-dlp is installed and on PATH.
+ func YTDLPAvailable() bool {
+ 	_, err := exec.LookPath("yt-dlp")
+@@ -305,13 +319,8 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int)
+ 	}
+ 
+ 	// Start yt-dlp: download best audio to stdout.
+-	// Prefer direct HTTPS/HTTP streams over HLS (m3u8). HLS requires segment
+-	// downloading and muxing which doesn't pipe cleanly to stdout.
+-	// Live streams (e.g. YouTube live) expose no audio-only formats at all,
+-	// only muxed video+audio over HLS, so fall back to "best" as a last
+-	// resort; the ffmpeg stage below outputs PCM audio and drops the video.
+ 	ytdlArgs := []string{
+-		"-f", "bestaudio[protocol=https]/bestaudio[protocol=http]/bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio/best",
++		"-f", ytdlFormatSelector,
+ 		"--no-playlist",
+ 		"--quiet",
+ 		"--no-warnings",
+@@ -403,6 +412,14 @@ func decodeYTDLPipe(pageURL string, sr beep.SampleRate, bitDepth, startSec int)
+ func (p *Player) buildYTDLPipeline(pageURL string, startSec int) (*trackPipeline, error) {
+ 	p.streamTitle.Store("")
+ 
++	// Seek-by-restart needs yt-dlp's --download-sections, so the cached URL
++	// fast path applies only when starting from the top of the track.
++	if startSec == 0 {
++		if tp := p.buildCachedYTDLPipeline(pageURL); tp != nil {
++			return tp, nil
++		}
++	}
++
+ 	for attempt := 1; ; attempt++ {
+ 		decoder, format, err := decodeYTDLPipe(pageURL, p.sr, p.bitDepth, startSec)
+ 		if err != nil {
+@@ -465,3 +482,37 @@ func isTransientYTDL403(err error) bool {
+ 	message := err.Error()
+ 	return strings.Contains(message, "yt-dlp:") && strings.Contains(message, "HTTP Error 403: Forbidden")
+ }
++
++// buildCachedYTDLPipeline plays a previously resolved media URL through ffmpeg
++// alone, skipping the yt-dlp extraction that dominates the cost of starting a
++// track. Any failure returns nil so the caller runs the normal yt-dlp pipe:
++// a URL can expire or be rejected between resolution and use, and that must
++// degrade to a slower start rather than a failed track.
++func (p *Player) buildCachedYTDLPipeline(pageURL string) *trackPipeline {
++	directURL, ok := p.ytdlURLs.lookup(pageURL)
++	if !ok {
++		return nil
++	}
++	decoder, format, err := p.decodeFFmpegURLStream(directURL)
++	if err != nil {
++		p.ytdlURLs.drop(pageURL)
++		return nil
++	}
++	// path stays the page URL: seeking, history and the UI all identify the
++	// track by it, and a later seek must be able to re-extract from it.
++	return &trackPipeline{
++		decoder:  decoder,
++		stream:   decoder,
++		format:   format,
++		seekable: false,
++		path:     pageURL,
++		ytdlSeek: true,
++	}
++}
++
++// WarmYTDL resolves pageURL's media URL in the background so a later switch to
++// it can take the ffmpeg fast path. It returns immediately and reports no
++// error: warming is best-effort, and a failure only costs the cold path.
++func (p *Player) WarmYTDL(pageURL string) {
++	p.ytdlURLs.warm(pageURL)
++}
+diff --git a/player/ytdlurlcache.go b/player/ytdlurlcache.go
+new file mode 100644
+index 0000000..4972433
+--- /dev/null
++++ b/player/ytdlurlcache.go
+@@ -0,0 +1,192 @@
++package player
++
++import (
++	"context"
++	"net/url"
++	"os/exec"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++)
++
++// ytdlURLCacheMax bounds how many resolved stream URLs are retained. Entries
++// are ~1-2 KB each, so this is a negligible amount of memory for a window far
++// larger than the few neighbours that are ever warmed.
++const ytdlURLCacheMax = 64
++
++// ytdlURLExpiryGuard is subtracted from a URL's own expiry before it is
++// considered usable. Google's videoplayback URLs carry expire= roughly six
++// hours out; refusing one that is nearly due avoids handing ffmpeg a URL that
++// dies mid-track.
++const ytdlURLExpiryGuard = 5 * time.Minute
++
++// ytdlURLDefaultTTL applies when a resolved URL carries no expiry we can parse
++// (non-YouTube extractors). Short enough that a stale entry is a rare one-off
++// fallback rather than a persistent failure.
++const ytdlURLDefaultTTL = 30 * time.Minute
++
++// ytdlResolveTimeout bounds a single background resolution.
++const ytdlResolveTimeout = 30 * time.Second
++
++type ytdlURLEntry struct {
++	directURL string
++	expires   time.Time
++}
++
++// ytdlURLCache memoises page URL -> direct media URL resolutions so that a
++// track change can hand the media URL straight to ffmpeg instead of paying for
++// a cold yt-dlp extraction (player JS fetch plus nsig decipher, seconds) on
++// every switch.
++type ytdlURLCache struct {
++	mu       sync.Mutex
++	entries  map[string]ytdlURLEntry
++	inflight map[string]struct{}
++}
++
++func newYTDLURLCache() *ytdlURLCache {
++	return &ytdlURLCache{
++		entries:  make(map[string]ytdlURLEntry),
++		inflight: make(map[string]struct{}),
++	}
++}
++
++// lookup returns a cached direct URL when one is present and not near expiry.
++func (c *ytdlURLCache) lookup(pageURL string) (string, bool) {
++	if c == nil {
++		return "", false
++	}
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	e, ok := c.entries[pageURL]
++	if !ok {
++		return "", false
++	}
++	if time.Now().After(e.expires) {
++		delete(c.entries, pageURL)
++		return "", false
++	}
++	return e.directURL, true
++}
++
++// drop removes an entry, used when ffmpeg rejects a URL we believed was fresh.
++func (c *ytdlURLCache) drop(pageURL string) {
++	if c == nil {
++		return
++	}
++	c.mu.Lock()
++	delete(c.entries, pageURL)
++	c.mu.Unlock()
++}
++
++func (c *ytdlURLCache) store(pageURL, directURL string, expires time.Time) {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	// Evict arbitrarily once over the cap. Entries are interchangeable and the
++	// working set (current track plus neighbours) is far below the limit, so
++	// there is nothing to gain from tracking recency.
++	for k := range c.entries {
++		if len(c.entries) < ytdlURLCacheMax {
++			break
++		}
++		delete(c.entries, k)
++	}
++	c.entries[pageURL] = ytdlURLEntry{directURL: directURL, expires: expires}
++}
++
++// warm resolves pageURL in the background unless it is already cached or a
++// resolution is already in flight. It never blocks the caller.
++func (c *ytdlURLCache) warm(pageURL string) {
++	if c == nil || pageURL == "" {
++		return
++	}
++	if _, ok := c.lookup(pageURL); ok {
++		return
++	}
++	c.mu.Lock()
++	if _, busy := c.inflight[pageURL]; busy {
++		c.mu.Unlock()
++		return
++	}
++	c.inflight[pageURL] = struct{}{}
++	c.mu.Unlock()
++
++	go func() {
++		defer func() {
++			c.mu.Lock()
++			delete(c.inflight, pageURL)
++			c.mu.Unlock()
++		}()
++		directURL, expires, err := resolveYTDLURL(pageURL)
++		if err != nil || directURL == "" {
++			return
++		}
++		c.store(pageURL, directURL, expires)
++	}()
++}
++
++// resolveYTDLURL asks yt-dlp for the direct media URL of pageURL, using the
++// same format selector as the streaming path so the cached URL names the same
++// audio the cold path would have picked.
++func resolveYTDLURL(pageURL string) (string, time.Time, error) {
++	ctx, cancel := context.WithTimeout(context.Background(), ytdlResolveTimeout)
++	defer cancel()
++
++	args := []string{
++		"-f", ytdlFormatSelector,
++		"--no-playlist",
++		"--quiet",
++		"--no-warnings",
++		"--socket-timeout", "15",
++		"--print", "urls",
++	}
++	args = appendYTDLCookieArgs(args, pageURL)
++	// "--" stops yt-dlp parsing pageURL as a flag, matching decodeYTDLPipe.
++	args = append(args, "--", pageURL)
++
++	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
++	cmd.WaitDelay = 3 * time.Second
++	out, err := cmd.Output()
++	if err != nil {
++		return "", time.Time{}, err
++	}
++
++	directURL := strings.TrimSpace(string(out))
++	if i := strings.IndexByte(directURL, '\n'); i >= 0 {
++		directURL = strings.TrimSpace(directURL[:i])
++	}
++	if !strings.HasPrefix(directURL, "http://") && !strings.HasPrefix(directURL, "https://") {
++		return "", time.Time{}, errNotDirectURL
++	}
++	// HLS needs yt-dlp's segment handling; handing a playlist to the ffmpeg
++	// fast path would change how the stream is fetched, so decline to cache it
++	// and let the cold path run.
++	if strings.Contains(directURL, ".m3u8") {
++		return "", time.Time{}, errNotDirectURL
++	}
++	return directURL, ytdlURLExpiry(directURL), nil
++}
++
++// ytdlURLExpiry reads the expire= epoch Google attaches to videoplayback URLs,
++// backing off by ytdlURLExpiryGuard. Extractors that carry no such parameter
++// fall back to a short fixed TTL.
++func ytdlURLExpiry(directURL string) time.Time {
++	fallback := time.Now().Add(ytdlURLDefaultTTL)
++	u, err := url.Parse(directURL)
++	if err != nil {
++		return fallback
++	}
++	raw := u.Query().Get("expire")
++	if raw == "" {
++		return fallback
++	}
++	secs, err := strconv.ParseInt(raw, 10, 64)
++	if err != nil {
++		return fallback
++	}
++	expiry := time.Unix(secs, 0).Add(-ytdlURLExpiryGuard)
++	if !expiry.After(time.Now()) {
++		return fallback
++	}
++	return expiry
++}
+diff --git a/player/ytdlurlcache_test.go b/player/ytdlurlcache_test.go
+new file mode 100644
+index 0000000..2b85af1
+--- /dev/null
++++ b/player/ytdlurlcache_test.go
+@@ -0,0 +1,116 @@
++package player
++
++import (
++	"fmt"
++	"testing"
++	"time"
++)
++
++func TestYTDLURLCacheLookupMiss(t *testing.T) {
++	c := newYTDLURLCache()
++	if _, ok := c.lookup("https://youtu.be/abc"); ok {
++		t.Fatal("lookup() on an empty cache returned a hit")
++	}
++}
++
++func TestYTDLURLCacheStoreAndLookup(t *testing.T) {
++	c := newYTDLURLCache()
++	c.store("page", "https://direct.example/media", time.Now().Add(time.Hour))
++	got, ok := c.lookup("page")
++	if !ok {
++		t.Fatal("lookup() = miss, want hit")
++	}
++	if got != "https://direct.example/media" {
++		t.Fatalf("lookup() = %q, want the stored direct URL", got)
++	}
++}
++
++// An entry past its expiry must not be served: the URL is dead and handing it
++// to ffmpeg would fail the track instead of merely starting it slowly.
++func TestYTDLURLCacheLookupRejectsExpired(t *testing.T) {
++	c := newYTDLURLCache()
++	c.store("page", "https://direct.example/media", time.Now().Add(-time.Second))
++	if _, ok := c.lookup("page"); ok {
++		t.Fatal("lookup() served an expired entry")
++	}
++	c.mu.Lock()
++	_, present := c.entries["page"]
++	c.mu.Unlock()
++	if present {
++		t.Fatal("expired entry was not evicted on lookup")
++	}
++}
++
++func TestYTDLURLCacheDrop(t *testing.T) {
++	c := newYTDLURLCache()
++	c.store("page", "https://direct.example/media", time.Now().Add(time.Hour))
++	c.drop("page")
++	if _, ok := c.lookup("page"); ok {
++		t.Fatal("lookup() = hit after drop()")
++	}
++}
++
++func TestYTDLURLCacheEvictsAtCap(t *testing.T) {
++	c := newYTDLURLCache()
++	for i := range ytdlURLCacheMax + 10 {
++		c.store(fmt.Sprintf("page%d", i), "https://direct.example/media", time.Now().Add(time.Hour))
++	}
++	c.mu.Lock()
++	n := len(c.entries)
++	c.mu.Unlock()
++	if n > ytdlURLCacheMax {
++		t.Fatalf("cache holds %d entries, want at most %d", n, ytdlURLCacheMax)
++	}
++}
++
++// The expiry comes from the URL's own expire= parameter, backed off by the
++// guard, so a URL is retired before Google stops honouring it.
++func TestYTDLURLExpiryUsesExpireParam(t *testing.T) {
++	expire := time.Now().Add(6 * time.Hour).Unix()
++	got := ytdlURLExpiry(fmt.Sprintf("https://rr3.googlevideo.com/videoplayback?expire=%d&itag=251", expire))
++	want := time.Unix(expire, 0).Add(-ytdlURLExpiryGuard)
++	if !got.Equal(want) {
++		t.Fatalf("ytdlURLExpiry() = %v, want %v", got, want)
++	}
++}
++
++func TestYTDLURLExpiryFallsBackWithoutExpireParam(t *testing.T) {
++	before := time.Now().Add(ytdlURLDefaultTTL)
++	got := ytdlURLExpiry("https://cdn.example/media.webm")
++	if got.Before(before) || got.After(before.Add(time.Minute)) {
++		t.Fatalf("ytdlURLExpiry() = %v, want ~%v (the default TTL)", got, before)
++	}
++}
++
++// An expire= already in the past must not produce an expiry in the past, which
++// would cache an entry that can never be served.
++func TestYTDLURLExpiryIgnoresPastExpireParam(t *testing.T) {
++	past := time.Now().Add(-time.Hour).Unix()
++	got := ytdlURLExpiry(fmt.Sprintf("https://rr3.googlevideo.com/videoplayback?expire=%d", past))
++	if !got.After(time.Now()) {
++		t.Fatalf("ytdlURLExpiry() = %v, want a future fallback", got)
++	}
++}
++
++// warm must not resolve twice for a URL already cached — the whole point is to
++// spend one extraction per track, not one per neighbour scan.
++func TestYTDLURLCacheWarmSkipsCached(t *testing.T) {
++	c := newYTDLURLCache()
++	c.store("page", "https://direct.example/media", time.Now().Add(time.Hour))
++	c.warm("page")
++	c.mu.Lock()
++	_, busy := c.inflight["page"]
++	c.mu.Unlock()
++	if busy {
++		t.Fatal("warm() started a resolution for an already-cached URL")
++	}
++}
++
++func TestYTDLURLCacheNilSafe(t *testing.T) {
++	var c *ytdlURLCache
++	if _, ok := c.lookup("page"); ok {
++		t.Fatal("lookup() on a nil cache returned a hit")
++	}
++	c.warm("page")
++	c.drop("page")
++}
+diff --git a/playlist/playlist.go b/playlist/playlist.go
+index dbcee70..8c52b82 100644
+--- a/playlist/playlist.go
++++ b/playlist/playlist.go
+@@ -800,6 +800,26 @@ func (p *Playlist) PeekNext() (Track, bool) {
+ 	return cloneTrack(p.tracks[idx]), true
+ }
+ 
++// PeekPrev returns the previous track without moving the playlist position,
++// mirroring Prev's selection so a caller can prepare the track Prev would
++// pick. Returns false when there is no predictable previous track.
++func (p *Playlist) PeekPrev() (Track, bool) {
++	p.mu.Lock()
++	defer p.mu.Unlock()
++	if len(p.tracks) == 0 {
++		return Track{}, false
++	}
++	if _, idx, ok := p.lastPlayableOrderSlot(p.pos - 1); ok {
++		return cloneTrack(p.tracks[idx]), true
++	}
++	if p.repeat == RepeatAll {
++		if _, idx, ok := p.lastPlayableOrderSlot(len(p.order) - 1); ok {
++			return cloneTrack(p.tracks[idx]), true
++		}
++	}
++	return Track{}, false
++}
++
+ // Prev moves to the previous track, skipping unavailable tracks.
+ // Wraps around with RepeatAll.
+ func (p *Playlist) Prev() (Track, bool) {
+diff --git a/ui/model/playback.go b/ui/model/playback.go
+index 1565364..bfa58d4 100644
+--- a/ui/model/playback.go
++++ b/ui/model/playback.go
+@@ -484,6 +484,7 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
+ 	m.seek.timerFor = 0
+ 	m.seek.grace = 0
+ 	m.seek.graceFor = 0
++	m.warmNeighbors()
+ 	if m.lyrics.visible {
+ 		q := lyricsLookupKey(track, track.Artist, track.Title)
+ 		if q == "" {
+@@ -497,6 +498,29 @@ func (m *Model) beginPlaybackTrack(track playlist.Track) (playlist.Track, tea.Cm
+ 	return track, historyCmd
+ }
+ 
++// warmNeighbors pre-resolves the media URLs of the tracks a Next or Prev
++// keypress would reach. Extraction is what makes a yt-dlp track slow to start,
++// so resolving it while the current track plays is what turns a switch from
++// seconds into a connect. Unlike the gapless preload this opens no connection
++// and holds no pipeline, so it is safe to run for the whole track rather than
++// inside a lead-time window, and it is not discarded on a manual switch.
++func (m *Model) warmNeighbors() {
++	if m.player == nil {
++		return
++	}
++	current, currentIdx := m.currentPlaybackTrack()
++	// A live stream has no track boundary and no neighbours to prepare.
++	if currentIdx >= 0 && m.currentPlaybackIsLive(current) {
++		return
++	}
++	if next, ok := m.playlist.PeekNext(); ok && playlist.IsYTDL(next.Path) {
++		m.player.WarmYTDL(next.Path)
++	}
++	if prev, ok := m.playlist.PeekPrev(); ok && playlist.IsYTDL(prev.Path) {
++		m.player.WarmYTDL(prev.Path)
++	}
++}
++
+ func (m *Model) fetchLyricsForTrack(track playlist.Track, artist, title string) tea.Cmd {
+ 	return fetchTrackLyricsCmd(track, artist, title, m.lyrics.query, nextRequest(&m.requests.lyrics))
+ }
+diff --git a/ui/model/playback_test.go b/ui/model/playback_test.go
+index c76f960..7d028a3 100644
+--- a/ui/model/playback_test.go
++++ b/ui/model/playback_test.go
+@@ -30,6 +30,7 @@ type playbackFakeEngine struct {
+ 	seekYTDLCalls       []time.Duration
+ 	playAtOffsets       []time.Duration
+ 	preloadCalls        []string
++	warmed              []string
+ 	clearPreloadCalls   int
+ 	cancelSeekYTDLCalls int
+ 	stopCalls           int
+@@ -86,6 +87,10 @@ func (f *playbackFakeEngine) PreloadYTDLForGeneration(path string, _ time.Durati
+ 	f.preloadCalls = append(f.preloadCalls, path)
+ 	return nil
+ }
++func (f *playbackFakeEngine) WarmYTDL(pageURL string) {
++	f.warmed = append(f.warmed, pageURL)
++}
++
+ func (f *playbackFakeEngine) ClearPreload() {
+ 	f.clearPreloadCalls++
+ 	f.preloadGeneration++
+diff --git a/ui/model/stream_seek_keys_test.go b/ui/model/stream_seek_keys_test.go
+index ba5b79c..473297b 100644
+--- a/ui/model/stream_seek_keys_test.go
++++ b/ui/model/stream_seek_keys_test.go
+@@ -25,6 +25,7 @@ func (f *fakeEngine) PlayAtForGeneration(path string, dur, offset time.Duration,
+ func (f *fakeEngine) PlayYTDLForGeneration(path string, dur time.Duration, _ uint64) error {
+ 	return f.PlayYTDL(path, dur)
+ }
++func (f *fakeEngine) WarmYTDL(string)                         {}
+ func (f *fakeEngine) Preload(string, time.Duration) error     { return nil }
+ func (f *fakeEngine) PreloadYTDL(string, time.Duration) error { return nil }
+ func (f *fakeEngine) BeginPreload() uint64                    { return 0 }
+diff --git a/ui/model/warm_neighbors_test.go b/ui/model/warm_neighbors_test.go
+new file mode 100644
+index 0000000..e1a998c
+--- /dev/null
++++ b/ui/model/warm_neighbors_test.go
+@@ -0,0 +1,63 @@
++package model
++
++import (
++	"slices"
++	"testing"
++
++	"github.com/bjarneo/cliamp/playlist"
++)
++
++func ytTrack(title, id string) playlist.Track {
++	return playlist.Track{Title: title, Path: "https://music.youtube.com/watch?v=" + id, DurationSecs: 180}
++}
++
++// The point of warming is that a Next or Prev keypress finds the URL already
++// resolved, so both neighbours must be warmed as soon as a track starts —
++// not only near the end of it, as the gapless preload is.
++func TestWarmNeighborsWarmsBothDirections(t *testing.T) {
++	pl := playlist.New()
++	pl.Add(ytTrack("First", "aaa"), ytTrack("Second", "bbb"), ytTrack("Third", "ccc"))
++	pl.SetIndex(1)
++	player := &playbackFakeEngine{playing: true}
++	m := Model{player: player, playlist: pl}
++	m.setPlaybackTrack(ytTrack("Second", "bbb"))
++
++	m.warmNeighbors()
++
++	if !slices.Contains(player.warmed, "https://music.youtube.com/watch?v=ccc") {
++		t.Errorf("next track was not warmed; warmed = %v", player.warmed)
++	}
++	if !slices.Contains(player.warmed, "https://music.youtube.com/watch?v=aaa") {
++		t.Errorf("previous track was not warmed; warmed = %v", player.warmed)
++	}
++}
++
++// Local files do not go through yt-dlp, so warming them would spawn a
++// pointless extraction.
++func TestWarmNeighborsSkipsNonYTDLTracks(t *testing.T) {
++	pl := playlist.New()
++	pl.Add(
++		playlist.Track{Title: "Local prev", Path: "/tmp/prev.mp3", DurationSecs: 180},
++		ytTrack("Current", "bbb"),
++		playlist.Track{Title: "Local next", Path: "/tmp/next.mp3", DurationSecs: 180},
++	)
++	pl.SetIndex(1)
++	player := &playbackFakeEngine{playing: true}
++	m := Model{player: player, playlist: pl}
++	m.setPlaybackTrack(ytTrack("Current", "bbb"))
++
++	m.warmNeighbors()
++
++	if len(player.warmed) != 0 {
++		t.Fatalf("warmed = %v, want none for local files", player.warmed)
++	}
++}
++
++func TestWarmNeighborsEmptyPlaylistIsNoop(t *testing.T) {
++	player := &playbackFakeEngine{}
++	m := Model{player: player, playlist: playlist.New()}
++	m.warmNeighbors()
++	if len(player.warmed) != 0 {
++		t.Fatalf("warmed = %v, want none", player.warmed)
++	}
++}
