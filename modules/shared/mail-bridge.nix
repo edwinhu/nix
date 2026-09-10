@@ -139,7 +139,7 @@ stdenvNoCC.mkDerivation {
   #
   #   1. `Bun/<version>` grepped out of the file is the runtime stamp -- proves
   #      which bun got embedded.
-  #   2. Running `archive doctor`. This is the one that matters: the failure
+  #   2. Running `providers`. This is the one that matters: the failure
   #      mode being guarded is a bundler that exits 0 having written a binary
   #      that segfaults on every argv, and NOTHING that merely reads the file
   #      distinguishes that from a sound one. Only execution does.
@@ -155,9 +155,10 @@ stdenvNoCC.mkDerivation {
   # loader, absent from the sandbox; inheriting the patchelf'd bun's /nix/store
   # loader makes the binary runnable inside the build.
   #
-  # `archive doctor` is chosen for being read-only and needing no account, no
-  # network and no state: it reports on the archive database, creating one under
-  # $HOME if absent, and exits non-zero on a broken runtime.
+  # `providers` is chosen for being read-only and needing no account, no
+  # network and no state: it prints the compiled-in provider names and exits
+  # non-zero on a broken runtime. (It replaces `archive doctor`, deleted along
+  # with the SQLite archive itself.)
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
@@ -178,8 +179,8 @@ stdenvNoCC.mkDerivation {
     fi
 
     export HOME=$TMPDIR
-    if ! $out/bin/mail-bridge archive doctor; then
-      echo "mail-bridge: the built binary could not run \`archive doctor\`" >&2
+    if ! $out/bin/mail-bridge providers; then
+      echo "mail-bridge: the built binary could not run \`providers\`" >&2
       exit 1
     fi
 

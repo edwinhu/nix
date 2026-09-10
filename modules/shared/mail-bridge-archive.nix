@@ -209,6 +209,18 @@ let
           the matching value.
         '';
       };
+      refreshCommand = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          Command both push receivers run when the provider says mail arrived.
+          Split on whitespace and spawned DIRECTLY — no shell, so no quoting,
+          no expansion and no part of a notification reaches it. Required by
+          `graph-webhook` and `gmail-push` now that the SQLite archive (and its
+          in-process `runCycleOnDemand`) is gone: a notification triggers the
+          same Maildir pull the timer runs, rather than an archive cycle.
+        '';
+      };
       # Gmail's trigger. Same shape as the Graph one and deliberately separate:
       # the two providers share no transport. Gmail publishes to Pub/Sub and
       # this PULLS, so there is no public endpoint and no inbound surface.
@@ -244,6 +256,13 @@ let
   };
 
   exe = lib.getExe cfg.package;
+
+  # Archive units are emitted for archive-mode accounts ONLY. A live account
+  # has no archive listener, cycle or retention pass to write down, and an
+  # inert unit definition for a retired subsystem is a unit somebody starts by
+  # hand. The receivers below are gated on their own flags instead: they are
+  # provider triggers, not archive cadence, and survive the mode change.
+  archiveAccounts = lib.filterAttrs (_: a: a.mode == "archive") cfg.accounts;
 
   # Any account driving a receiver needs the one clientState secret; it is
   # decrypted once, not per account, because it identifies the tunnel route
@@ -358,52 +377,34 @@ let
     Install.WantedBy = lib.optionals (a.mode == "archive") [ "default.target" ];
   };
 
-  # The webhook spells ONE ceiling differently from the timer: `--max-retries`
-  # there, `--max-retries-per-request` here. Both parsers refuse an unpermitted
-  # flag outright, so a shared list would fail one unit at parse on every start.
-  # The divergence is the packaged CLI's, not this module's; it is reproduced
-  # rather than corrected so the argv matches the parser that reads it.
-  #
-  # All SEVEN are passed. The archive's requireBudgets demands every field, and
-  # a cycle triggered by a notification refuses itself with `budget-required`
-  # if one is missing — visible only as mail that never arrives, since the
-  # receiver still answers 200.
-  webhookBudgetFlags = a: [
-    "--max-requests ${toString a.budgets.maxRequests}"
-    "--max-pages ${toString a.budgets.maxPages}"
-    "--max-messages ${toString a.budgets.maxMessages}"
-    "--max-raw-bytes ${toString a.budgets.maxRawBytes}"
-    "--max-retries-per-request ${toString a.budgets.maxRetries}"
-    "--max-elapsed-ms ${toString a.budgets.maxElapsedMs}"
-    "--max-operations ${toString a.budgets.maxOperations}"
-  ];
-
   # `graph-webhook`, a TOP-LEVEL subcommand with its own parser — not part of
   # the `archive account` namespace, so it takes neither `--keep-generations`
-  # nor the archive parser's flag spellings.
-  graphWebhookCommand = a: lib.concatStringsSep " " ([
+  # nor the archive parser's flag spellings. It no longer takes the seven cycle
+  # budgets, `--provider` or `--state` either: with the archive deleted the
+  # receiver runs a refresh command instead of an in-process cycle, and the
+  # parser REFUSES an unpermitted flag outright, so a stale argv is a unit that
+  # dies at parse on every start.
+  graphWebhookCommand = a: lib.concatStringsSep " " [
     exe
     "graph-webhook"
     "--account ${a.address}"
-    "--provider ${a.provider}"
-    "--state ${stateDb}"
     "--notification-url ${a.graphWebhookUrl}"
     "--port ${toString a.graphWebhookPort}"
-  ] ++ webhookBudgetFlags a);
+    ''--refresh-command "${a.refreshCommand}"''
+  ];
 
   # Gmail's subscriber. `--sa-key` takes a PATH, never the key: the binary reads
-  # the file and refuses it unless it is 0600. The budget flag NAMES are the
-  # webhook's, not the archive's, so webhookBudgetFlags is reused verbatim.
-  gmailPushCommand = a: lib.concatStringsSep " " ([
+  # the file and refuses it unless it is 0600. Same flag surface as the Graph
+  # receiver above, and the same reason for what is absent.
+  gmailPushCommand = a: lib.concatStringsSep " " [
     exe
     "gmail-push"
     "--account ${a.address}"
-    "--provider ${a.provider}"
-    "--state ${stateDb}"
     "--subscription ${a.gmailPushSubscription}"
     "--topic ${a.gmailPushTopic}"
     "--sa-key ${gmailKeyPath}"
-  ] ++ webhookBudgetFlags a);
+    ''--refresh-command "${a.refreshCommand}"''
+  ];
 
   gmailPushUnit = name: a: lib.nameValuePair "mail-bridge-gmail-push-${name}" {
     Unit = {
@@ -423,8 +424,9 @@ let
       Restart = "on-failure";
       RestartSec = 30;
     };
-    Install.WantedBy =
-      lib.optionals (a.mode == "archive" && a.gmailPushEnabled) [ "default.target" ];
+    # Gated on the flag alone, not on mode: the subscriber is a provider
+    # trigger and keeps running now that the archive cadence is retired.
+    Install.WantedBy = lib.optionals a.gmailPushEnabled [ "default.target" ];
   };
 
   # The second unit that carries a token, and the only one reachable from the
@@ -459,8 +461,8 @@ let
       Restart = "on-failure";
       RestartSec = 30;
     };
-    Install.WantedBy =
-      lib.optionals (a.mode == "archive" && a.graphWebhookEnabled) [ "default.target" ];
+    # Flag alone, for the same reason as the Gmail subscriber.
+    Install.WantedBy = lib.optionals a.graphWebhookEnabled [ "default.target" ];
   };
 
   # One gate for both cycle units: a cycle is wired only while the account is in
@@ -591,9 +593,9 @@ in
 
   config = lib.mkIf (cfg.accounts != { }) {
     systemd.user.services =
-      (lib.mapAttrs' serveUnit cfg.accounts)
-      // (lib.mapAttrs' cycleUnit cfg.accounts)
-      // (lib.mapAttrs' retainUnit cfg.accounts)
+      (lib.mapAttrs' serveUnit archiveAccounts)
+      // (lib.mapAttrs' cycleUnit archiveAccounts)
+      // (lib.mapAttrs' retainUnit archiveAccounts)
       # Unlike the other three, this one is emitted ONLY where it is enabled.
       # A receiver unit for an account that opted out would be written with an
       # empty --notification-url: harmless while nothing starts it, and a trap
@@ -621,7 +623,7 @@ in
     };
 
     systemd.user.timers =
-      (lib.mapAttrs' cycleTimer cfg.accounts) // (lib.mapAttrs' retainTimer cfg.accounts);
+      (lib.mapAttrs' cycleTimer archiveAccounts) // (lib.mapAttrs' retainTimer archiveAccounts);
 
     # Gates on the EVALUATED units, not on the let-bindings above, so a caller
     # that overrides a unit body is judged too. They fail at eval: no build, no
@@ -638,7 +640,9 @@ in
           (config.systemd.user.services."mail-bridge-archive-cycle-${name}".Service.Environment or [ ]);
         others = name: lib.filter (n: n != name) (lib.attrNames cfg.accounts);
 
-        perAccount = name: a: [
+        # The unit-shape gates read units that exist only in archive mode; the
+        # option-shape gates below them hold in either mode.
+        perAccount = name: a: lib.optionals (a.mode == "archive") [
           {
             # The option is the ONLY thing that decides the namespace, in both
             # directions, so neither value can silently fall through to the other.
@@ -729,6 +733,7 @@ in
               "mail-bridge-archive-cycle-${name}: must carry its own broker and no "
               + "other account's. Environment = ${env name}";
           }
+        ] ++ [
           {
             assertion = lib.all (o: cfg.accounts.${o}.port != a.port) (others name);
             message =

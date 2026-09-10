@@ -18,6 +18,10 @@
     # (worker/imap/checkmail.go asks for imap.StatusUidValidity), which is what
     # modules/linux/aerc-uidvalidity.nix backported onto 0.21.0.
     nixpkgs-aerc.url = "github:nixos/nixpkgs/9387b3fcc0c23c86661636da63faabad4235a0a6";
+    # cliamp v2.2.0 needs go >= 1.26.6; the main nixpkgs pin carries 1.26.4, so
+    # the build dies in GOTOOLCHAIN=local. This rev has go 1.26.7. Used ONLY as
+    # the base for modules/linux/cliamp-ytdl-cache.nix.
+    nixpkgs-cliamp.url = "github:nixos/nixpkgs/34ab99075ac4f7e40cf037eef32cb1c360bb85e9";
     # Newer nixpkgs pin for stremio-linux-shell only: the main lock (2026-07-05)
     # predates the 1.1.x series, so it carries 1.0.2. 1.1.4 fixes the server
     # process outliving the shell (a stale `node server.js` keeps :11470 and the
@@ -46,6 +50,22 @@
     # backend. Not in nixpkgs.
     ortie = {
       url = "github:pimalaya/ortie";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # neverest: the mailbox synchronizer (himalaya's old `account sync`, split
+    # out). Pinned to the v0.2.0 tag and used as SOURCE, not as a release
+    # tarball, because the msgraph backend is behind a non-default cargo
+    # feature and upstream's published binaries are built without it — this
+    # host syncs a Microsoft Graph work mailbox.
+    neverest = {
+      url = "github:pimalaya/neverest/v0.2.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # himalaya-tui: the TUI front end for himalaya v2. Source build because
+    # upstream has cut no release at all — no version tag, no tarball — so it
+    # is pinned to a master rev.
+    himalaya-tui = {
+      url = "github:pimalaya/himalaya-tui/1303e56f17788f2a0b41ac3b384c9580a201338e";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     home-manager = {
@@ -111,7 +131,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-aerc, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-aerc, nixpkgs-cliamp, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, neverest, himalaya-tui, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings
       userHosts = {
@@ -489,6 +509,21 @@
                 himalaya = prev.callPackage ./modules/shared/himalaya-release.nix {};
                 mml = prev.callPackage ./modules/shared/mml-release.nix {};
                 ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
+                # neverest and himalaya-tui are built FROM SOURCE, unlike the
+                # three above. neverest's msgraph backend is a non-default
+                # cargo feature, so the published binary cannot talk to the
+                # work mailbox; himalaya-tui has no published binary at all.
+                neverest = prev.callPackage ./modules/shared/pimalaya-source.nix {
+                  src = inputs.neverest;
+                  cargoHash = "sha256-APC1GDVggdT8iMxP+fsNfGuzOiQ4OQbPbNefCVspLbE=";
+                  # defaults (rustls-ring, imap, smtp, dav) stay on; msgraph is
+                  # additive
+                  buildFeatures = [ "msgraph" ];
+                };
+                himalaya-tui = prev.callPackage ./modules/shared/pimalaya-source.nix {
+                  src = inputs.himalaya-tui;
+                  cargoHash = "sha256-do+OaRQ8yOBXzfLWmRZZm6ymbHvy/T3OCDgnyMAuQEM=";
+                };
                 # chawan from upstream's prebuilt release: nixpkgs is stuck at
                 # 0.3.3, which segfaults rendering some HTML mail via aerc's
                 # text/html filter (nil Client.document). x86_64-linux only, so
@@ -748,6 +783,26 @@
                 # Keyboard-driven GUI navigation (gh:AlfredoSequeida/hints),
                 # built from source — not in nixpkgs. See modules/shared/hints.nix.
                 hints = prev.callPackage ./modules/shared/hints.nix {};
+                # cliamp with a resolved-URL cache in front of the yt-dlp path,
+                # so switching tracks costs an ffmpeg connect (~70ms) instead of
+                # a cold yt-dlp extraction (1.3-2.1s measured). Upstream only
+                # preloads inside a 15s window before a track ends and drops it
+                # on any manual switch, so Next/Prev never benefited. Also bumps
+                # v1.63.2 -> v2.2.0; the patch cannot apply to nixpkgs' pin.
+                # See modules/linux/cliamp-ytdl-cache.nix.
+                # Built from nixpkgs-cliamp, not this pin: v2.2.0 requires
+                # go >= 1.26.6 and the main pin ships 1.26.4 (upstream hit the
+                # same wall in v2.1.0, "bump nixpkgs for Go 1.26.6"). The module
+                # builds upstream's own nix/package.nix over patched source, so
+                # it does NOT consume pinned.cliamp -- that derivation is
+                # v1.63.2 and lacks the non-NixOS ALSA plugin wiring.
+                cliamp =
+                  let
+                    pinned = import inputs.nixpkgs-cliamp {
+                      system = prev.stdenv.hostPlatform.system;
+                    };
+                  in
+                  pinned.callPackage ./modules/linux/cliamp-ytdl-cache.nix { };
                 # Joy-Con macro pad daemon (gh:edwinhu/joycon-pad) — Linux only.
                 # See modules/linux/joycon-pad.nix + the omarchy user service.
                 joycon-pad = prev.callPackage ./modules/linux/joycon-pad.nix {

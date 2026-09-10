@@ -73,6 +73,12 @@ let
     # so this adds only the client tools to PATH; no second daemon.
     bluez
 
+    # Terminal music player. REPLACES the AUR package (`sudo pacman -Rns
+    # cliamp`): two copies would fight over PATH order, and the nix build is
+    # the patched one — a resolved-URL cache that makes Next/Prev on YouTube
+    # tracks near-instant. See modules/linux/cliamp-ytdl-cache.nix.
+    cliamp
+
     # GUI automation / input simulation (Wayland + X11)
     dotool
     xdotool
@@ -99,6 +105,36 @@ let
     aerc
     himalaya
     mml
+    # himalaya-tui is himalaya v2's TUI front end. Built from source by the
+    # Linux overlay: upstream has cut no release, so there is no tarball to
+    # unpack.
+    himalaya-tui
+    # neverest syncs the mailboxes (himalaya v1's `account sync`, split out).
+    # Also a source build, and for a different reason: its msgraph backend is
+    # behind a non-default cargo feature, so upstream's released binary cannot
+    # reach the work account.
+    neverest
+    # isync/mbsync pulls both mailboxes down to Maildir under ~/areas/mail, so
+    # himalaya reads local files instead of a network backend: work over
+    # mail-bridge's loopback IMAP (Graph is the only door the tenant opens),
+    # personal straight off imap.gmail.com. Config: ~/.mbsyncrc, generated in
+    # the omarchy host; driven by the mbsync-pull timer there. One-way pull —
+    # the far side is never written.
+    isync
+    # notmuch: one index over both maildirs under ~/areas/mail, so aerc's
+    # [Notmuch] account can offer SAVED SEARCHES where the bridge used to offer
+    # virtual folders. A query costs nothing on disk; a virtual folder costs one
+    # copy of every message per view mbsync pulls it into, which is why they
+    # were dropped at the Maildir migration.
+    #
+    # Indexed by the mbsync-pull timer's companion `notmuch new` -- see the
+    # omarchy host. Config: xdg.configFile "notmuch/default/config" there.
+    notmuch
+    # XOAUTH2 SASL plugin for the cyrus-sasl mbsync links against. Without it
+    # the personal channel dies with "No worthy mechs found" — the mech list
+    # mbsync offers has no XOAUTH2 at all. The plugin is discovered via
+    # SASL_PATH, set on mbsync-pull.service in the omarchy host.
+    cyrus-sasl-xoauth2
     # ortie brokers the work account's Microsoft Graph token. himalaya calls it
     # by store path from its config; this entry is for the bootstrap by hand
     # (`ortie -a msgraph auth get` / `auth resume`).

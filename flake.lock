@@ -170,7 +170,7 @@
     "fenix": {
       "inputs": {
         "nixpkgs": [
-          "mml",
+          "himalaya-tui",
           "nixpkgs"
         ],
         "rust-analyzer-src": "rust-analyzer-src"
@@ -193,10 +193,56 @@
     "fenix_2": {
       "inputs": {
         "nixpkgs": [
-          "ortie",
+          "mml",
           "nixpkgs"
         ],
         "rust-analyzer-src": "rust-analyzer-src_2"
+      },
+      "locked": {
+        "lastModified": 1782900513,
+        "narHash": "sha256-GHrsl1+ysDFgmDQtQSqWS7TiYD2Q58VlwLvnf1+crJM=",
+        "owner": "nix-community",
+        "repo": "fenix",
+        "rev": "16810aa8f4ad89ca480b1513774e8b6f485fe368",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "ref": "monthly",
+        "repo": "fenix",
+        "type": "github"
+      }
+    },
+    "fenix_3": {
+      "inputs": {
+        "nixpkgs": [
+          "neverest",
+          "nixpkgs"
+        ],
+        "rust-analyzer-src": "rust-analyzer-src_3"
+      },
+      "locked": {
+        "lastModified": 1782900513,
+        "narHash": "sha256-GHrsl1+ysDFgmDQtQSqWS7TiYD2Q58VlwLvnf1+crJM=",
+        "owner": "nix-community",
+        "repo": "fenix",
+        "rev": "16810aa8f4ad89ca480b1513774e8b6f485fe368",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "ref": "monthly",
+        "repo": "fenix",
+        "type": "github"
+      }
+    },
+    "fenix_4": {
+      "inputs": {
+        "nixpkgs": [
+          "ortie",
+          "nixpkgs"
+        ],
+        "rust-analyzer-src": "rust-analyzer-src_4"
       },
       "locked": {
         "lastModified": 1782900513,
@@ -301,6 +347,29 @@
         "ref": "gnome-49",
         "repo": "gnome-shell",
         "type": "gitlab"
+      }
+    },
+    "himalaya-tui": {
+      "inputs": {
+        "fenix": "fenix",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pimalaya": "pimalaya"
+      },
+      "locked": {
+        "lastModified": 1788005800,
+        "narHash": "sha256-EDvovkphwuGnIKq/UiA7tIY4ovyvdexirfAoreFuyFg=",
+        "owner": "pimalaya",
+        "repo": "himalaya-tui",
+        "rev": "1303e56f17788f2a0b41ac3b384c9580a201338e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "repo": "himalaya-tui",
+        "rev": "1303e56f17788f2a0b41ac3b384c9580a201338e",
+        "type": "github"
       }
     },
     "home-manager": {
@@ -411,11 +480,11 @@
     "mail-bridge-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788436728,
-        "narHash": "sha256-asp1VShJ7c/AIiwBcrrssT1d9yGJZwAmY/T3BZtD2tM=",
+        "lastModified": 1788956861,
+        "narHash": "sha256-xNFVg3Y8vIuq/wL0tl6+7oTGNW+p4+o6kmMQcsvws2M=",
         "ref": "refs/heads/main",
-        "rev": "ef668aa91cd080b9f15a17646729c9d8823779a8",
-        "revCount": 136,
+        "rev": "ec10f3dfa66a2f233c06f5db4c42c97f53d11d90",
+        "revCount": 137,
         "type": "git",
         "url": "ssh://git@github.com/edwinhu/mail-bridge.git"
       },
@@ -426,11 +495,11 @@
     },
     "mml": {
       "inputs": {
-        "fenix": "fenix",
+        "fenix": "fenix_2",
         "nixpkgs": [
           "nixpkgs"
         ],
-        "pimalaya": "pimalaya"
+        "pimalaya": "pimalaya_2"
       },
       "locked": {
         "lastModified": 1786444666,
@@ -443,6 +512,29 @@
       "original": {
         "owner": "pimalaya",
         "repo": "mml",
+        "type": "github"
+      }
+    },
+    "neverest": {
+      "inputs": {
+        "fenix": "fenix_3",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pimalaya": "pimalaya_3"
+      },
+      "locked": {
+        "lastModified": 1788819515,
+        "narHash": "sha256-FcuOOIlf7DStkZwYNL6mdrttG8JSQ3kcBHWGy/60lkw=",
+        "owner": "pimalaya",
+        "repo": "neverest",
+        "rev": "ebc262c43d2f0a09e2c265e9cd41e90786abb0c4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "ref": "v0.2.0",
+        "repo": "neverest",
         "type": "github"
       }
     },
@@ -530,6 +622,22 @@
         "owner": "nixos",
         "repo": "nixpkgs",
         "rev": "9387b3fcc0c23c86661636da63faabad4235a0a6",
+        "type": "github"
+      }
+    },
+    "nixpkgs-cliamp": {
+      "locked": {
+        "lastModified": 1788179007,
+        "narHash": "sha256-hn1oU2rue2SYK8dAr8+WNZWtbsz1S2W5mnHlSEuh3bo=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
         "type": "github"
       }
     },
@@ -624,11 +732,11 @@
     },
     "ortie": {
       "inputs": {
-        "fenix": "fenix_2",
+        "fenix": "fenix_4",
         "nixpkgs": [
           "nixpkgs"
         ],
-        "pimalaya": "pimalaya_2"
+        "pimalaya": "pimalaya_4"
       },
       "locked": {
         "lastModified": 1786488985,
@@ -647,6 +755,22 @@
     "pimalaya": {
       "flake": false,
       "locked": {
+        "lastModified": 1787655793,
+        "narHash": "sha256-SI2JDg/tPha5Xu33GchS1dj+3E/gFOW9kszjDcmUG1M=",
+        "owner": "pimalaya",
+        "repo": "nix",
+        "rev": "cc4f9e1797955a2511a0e7dd6b1b1c997a25d0ee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "repo": "nix",
+        "type": "github"
+      }
+    },
+    "pimalaya_2": {
+      "flake": false,
+      "locked": {
         "lastModified": 1780852612,
         "narHash": "sha256-X4zHs6OztjwTZVg7PlIVemtRXDga6Dxa9cWG/crxdTY=",
         "owner": "pimalaya",
@@ -660,7 +784,23 @@
         "type": "github"
       }
     },
-    "pimalaya_2": {
+    "pimalaya_3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787655793,
+        "narHash": "sha256-SI2JDg/tPha5Xu33GchS1dj+3E/gFOW9kszjDcmUG1M=",
+        "owner": "pimalaya",
+        "repo": "nix",
+        "rev": "cc4f9e1797955a2511a0e7dd6b1b1c997a25d0ee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pimalaya",
+        "repo": "nix",
+        "type": "github"
+      }
+    },
+    "pimalaya_4": {
       "flake": false,
       "locked": {
         "lastModified": 1786484067,
@@ -697,6 +837,7 @@
         "agenix": "agenix",
         "darwin": "darwin_2",
         "dimentium-autoraise": "dimentium-autoraise",
+        "himalaya-tui": "himalaya-tui",
         "home-manager": "home-manager_2",
         "homebrew-bundle": "homebrew-bundle",
         "homebrew-cask": "homebrew-cask",
@@ -704,11 +845,13 @@
         "joycon-pad-src": "joycon-pad-src",
         "mail-bridge-src": "mail-bridge-src",
         "mml": "mml",
+        "neverest": "neverest",
         "nix-homebrew": "nix-homebrew",
         "nix-secrets": "nix-secrets",
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs",
         "nixpkgs-aerc": "nixpkgs-aerc",
+        "nixpkgs-cliamp": "nixpkgs-cliamp",
         "nixpkgs-onlyoffice": "nixpkgs-onlyoffice",
         "nixpkgs-pipewire": "nixpkgs-pipewire",
         "nixpkgs-stremio": "nixpkgs-stremio",
@@ -736,6 +879,40 @@
       }
     },
     "rust-analyzer-src_2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1782864348,
+        "narHash": "sha256-NVYhLbaefeIUftPlo3kS6qr0xd8eFJRodEiaHrvFKR4=",
+        "owner": "rust-lang",
+        "repo": "rust-analyzer",
+        "rev": "0d381ca097a8e0375a19387874d952c0a230ac4f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rust-lang",
+        "ref": "nightly",
+        "repo": "rust-analyzer",
+        "type": "github"
+      }
+    },
+    "rust-analyzer-src_3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1782864348,
+        "narHash": "sha256-NVYhLbaefeIUftPlo3kS6qr0xd8eFJRodEiaHrvFKR4=",
+        "owner": "rust-lang",
+        "repo": "rust-analyzer",
+        "rev": "0d381ca097a8e0375a19387874d952c0a230ac4f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "rust-lang",
+        "ref": "nightly",
+        "repo": "rust-analyzer",
+        "type": "github"
+      }
+    },
+    "rust-analyzer-src_4": {
       "flake": false,
       "locked": {
         "lastModified": 1782864348,
