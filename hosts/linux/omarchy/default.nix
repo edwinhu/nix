@@ -1680,7 +1680,11 @@ in
         checkWidows
         arcKick
         mailHtmlToMd mailMdToHtml
-        pkgs.ghostty pkgs.sunshine
+      # zapp: flashes the ZSA keyboard from an Oryx layout URL. Host-only — the
+      # keyboard is plugged in here, not into the headless `alarm` box. Nix
+      # ships the binary only; the USB access rules are system-level on non-NixOS
+      # and come from Arch's `zsa-udev` (extra).
+        pkgs.ghostty pkgs.sunshine pkgs.zapp
       ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
