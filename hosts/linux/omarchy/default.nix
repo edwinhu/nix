@@ -834,136 +834,62 @@ exit 0
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
   aercHtmlChawanUnchecked = pkgs.writeShellScript "aerc-html-chawan-unchecked" ''
-    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.imagemagick pkgs.coreutils pkgs.ncurses ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.coreutils pkgs.ncurses ]}:$PATH
     set -u
+
+    # NO IMAGES, and therefore none of the machinery that served them.
+    #
+    # What was here until now, and why it is gone: a python inliner rewriting
+    # `cid:` attachments to data: URIs, a python HTTP server spawned per message
+    # so chawan could FETCH those images, a 4s port-race loop waiting on it, a
+    # terminal cell-size probe, and six keybindings forcing a full repaint after
+    # every motion because already-drawn sixels do not move with the text. All
+    # of it existed to put images on screen; with images off it was pure cost on
+    # every mail opened. Recoverable from git -- the server arrived in dd5175c.
+    #
+    # The three helper scripts are NOT deleted: files/mail-inline-images.py,
+    # files/mail-serve.py and files/term-cell-size.py are still referenced by
+    # modules/linux/aerc-html-terminal-browser.nix and
+    # modules/linux/aerc-html-chromium-kitty.nix.
+    #
+    # Measured on "Reaction Daily Digest" (126 cols, chawan 0.4.4, `cha -d`):
+    # buffer.images=false ALONE leaves 8 `[img]` alt-text stubs -- WORSE than
+    # leaving images on, which left 3. Hiding them gives 0, and the text
+    # reflows: 31 lines against 37, with the reaction header on one line
+    # instead of split around a placeholder. So `display:none` is load-bearing,
+    # not cosmetics.
+    #
+    # WIDTH. chawan maps one cell to `pixels-per-column` CSS px. At 16 -- the
+    # terminal's true cell -- a 640px mail is 40 cells and fits ~30 characters,
+    # where Chromium fits ~60 in the same 640px because proportional glyphs
+    # average ~8px. `table{width:100%}` restores that: median span 30 -> 62
+    # characters, which is Chromium's ~60. Two rules that LOOK like knobs and
+    # are not: `max-width` never binds (700px and 1600px render identically)
+    # and `body{max-width:none}` does nothing at all. `td{width:auto}` is still
+    # not set -- that is the rule that collapses a newsletter's table grid.
+    WIDEN='img{display:none!important}table{width:100%!important}'
+
+    # A FILE, NOT STDIN. Interactive cha needs stdin for the KEYBOARD, so the
+    # document cannot also arrive there: `cha - < /dev/tty` reads the terminal
+    # as the document, finds no HTML, and prints its usage message. (Dump mode
+    # does not have this problem, which is how it passed review and failed in
+    # aerc.)
+    #
+    # A temp file is enough. The loopback HTTP server this used to stand up was
+    # required only because chawan fetches a document's IMAGES only when the
+    # document itself is remote -- on file:// they stayed `[img]` forever. With
+    # images off that constraint is gone, so the file goes straight to disk and
+    # no server, port file or port-race loop is needed.
     PART="$(cat)"
     DIR="$(mktemp -d)"
-    SRV=""
-    cleanup() { [ -n "$SRV" ] && kill "$SRV" 2>/dev/null; rm -rf "$DIR"; }
-    trap cleanup EXIT INT TERM HUP
+    trap 'rm -rf "$DIR"' EXIT INT TERM HUP
+    printf '%s' "$PART" > "$DIR/index.html"
 
-    # ZOOM OFF. Widening the mail costs every image, and the cause is NOT known.
-    #
-    # What is ruled out, each measured: the image encoding and file size (boxes
-    # scaled alone, files untouched -- still zero images); the vaxis viewport
-    # cull (patched to clamp instead of discard -- still zero images); and
-    # chawan itself, which emits sixels at SCALE 1.0 and 2.5 alike. So chawan
-    # produces the images and something between aerc and the terminal drops
-    # them once they are bigger. That is where a next attempt should start --
-    # not in this file, and not in the filter.
-    SCALE=1.0
-    python3 ${./files/mail-inline-images.py} "$DIR" 4 40 "$SCALE" <<< "$PART" > "$DIR/index.html" 2>/dev/null \
-      || printf '%s' "$PART" > "$DIR/index.html"
-
-    # ASK THE TERMINAL for its cell size, rather than assuming one -- see
-    # files/term-cell-size.py for why the pty ioctl cannot answer this.
-    CW=16; CH=36
-    GEOM=$(python3 ${./files/term-cell-size.py} 2>/dev/null) || GEOM=""
-    [ -n "$GEOM" ] && read -r CW CH <<<"$GEOM"
-
-    python3 ${./files/mail-serve.py} "$DIR" > "$DIR/port" 2>/dev/null &
-    SRV=$!
-    PORT=""
-    for _ in $(seq 1 40); do
-      PORT=$(tr -d '\n' < "$DIR/port" 2>/dev/null)
-      [ -n "$PORT" ] && break
-      sleep 0.1
-    done
-    # No server, no images: fall back to the text dump rather than a blank pane.
-    if [ -z "$PORT" ]; then
-      printf '%s' "$PART" | cha -d -T text/html -I UTF-8 -O UTF-8 -
-      exit 0
-    fi
-
-    # VIEWPORT WIDTH, NOT MAIL WIDTH. chawan maps CSS pixels to cells at a fixed
-    # ratio, so a mail authored at ~640px lands in ~40 of this pane's 204 columns
-    # (measured: content at cols 85..120). Widening the MAIL instead -- scaling
-    # its boxes, with or without scaling the image files -- makes every image
-    # vanish, for reasons still not established.
-    #
-    # Shrinking the ratio so the viewport is ~640 CSS px makes the mail's own
-    # width fill the pane, and images survive it (measured: transmit + placement
-    # both yes, median text span 0.17 -> 0.32 of the pane).
-    #
-    # The cost, and it is real: a ~640px viewport is a PHONE-width viewport, so a
-    # responsive mail lays out in its narrow form and is then stretched across
-    # the desktop. Filling the pane and getting the desktop layout are not both
-    # available while the px-to-cell ratio is fixed.
-    # NATURAL SIZE. pixels-per-column maps CSS px to cells, and it is the ONLY
-    # knob -- it sets the layout viewport and the size of every image at once.
-    # Setting it below the terminal's true cell width zooms the whole document:
-    # at PPC=4 this mail's 640x383 hero image became 160x43 CELLS and swallowed
-    # a 204x46 screen whole, leaving a logo, one photo and no body text at all.
-    # Widening the mail that way costs the mail.
-    #
-    # So render 1 CSS px per real pixel, which is what a browser does. A mail
-    # authored at 640px then occupies 640px of the pane and no more -- a column
-    # with a wide right margin, exactly as it looks in Gmail on a wide monitor.
-    # Making it FILL a desktop pane is not reachable from here: the mail's width
-    # is fixed in its own markup, so it can only be zoomed (unreadable, above)
-    # or restyled (custom CSS, which is out of scope by request).
-    COLS=''${COLUMNS:-$(tput cols 2>/dev/null </dev/tty || echo 80)}
-    PPC="$CW"
-    PPL="$CH"
-    # The mail's own width is fixed in its markup (width="640" plus inline
-    # styles), so at a desktop viewport it renders as a column with a wide empty
-    # margin. This is a USER stylesheet in chawan's sense -- it restyles the
-    # document from outside, the way a browser's user CSS does, and injects
-    # nothing into the mail. Zooming was the alternative and it destroyed the
-    # render (see the natural-size commit), so this is the only lever that
-    # widens the layout without touching the image scale.
-    # Widen the OUTER containers only. Forcing td{width:auto} as well collapses
-    # the newsletter's table grid: images stop sitting beside their blurbs and
-    # strand themselves above full-width paragraphs of ~150 characters. Letting
-    # the cells keep their relative widths preserves the composition while the
-    # table itself expands.
-    # MATCH THE BROWSER. Chromium renders this mail at a 3264px viewport as a
-    # 640px column centred with 1312px margins either side, thumbnails beside
-    # their blurbs, ~60 characters to a line. That IS the correct rendering: the
-    # width is fixed in the mail's own markup and there is no wider layout in it
-    # to recover.
-    #
-    # Widening it from outside was tried and measured against that reference. It
-    # reaches the pane but stops matching the browser: the nested tables flatten,
-    # thumbnails strand above their text, and lines run to 100-140 characters.
-    # Zooming instead (a smaller pixels-per-column) was worse still -- one image
-    # filled the screen and no text fit.
-    #
-    # So the only rule kept is the one that makes chawan agree with the browser:
-    # images never exceed their column, with aspect preserved.
-    WIDEN='img{max-width:100%!important;height:auto!important}'
-    # REDRAW AFTER EVERY SCROLL, or the images do not move with the text.
-    #
-    # Measured on the wire: a line scroll emits ~1.6KB of repainted TEXT and
-    # ZERO sixels and ZERO erase-display, so an already-drawn image stays
-    # exactly where it was while the words slide out from under it. A page
-    # scroll does re-emit the images but still sends no erase, so vaxis appends
-    # them and the old copies accumulate -- that is the smearing.
-    #
-    # chawan's own redraw does both: it erases and re-emits every image. Binding
-    # it after each motion is what makes an image behave like part of the page.
-    # Verified against a control: the same config with an inert binding, and the
-    # filter with no config at all, both emit zero sixels on the same keys.
-    # pager.cursorNextLine does not exist -- these four are the ones that do.
-    cat > "$DIR/scroll.toml" <<'CHACONF'
-[page]
-'j' = 'pager.cursorDown(); pager.redraw()'
-'k' = 'pager.cursorUp(); pager.redraw()'
-'J' = 'pager.scrollDown(); pager.redraw()'
-'K' = 'pager.scrollUp(); pager.redraw()'
-'C-f' = 'pager.pageDown(); pager.redraw()'
-'C-b' = 'pager.pageUp(); pager.redraw()'
-' ' = 'pager.pageDown(); pager.redraw()'
-CHACONF
-    cha -C "$DIR/scroll.toml" -c "$WIDEN" \
-        -o buffer.images=true \
-        -o display.image-mode=sixel \
-        -o display.sixel-colors=256 \
-        -o display.pixels-per-column="$PPC" \
-        -o display.pixels-per-line="$PPL" \
+    cha -c "$WIDEN" \
+        -o buffer.images=false \
+        -o display.pixels-per-column=16 \
         -o display.force-pixels-per-column=true \
-        -o display.force-pixels-per-line=true \
-        "http://127.0.0.1:$PORT/index.html" < /dev/tty
+        -I UTF-8 -O UTF-8 "$DIR/index.html" < /dev/tty
     exit 0
   '';
 
@@ -985,10 +911,20 @@ CHACONF
       echo "multiline string. The shell sees a literal, not an expansion." >&2
       exit 1
     fi
-    # The positive half: the width lever must still BE an expansion. A gate that
-    # only forbids the broken spelling passes a script where the line is gone.
-    if ! grep -qE '^[[:space:]]*COLS=\$\{' ${aercHtmlChawanUnchecked}; then
-      echo "aerc-html-chawan: COLS is not assigned from a shell expansion." >&2
+    # The positive half: the width lever must still BE THERE. A gate that only
+    # forbids the broken spelling passes a script where the line is gone.
+    #
+    # That lever used to be `COLS=''${COLUMNS:-...}`, a shell expansion feeding
+    # a width computation. It is not any more: the filter no longer serves
+    # images, so there is no cell-size probe and no arithmetic, and width is set
+    # by handing chawan a fixed pixels-per-column. Losing THAT line is the
+    # failure this half now catches -- without it chawan falls back to its own
+    # default mapping and every mail silently re-renders at a different text
+    # density, which is precisely the class of damage the original gate existed
+    # for.
+    if ! grep -qE 'display\.pixels-per-column=[0-9]+' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: no fixed display.pixels-per-column is passed to cha," >&2
+      echo "so the mail's text density is whatever chawan defaults to." >&2
       exit 1
     fi
     ln -s ${aercHtmlChawanUnchecked} $out
@@ -1596,24 +1532,38 @@ in
     ../../../modules/shared/mail-bridge-archive.nix
   ];
 
-  # Which implementation answers on each of the two Aerc mail ports.
+  # Which implementation answers on the one remaining mail port.
   #
-  # BOTH ACCOUNTS ARE ON THE ARCHIVE. `work.mode = "archive"` puts the archive
-  # listener alone on port 1143 and `personal.mode = "archive"` does the same on
-  # 1144; the two still switch independently. Rolling either back is editing that
-  # one word here (both are plain definitions, not mkDefault) or
-  # `home-manager switch --rollback` onto the previous generation.
+  # THE ARCHIVE IS RETIRED, and so is the personal listener. `mail-bridge` owns
+  # 1143 and is the ONLY listener: mbsync reads it for the work channel. Nothing
+  # listens on 1144 any more — the personal channel's mbsync goes straight to
+  # imap.gmail.com and aerc reads the Maildir, so the personal imapd had no
+  # consumer left. Personal SENDING is untouched: it is the
+  # `mail-bridge sendmail --provider gmail` CLI invocation in aerc's `outgoing`,
+  # which spawns a process and never touches a listener. himalaya's
+  # network-backed `personal` gmail-REST account is likewise unaffected.
+  #
+  # Why: the 48 GB archive.sqlite3 wrote ~609 MB per NO-OP five-minute cycle,
+  # leaving ~1.6M extents on CoW btrfs and saturating IO badly enough to freeze
+  # the desktop. The local store is now a Maildir under ~/areas/mail, filled by
+  # mbsync (see ~/.mbsyncrc and the mbsync-pull service/timer below), so nothing
+  # needs the SQLite archive to hold mail. With mode = "live" the archive
+  # listener, cycle and retention units are not emitted at all — see
+  # modules/shared/mail-bridge-archive.nix. The Graph webhook survives the mode
+  # change; it is a provider trigger. The Gmail Pub/Sub subscriber goes with the
+  # personal account block: it exists to poke that account's bridge, and there
+  # is no longer a bridge to poke.
   #
   # A mode change is NOT invisible to Aerc: transport is identical in both modes
-  # (127.0.0.1:1143/:1144 plus the `mail-bridge sendmail` shim), but the two
+  # (127.0.0.1:1143 plus the `mail-bridge sendmail` shim), but the two
   # serve paths name mailboxes differently, so accounts.conf reads `work.mode`
   # to pick the vocabulary — see xdg.configFile."aerc/accounts.conf" below.
   # Sending is never archived.
   services.mail-bridge.accounts = {
     work = {
-      mode = "archive";
-      # The cadence runs; the pass is narrowed instead.
-      cycleEnabled = true;
+      mode = "live";
+      # Belt and braces: nothing is emitted in live mode anyway.
+      cycleEnabled = false;
       # Outbox restored: the msgraph provider read is canonical for this
       # account (0 rows of unknown read state out of 18,340), so `cycle`'s
       # drain reconciles against current flags. outboxEnabled defaults to true.
@@ -1653,42 +1603,14 @@ in
       # before the unit can succeed.
       graphWebhookEnabled = true;
       graphWebhookUrl = "https://webhook.eddyhu.com/graph";
-    };
-    personal = {
-      mode = "archive";
-      cycleEnabled = true;
-      # Outbox restored: the gmail provider read is canonical for this account
-      # (`archive account repair-gmail-flags` derived all 17,616 unknown-flag
-      # rows from stored memberships and left none unknown), so `cycle`'s drain
-      # reconciles against current flags. outboxEnabled defaults to true.
-      address = "eddyhu@gmail.com";
-      provider = "gmail";
-      port = 1144;
-      liveUnit = "mail-bridge-personal";
-      # ortie's `google` account (gmail.modify). Distinct variable AND distinct
-      # account from Work: neither cycle unit can see the other's broker.
-      tokenEnvironmentVariable = "MAIL_BRIDGE_GMAIL_TOKEN_CMD";
-      tokenCommand = "${lib.getExe pkgs.ortie} -a google token show";
-      staleAfterMs = 900000; # 15 minutes: three missed cycles
-      keepGenerations = 2;
-      budgets = {
-        maxRequests = 20000;
-        maxPages = 2000;
-        maxMessages = 50000;
-        maxRawBytes = 2147483648;
-        maxRetries = 4;
-        maxElapsedMs = 240000; # 4 minutes
-        maxOperations = 2000;
-      };
-      # Provider-driven trigger, the Gmail half. Unlike Work's webhook there is
-      # no tunnel and no inbound surface at all: users.watch publishes to the
-      # topic and this PULLS from the subscription. The five-minute timer stays,
-      # which matters more here than it does for Graph — a watch lapses SILENTLY
-      # after seven days, so the timer is what stops a failed renewal becoming
-      # silence rather than slowness.
-      gmailPushEnabled = true;
-      gmailPushSubscription = "projects/eddyhu-gws-cli/subscriptions/gmail-push-mail-bridge";
-      gmailPushTopic = "projects/eddyhu-gws-cli/topics/gmail-push";
+      # What a notification now runs. The archive is deleted, so there is no
+      # in-process cycle left to trigger: the receiver spawns the same
+      # flock-guarded mbsync the timer runs, narrowed to the `work` channel.
+      # Same lock file as mbsync-pull, so a notification arriving mid-timer is
+      # dropped (`-n -E 0`) rather than racing it. Spawned directly, no shell.
+      refreshCommand =
+        "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
+        + "${pkgs.isync}/bin/mbsync --config /home/eh/.mbsyncrc work";
     };
   };
 
@@ -2431,19 +2353,24 @@ in
   # ---------------------------------------------------------------------------
   # Mail: aerc (TUI) + himalaya (scriptable), two accounts each.
   #
-  # [Work] ehu@law.virginia.edu — the UVA tenant grants no IMAP/SMTP and gates
-  # third-party OAuth consent behind an admin, so both clients talk to the
-  # mail-bridge user service on 127.0.0.1:1143 instead (see systemd.user.services
-  # below) and send through its sendmail(1) shim. Credentials there are ignored
-  # by design: the real one is the Graph access token the bridge gets from ortie.
+  # READ is the LOCAL MAILDIR, not IMAP. mbsync (user timer, every 5 min) syncs
+  # both accounts into ~/areas/mail/{work,personal}, written with
+  # `SubFolders Verbatim` — plain nested maildirs, NOT Maildir++, so the scheme
+  # is `maildir://` and never `maildirpp://`. aerc opens those directories
+  # directly, so a folder switch costs no network round trip at all.
   #
-  # [Personal] eddyhu@gmail.com — the same shape, over the Gmail provider: read
-  # through the bridge on 1144, send through the shim. NO PASSWORD ANYWHERE ON
-  # THIS ACCOUNT. Both halves spend ortie's brokered `google` token, which
-  # carries gmail.modify — and gmail.modify is enough for users.messages.send,
-  # so no scope widening and no re-consent was needed to retire the app
-  # password. (Gmail IMAP/SMTP would have demanded the full https://mail.google.com/
-  # scope, which is why going direct was the worse trade.)
+  # SEND still goes through the mail-bridge sendmail(1) shim on both accounts —
+  # a maildir cannot send. That is why `outgoing` below is unchanged.
+  #
+  # [Work] ehu@law.virginia.edu — the UVA tenant grants no IMAP/SMTP and gates
+  # third-party OAuth consent behind an admin, so the send shim spends the Graph
+  # access token the bridge gets from ortie.
+  #
+  # [Personal] eddyhu@gmail.com — the same shape, over the Gmail provider. NO
+  # PASSWORD ANYWHERE ON THIS ACCOUNT: the send half spends ortie's brokered
+  # `google` token, which carries gmail.modify — and gmail.modify is enough for
+  # users.messages.send, so no scope widening and no re-consent was needed to
+  # retire the app password.
   #
   # Neither account sets a copy-to / save-copy: Exchange files a MIME /sendmail
   # in Sent Items server-side and Gmail files its own Sent copy on
@@ -2452,162 +2379,172 @@ in
   #
   # binds.conf is deliberately NOT declared here — it is owned by dotfiles
   # (~/dotfiles/.config/aerc/binds.conf) so it stays hand-editable.
+  # THE SIDEBAR OF EACH ACCOUNT, as queries rather than directories.
+  #
+  # Order here IS order in aerc. `folder:` is relative to the notmuch database
+  # root (~/areas/mail), so the account name is the first path element.
+  #
+  # QUOTE THE WHOLE PATH, not the segment with the space in it:
+  # `folder:"work/Sent Items"` matches 1009, `folder:work/"Sent Items"` matches
+  # ZERO -- and notmuch reports no error either way, so a wrong spelling is an
+  # empty row in the sidebar rather than a failure.
+  #
+  # Focused/Other and the Superhuman-ish labels ARE listed, and they are tags
+  # rather than folders. The metadata never reaches the Maildir -- `rawMessage`
+  # is a byte proxy -- but it does sit in mail-bridge's own UID map beside the
+  # InternetMessageId, which is exactly notmuch's key. files/notmuch-tag-bridge.py
+  # joins the two after every pull. No header injection, no second copy of any
+  # message, and no change to what the bridge serves.
+  #
+  # Personal's split inbox is here too, and NOT via labels. Measured, because
+  # the obvious readings are both wrong: `X-GM-LABELS` comes back EMPTY for a
+  # message Gmail files under Promotions, and Gmail offers no category mailbox
+  # over IMAP -- so neither isync nor any label fetch can see the tabs. They are
+  # reachable as a SERVER-SIDE SEARCH: `X-GM-RAW category:updates` runs Gmail's
+  # own query engine and returns the matching sequence numbers.
+  #
+  # That is six commands instead of 6,267. The REST API can also answer this,
+  # but only one `messages.get` at a time, which exceeded the per-minute quota
+  # the account shares with gws and the push receiver -- 403 on the first run.
+  #
+  # files/notmuch-tag-gmail.py does the searches. `Forums` matched exactly one
+  # message and gets no row; starred and the user labels need nothing from it,
+  # since Gmail sends starred as \Flagged and every user label as its own
+  # folder.
+  xdg.configFile."aerc/queries-work".text = ''
+    INBOX=folder:work/INBOX
+    Focused=folder:work/INBOX and tag:focused
+    Other=folder:work/INBOX and tag:other
+    Respond=folder:work/INBOX and tag:respond
+    Waiting=folder:work/INBOX and tag:waiting
+    Meeting=folder:work/INBOX and tag:meeting
+    Invoice=folder:work/INBOX and tag:invoice
+    Pitch=folder:work/INBOX and tag:pitch
+    News=folder:work/INBOX and tag:news
+    Marketing=folder:work/INBOX and tag:marketing
+    Unread=folder:work/INBOX and tag:unread
+    ToScreen=folder:work/ToScreen
+    Today=folder:work/INBOX and date:today
+    Flagged=folder:work/INBOX and tag:flagged
+    Attachments=folder:work/INBOX and tag:attachment
+    Archive=folder:work/Archive
+    Sent=folder:"work/Sent Items"
+    Drafts=folder:work/Drafts
+    Junk=folder:"work/Junk Email"
+    Deleted=folder:"work/Deleted Items"
+  '';
+
+  xdg.configFile."aerc/queries-personal".text = ''
+    INBOX=folder:personal/INBOX
+    Important=folder:personal/INBOX and tag:important
+    Primary=folder:personal/INBOX and tag:primary
+    Updates=folder:personal/INBOX and tag:updates
+    Promotions=folder:personal/INBOX and tag:promotions
+    Social=folder:personal/INBOX and tag:social
+    Unread=folder:personal/INBOX and tag:unread
+    Today=folder:personal/INBOX and date:today
+    Flagged=folder:personal/INBOX and tag:flagged
+    Attachments=folder:personal/INBOX and tag:attachment
+    Bills=folder:personal/Bills
+    Bills Paid=folder:"personal/Bills/Paid"
+    Work=folder:personal/Work
+    Travel=folder:"personal/Work/Travel"
+    Research Budget=folder:"personal/Research Budget"
+    Sent=folder:"personal/[Gmail]/Sent Mail"
+    Drafts=folder:"personal/[Gmail]/Drafts"
+    Spam=folder:"personal/[Gmail]/Spam"
+    Trash=folder:"personal/[Gmail]/Trash"
+  '';
+
+  xdg.configFile."notmuch/default/config".text = ''
+    [database]
+    path=/home/eh/areas/mail
+    [user]
+    name=Edwin Hu
+    primary_email=ehu@law.virginia.edu
+    other_email=eddyhu@gmail.com
+    [new]
+    tags=
+    ignore=.uidvalidity;.mbsyncstate;.isyncuidmap.db
+    [search]
+    exclude_tags=deleted;spam
+    [maildir]
+    synchronize_flags=true
+  '';
+
   xdg.configFile."aerc/accounts.conf" =
   let
-    # Both serve paths behind Work's port 1143 now name the derived mailboxes
-    # the SAME way -- BARE (`Focused`, `Other`, `Respond`) -- so the two modes
-    # differ only in which PHYSICAL folders exist, never in vocabulary.
+    # Maildir leaf names, exactly as mbsync writes them under
+    # ~/areas/mail/{work,personal}. `folders` is an exact-match whitelist and
+    # `default` an exact mailbox name, so a name that is not a real directory
+    # filters the row out of the sidebar and opens onto nothing.
     #
-    # The archive still stores each derived mailbox as a canonical membership
-    # (`view/Focused`, `category/Respond`) -- UIDs and UIDVALIDITY are keyed by
-    # that spelling and did not move -- but mail-bridge >= 0.9.0 translates at
-    # the IMAP presentation boundary: LIST advertises only the bare name, and
-    # the prefixed spelling survives as an unadvertised alias.
+    # The old IMAP vocabulary (Focused/Other/Respond/Waiting/... on Work,
+    # Primary/Social/Promotions/... on Personal) was mail-bridge's own: those
+    # were virtual folders it derived over INBOX's UID space. They do not exist
+    # on disk, so none of them can appear here.
     #
-    # `folders` is an exact-match whitelist and `default` an exact mailbox name,
-    # so a wrong name does not degrade -- it filters the entire split out of the
-    # sidebar and opens onto a mailbox the server answers
-    # `NO [CANNOT] mailbox does not exist` for. Which is what happened on the
-    # archive cutover: 1063 Focused and 951 Other messages were served the whole
-    # time under names this file did not list.
-    #
-    # Outbox is dropped in ARCHIVE mode; Drafts is KEPT in both.
-    #
-    # Outbox is not a provider mailbox at all -- the archive's outbox is an
-    # internal operation queue, so no projection can ever derive a membership
-    # for it and the entry would be permanently dead.
-    #
-    # Drafts is different, and the distinction is the whole reason to spell it
-    # out. Graph acquisition scopes EVERY physical folder with no Drafts
-    # exclusion, so a `folder=Drafts` membership -- and with it a LISTable
-    # `Drafts` mailbox -- appears on the first cycle after a remote draft
-    # exists. Its absence from today's LIST is therefore data-dependent, not
-    # structural, and `folders` is exact-match: dropping it would hide real
-    # synced drafts, which is this bug one folder narrower. Aerc's `postpone`
-    # also defaults to `Drafts` and [Work] sets no override, so postponing a
-    # compose needs that name to resolve. A row that is empty until the first
-    # draft exists is the cheap side of that trade.
-    #
-    # `Flagged` is ARCHIVE-ONLY, and for the same exact-match reason. It is a
-    # COMPUTED mailbox the archive grants to the Microsoft Graph vocabulary
-    # (`src/archive/presentation.ts`: COMPUTED_FLAGGED_MAILBOX, in
-    # MSGRAPH_VOCABULARY.computedMailboxes and withheld from Gmail, whose star
-    # is already published as `Starred`) -- a view over every message whose
-    # final `\Flagged` is set, not a folder any message was filed into. The
-    # deployed listener on 1143 LISTs it and STATUS reports messages in it.
-    # The LIVE Work provider has no such mailbox: its vocabulary is
-    # `inboxViews = ["Focused", "Other"]` (`src/providers/himalaya.ts`) and it
-    # names no computed flag view, so listing it in the live whitelist would be
-    # the dead row this comment block exists to prevent.
-    #
-    # The LIVE list is left exactly as it was -- rollback must land on the
-    # vocabulary the live bridge actually serves, Outbox included.
-    workMode = config.services.mail-bridge.accounts.work.mode;
-    workDefaultFolder = "Focused";
-    workFolderList =
-      if workMode == "archive"
-      then "Focused,Other,Flagged,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Archive,Junk Email,Deleted Items"
-      else "Focused,Other,Respond,Waiting,Pitch,News,Marketing,Meeting,Invoice,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items";
+    # `Conversation History` (Teams chat archive) is dropped for the same reason
+    # it was under IMAP: it is never read.
+    workFolderList = "INBOX,ToScreen,Drafts,Sent Items,Outbox,Archive,Junk Email,Deleted Items";
+    # Nested maildirs are addressed by their path under the account root, which
+    # is why the Gmail system folders keep their literal `[Gmail]/` prefix here:
+    # mbsync ran with `SubFolders Verbatim`, so `[Gmail]` is a real directory
+    # containing Drafts/Sent Mail/Spam/Trash.
+    personalFolderList = "INBOX,Bills,Bills/Paid,Work,Work/Travel,Research Budget,[Gmail]/Drafts,[Gmail]/Sent Mail,[Gmail]/Spam,[Gmail]/Trash";
   in {
     force = true;
-    # The default folder on both accounts is the low-noise view of the inbox,
-    # not the inbox: Exchange's Focused (mail-bridge reads Graph's per-message
-    # `inferenceClassification` and exposes Focused/Other as virtual folders over
-    # INBOX's UID space) and Gmail's Priority Inbox importance marker (already an
-    # IMAP folder, [Gmail]/Important). The full INBOX is one `gm`/folder switch
-    # away in both cases.
     text = ''
       # Personal FIRST: aerc builds its account tabs in the order the
       # sections appear here, and personal is the one opened by reflex.
       # There is no ordering key -- file order IS the tab order.
       [Personal]
       from              = Edwin Hu <eddyhu@gmail.com>
-      # Through mail-bridge on 1144, not Gmail IMAP. Measured on THIS operation
-      # -- login, SELECT INBOX, SEARCH, FETCH 200 ENVELOPEs -- the bridge takes
-      # 3ms and Gmail IMAP 1108/6449/1373ms over three runs. What aerc feels is
-      # the per-folder-switch part (SELECT+SEARCH+FETCH): ~3ms against
-      # 758/3269/924ms. The variance is Gmail's, and the bridge does not have it.
+      # Local maildir filled by the mbsync user timer (every 5 min). Plain
+      # `maildir://`, not `maildirpp://`: mbsync wrote these with
+      # `SubFolders Verbatim`, so the layout is nested directories rather than
+      # Maildir++ dot-names. The path is the directory CONTAINING the maildirs,
+      # not one maildir.
+      # NOTMUCH, not maildir: the sidebar is a list of QUERIES, so a view can
+      # exist without a directory existing. That is the whole point -- the old
+      # Primary/Promotions/Updates vocabulary cannot come back as folders
+      # (Gmail ships categories as X-GM-LABELS, which isync cannot fetch) but
+      # it CAN come back as queries the moment something writes them as tags.
       #
-      # Any LOGIN credentials are accepted -- the real credential is the
-      # brokered Google token the bridge process holds.
-      source            = imap+insecure://mail:x@127.0.0.1:1144
-      # SENDING is the same shim as Work, with the Gmail provider selected: the
-      # composed bytes are base64url'd into users.messages.send under the same
-      # brokered token. NO APP PASSWORD, and no outgoing-cred-cmd -- gmail-rest
-      # defaults its broker to `ortie -a google token show`.
+      # BARE `notmuch://`, with no database path: aerc deprecated explicit
+      # paths in the source URL and discovers the database from NOTMUCH_CONFIG
+      # / NOTMUCH_DATABASE / NOTMUCH_PROFILE or XDG -- which is
+      # xdg.configFile "notmuch/default/config" below. Naming the path here only
+      # raises a warning dialog at startup. Same story for `maildir-store`,
+      # replaced by `enable-maildir` (default true): the maildir root now comes
+      # from the notmuch database too.
+      source            = notmuch://
+      query-map         = /home/eh/.config/aerc/queries-personal
+      # SENDING still goes through the mail-bridge sendmail shim -- a maildir
+      # cannot send. The composed bytes are base64url'd into
+      # users.messages.send under ortie's brokered Google token. NO APP
+      # PASSWORD, and no outgoing-cred-cmd -- gmail-rest defaults its broker to
+      # `ortie -a google token show`.
       #
       # Gmail REWRITES the Message-ID on this path (it replaces any whose domain
       # the account does not own). Harmless -- Gmail files the Sent copy itself
       # and threads on its own id -- but it is why the send probe reports that
       # header rather than asserting it.
       outgoing          = ${lib.getExe pkgs.mail-bridge} sendmail --provider gmail --account eddyhu@gmail.com
-      # Gmail's five inbox tabs, as mail-bridge >= 0.4.0 offers them: virtual
-      # folders over INBOX's UID space, exactly as Focused/Other are on Work.
-      # Primary is the default because it is correspondence -- 43 of a
-      # 300-message window, measured live 2026-08-17.
-      #
-      # INBOX is deliberately ABSENT for the same reason it is on Work: the
-      # five partition it exactly, so listing it too would show every message
-      # twice. That partition is the bridge's doing, not Gmail's -- Gmail's
-      # own categories left 96 of 5,902 inbox messages unlabelled, so the
-      # provider defines Primary as the REMAINDER rather than as
-      # `CATEGORY_PERSONAL`. Nothing can fall between the tabs.
-      #
-      # `Starred` is the one filtered view kept, and like any subset it must
-      # never be a default: starring is a deliberate act, so it is a shortlist
-      # the user built, where `Important` was Gmail's classifier guessing --
-      # 532 of 5,902, and pointing aerc at it hid 90% of this mailbox until
-      # 2026-08-17. Starred is `\Flagged`, so it is also the same set aerc
-      # already shows a flag column for.
-      #
-      # Names are the bridge's, NOT Gmail IMAP's: the Gmail provider maps
-      # system labels to IMAP names, so it is `Starred`/`Sent`/`Spam`/`Trash`,
-      # never `[Gmail]/Starred`. Two gaps against the Work list, and they are
-      # Gmail's model rather than an omission -- Gmail has no Outbox at all, and
-      # archiving is removing the INBOX label rather than a folder, so there is
-      # nothing to point Archive at.
-      default           = Primary
-      folders           = Primary,Social,Promotions,Updates,Forums,Starred,Drafts,Sent,Spam,Trash
-      folders-sort      = Primary,Social,Promotions,Updates,Forums,Starred,Drafts,Sent,Spam,Trash
-      # `Drafts`, not `[Gmail]/Drafts`. That spelling is a leftover from when
-      # this account was direct Gmail IMAP; the read path is mail-bridge now,
-      # and its LIST advertises BARE names -- probed on :1144: Drafts, Forums,
-      # INBOX, Primary, Promotions, Sent, Social, Spam, Starred, Trash, Updates.
-      # No `[Gmail]/*` anywhere.
-      #
-      # It is not cosmetic. `:recall` refuses outright unless the selected
-      # message is in the POSTPONE directory, so with the wrong name every
-      # draft in this account answered "use -f to recall messages not in the
-      # postpone directory" -- and `:postpone` was saving toward a mailbox that
-      # does not exist. [Work] sets no override and inherits the default
-      # `Drafts`, which is why only Personal was broken.
-      postpone          = Drafts
-      cache-headers     = true
+      default           = INBOX
+      # `:recall` refuses outright unless the selected message is in the
+      # POSTPONE directory, so this has to be the real on-disk drafts maildir.
+      postpone          = [Gmail]/Drafts
 
       [Work]
       from          = Edwin Hu <ehu@law.virginia.edu>
-      source        = imap+insecure://owa:x@127.0.0.1:1143
+      # Same story as Personal: read from the local maildir, send through the
+      # bridge. The shim spends the Graph token ortie brokers; the UVA tenant
+      # grants no SMTP.
+      source        = notmuch://
+      query-map     = /home/eh/.config/aerc/queries-work
       outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
-      default       = ${workDefaultFolder}
-      cache-headers = true
-      # `folders` is a WHITELIST, so INBOX is deliberately absent: Focused and
-      # Other partition it exactly, and showing all three would list every
-      # message twice. `Conversation History` (Teams chat archive) is dropped
-      # for the same reason it is never read.
-      #
-      # folders-sort pins the order; without it aerc sorts alphabetically and
-      # Archive would lead. enable-folders-sort defaults true, so the listed
-      # names come first in this order and anything else follows -- but nothing
-      # else can, because `folders` admits only these.
-      # The category folders (Respond..Waiting) are mail-bridge >= 0.9.0 saved
-      # searches over INBOX, one per Outlook category the rules and the Power
-      # Automate classifier apply. They OVERLAP Focused/Other rather than
-      # partitioning anything -- the same message is in Focused and in Respond,
-      # and a message with two categories is in two of them. Listing them
-      # alongside the split is therefore not double-counting the way listing
-      # INBOX beside Focused/Other would be.
-      folders       = ${workFolderList}
-      folders-sort  = ${workFolderList}
+      default       = INBOX
 
     '';
   };
@@ -3036,28 +2973,17 @@ in
           + "cache is keyed header.<mailbox>.0.<uid> and never invalidates.";
       }
     ]
-    # The inbound-only stance: an account listed here runs the inbound half
-    # only, because a `cycle` — which drains the outbox — would push local
-    # mutations decided from provider-read flags that are not yet canonical.
-    # Both accounts' reads are now canonical, so the list is empty and no
-    # account is narrowed. These assertions are the gate on that stance: they
-    # read the EVALUATED units, so re-enabling an outbox has to remove the
-    # account from this list in the same change.
+    # The inbound-only stance: an account listed here would run the inbound
+    # half only, so a `cycle` could not drain the outbox against provider-read
+    # flags that are not canonical.
     #
-    # Parser-level facts (the seven budgets survive, --keep-generations is
-    # absent from a sync argv) are asserted ONCE, in
-    # modules/shared/mail-bridge-archive.nix, against the same evaluated units.
-    # Restating them here would be two places that can disagree about one fact.
-    # What is host-specific, and therefore lives here, is the STANCE: which
-    # accounts are narrowed, and that narrowing them did not pause them.
-    #
-    # The stance is scoped to `mode = "archive"`, because it is only meaningful
-    # there. In live mode the account's port is owned by `imapd`, and the
-    # module's own `cycleWantedBy` already empties the cycle timer's
-    # Install.WantedBy — an unconditional "must be wired to timers.target" here
-    # would contradict that and make a forced live mode unevaluable. So an
-    # archive account still has to be inbound-only AND wired; a live one is
-    # simply out of scope.
+    # DEAD as of the archive's retirement (2026-09-09). The list is empty and
+    # every clause is scoped to `mode = "archive"`, which no account is in: the
+    # archive wrote ~609 MB per no-op cycle into a 48 GB SQLite file, ~1.6M
+    # extents on CoW btrfs, and froze the desktop. The local store is a Maildir
+    # filled by mbsync now. Kept, not deleted, because the stance is the thing
+    # to restate if an account ever goes back on the archive — there is nothing
+    # for it to assert until then.
     ++ (
       let
         inboundOnlyAccounts = [ ];
@@ -3237,8 +3163,169 @@ in
       # 2026-08-13); `gws` shares that grant.
       gmail.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "google", "token", "show"]
 
+      # THE LOCAL MAILDIR MIRRORS. These are ADDITIONS, not replacements: the
+      # `work` and `personal` accounts above keep the network backends and stay
+      # the send path, because a Maildir cannot send. These two are read-only
+      # views of what mbsync pulled down (see ~/.mbsyncrc below), and exist so
+      # listing and reading do not cost a round trip to Graph or Gmail.
+      #
+      # `maildir.root` — the key is `root`, not `root-dir`; the backend walks
+      # this directory recursively and takes each folder's leaf name, so the
+      # INBOX subdirectory mbsync writes shows up as "INBOX".
+      # `mailbox.alias.*` — without at least `inbox`, every command that takes a
+      # folder fails with "Mailbox is required" unless `-m` is passed. The
+      # values are the folder leaf names the maildir backend reports, which for
+      # work are the Graph display names mbsync wrote verbatim.
+      [accounts.work-local]
+      maildir.root = "/home/eh/areas/mail/work"
+      mailbox.alias.inbox = "INBOX"
+      mailbox.alias.sent = "Sent Items"
+      mailbox.alias.drafts = "Drafts"
+      mailbox.alias.trash = "Deleted Items"
+
+      # Gmail's leaf names under SubFolders Verbatim: [Gmail]/Sent Mail and
+      # friends collapse to their last path component.
+      [accounts.personal-local]
+      maildir.root = "/home/eh/areas/mail/personal"
+      mailbox.alias.inbox = "INBOX"
+      mailbox.alias.sent = "Sent Mail"
+      mailbox.alias.drafts = "Drafts"
+      mailbox.alias.trash = "Trash"
+
     '';
   };
+
+  # mbsync (isync) pulls both mailboxes into Maildir under ~/areas/mail, which
+  # the -local himalaya accounts above read. Two DIFFERENT far sides, for the
+  # reason recorded at the top of this file:
+  #
+  #   Graph --> mail-bridge imapd 127.0.0.1:1143 --> mbsync --> work/
+  #   imap.gmail.com ---------------------------> mbsync --> personal/
+  #
+  # Work has to go through mail-bridge because the UVA tenant refuses IMAP/SMTP
+  # outright and Graph is the only door. Personal goes STRAIGHT to Google: it
+  # runs a real IMAP server, and emulating one over the REST API cost quota and
+  # bugs for nothing.
+  #
+  # ONE-WAY PULL, on both channels: `Sync Pull` / `Expunge None` /
+  # `Remove None` / `Create Near`. Two-way is DISABLED because imapd cannot yet
+  # prove an enumeration was complete — src/uidmap.ts syncSnapshot zeroes
+  # `present` for a folder and re-marks only what the provider returned, so a
+  # short enumeration (Exchange returning fewer rows than --top, --skip paging
+  # shifting under new mail, a page cap) silently drops messages, EXISTS falls,
+  # imapd emits EXPUNGE, and under `Remove Both` mbsync would propagate that
+  # deletion back to Graph. Nothing may write upstream until a complete
+  # enumeration is distinguishable from a partial one.
+  #
+  # CopyArrivalDate yes so a copied message keeps its internal date and the
+  # date sort does not collapse to the copy time.
+  #
+  # SubFolders Verbatim, NOT Maildir++. himalaya 2.1.0's maildir backend walks
+  # the account root recursively and lists plain nested directories, and skips
+  # dot-prefixed ones — measured: a tree of INBOX/, `Sent Items/`, Archive/Old/
+  # lists all three, while a Maildir++ `.Archive` is invisible to it. Maildir++
+  # would therefore hide every folder but the inbox.
+  #
+  # `Inbox` points at a NAMED INBOX subdirectory rather than the account root,
+  # so the root itself carries no cur/new/tmp and himalaya lists "INBOX"
+  # alongside the other folders instead of a folder called after the root dir.
+  #
+  # No MaxMessages anywhere: mbsync refuses that option without ExpireUnread,
+  # and capping a one-way archive mirror has no point. If one is ever added,
+  # `ExpireUnread no` has to come with it.
+  home.file.".mbsyncrc".text = ''
+    # Generated by nix (hosts/linux/omarchy/default.nix) — do not edit by hand.
+
+    ##############################################################
+    # work — UVA mailbox, via the mail-bridge loopback IMAP server
+    ##############################################################
+
+    # Cleartext on loopback, and the User/Pass below are ignored: imapd accepts
+    # ANY LOGIN because the real credential is the Graph token the bridge
+    # process already holds (see the mail-bridge unit). Nothing secret here.
+    # It advertises IMAP4rev1 LITERAL+ IDLE NAMESPACE UNSELECT MOVE ID SORT
+    # AUTH=PLAIN. No UIDPLUS, and no CONDSTORE or QRESYNC either, which costs
+    # the flag sync a full rescan per run.
+    IMAPAccount work-bridge
+    Host 127.0.0.1
+    Port 1143
+    SSLType None
+    User mbsync
+    Pass mbsync
+
+    IMAPStore work-remote
+    Account work-bridge
+
+    MaildirStore work-local
+    Path /home/eh/areas/mail/work/
+    Inbox /home/eh/areas/mail/work/INBOX
+    SubFolders Verbatim
+
+    Channel work
+    Far :work-remote:
+    Near :work-local:
+    # EXCLUDE THE SYNTHESIZED VIEWS, the same way the personal channel excludes
+    # Gmail's [Gmail]/All Mail. `Focused` and `Other` are the focused-inbox split
+    # and the rest are keyword views; every message in them is ALSO in INBOX, so
+    # syncing them writes each one to a second Maildir and doubles the store.
+    # They exist only because imapd synthesized folders for aerc's benefit. The
+    # thinned imapd stops serving them, at which point these exclusions match
+    # nothing and are harmless — so this is correct before and after that lands.
+    Patterns * "!Focused" "!Other" "!Invoice" "!Marketing" "!Meeting" "!News" "!Pitch" "!Respond" "!Waiting"
+    # One-way pull only — nothing this channel does reaches Graph.
+    Sync Pull
+    Expunge None
+    Remove None
+    Create Near
+    CopyArrivalDate yes
+    SyncState *
+
+    #########################################################
+    # personal — Gmail, direct to Google's own IMAP server
+    #########################################################
+
+    IMAPAccount personal-gmail
+    Host imap.gmail.com
+    Port 993
+    SSLType IMAPS
+    User eddyhu@gmail.com
+    AuthMechs XOAUTH2
+    # Same broker and same grant as himalaya's gmail backend above — ortie holds
+    # the refresh token and mints access tokens unattended. IMAP XOAUTH2 needs
+    # the https://mail.google.com/ scope, which is BROADER than the gmail.modify
+    # the REST path uses; it was added to the ortie google account, but Google
+    # only issues it after a fresh consent, so this account fails to
+    # authenticate until `ortie -a google auth get` is run once by hand.
+    PassCmd "${lib.getExe pkgs.ortie} -a google token show"
+
+    IMAPStore personal-remote
+    Account personal-gmail
+
+    MaildirStore personal-local
+    Path /home/eh/areas/mail/personal/
+    Inbox /home/eh/areas/mail/personal/INBOX
+    SubFolders Verbatim
+
+    Channel personal
+    Far :personal-remote:
+    Near :personal-local:
+    # Gmail's All Mail is every message a second time under a label, and
+    # Important/Starred are views over the same store; mirroring them multiplies
+    # the pull for no local benefit.
+    Patterns * "![Gmail]/All Mail" "![Gmail]/Important" "![Gmail]/Starred"
+    # One-way pull only — nothing this channel does reaches Gmail.
+    Sync Pull
+    Expunge None
+    Remove None
+    Create Near
+    CopyArrivalDate yes
+    SyncState *
+
+    # Both channels, for the timer's single invocation.
+    Group mail
+    Channel work
+    Channel personal
+  '';
 
   # mml owns everything composition-related that himalaya v2 gave up: the
   # From identity, the reply/forward quoting, and MML -> MIME compilation.
@@ -3363,6 +3450,18 @@ in
         # separate ortie account: one consent and one token store, at the cost
         # that a leaked gws token now reaches the whole personal mailbox.
         "https://www.googleapis.com/auth/gmail.modify",
+        # mail.google.com: IMAP/SMTP access for mbsync, which syncs the personal
+        # mailbox into ~/areas/mail/personal. XOAUTH2 accepts ONLY this scope --
+        # gmail.modify does not authenticate an IMAP session -- so reaching
+        # Gmail's real IMAP server costs the full-mailbox scope.
+        #
+        # Worth it because the alternative is EMULATING IMAP over the REST API,
+        # which is what mail-bridge's port 1144 did: per-message metadata gets
+        # priced in quota units, a 403 "Units per minute per user" under any
+        # bulk sync, and our own UID bugs standing in for a real server's.
+        # Google runs a correct IMAP server; there is no reason to reimplement
+        # one for an account that has it.
+        "https://mail.google.com/",
         # youtube.readonly: cliamp's YouTube / YouTube Music provider. cliamp
         # stores only a refresh token and refreshes it with the client id and
         # secret from its own config, so brokering the grant here replaces its
@@ -3786,50 +3885,80 @@ in
       Install.WantedBy =
         lib.optionals (config.services.mail-bridge.accounts.work.mode == "live") [ "default.target" ];
     }; }
-    # mail-bridge-personal: the same binary, the Gmail provider, the personal
-    # mailbox. A SECOND UNIT rather than a second account in one process: the
-    # work bridge is what the user reads all day, and a Gmail fault must not be
-    # able to take it down. Separate process, separate port, separate UID map.
+    # mbsync-pull: one-way pull of both mailboxes into ~/areas/mail. REPLACES
+    # the mail-bridge-archive-cycle-{work,personal} timers, which are stopped
+    # and disabled — the Maildir is the archive now, and himalaya's -local
+    # accounts read it directly.
     #
-    # --window 500, and 500 is the CEILING, not a preference: the Gmail
-    # provider issues ONE messages.list capped at Gmail's own maxResults of 500
-    # and never follows nextPageToken, so a larger number is silently
-    # truncated (measured: --window 1500 yields INBOX 500).
-    #
-    # It is 500 rather than the old 200 because the window is over INBOX and
-    # the five tabs each filter it. Primary is ~13% of this inbox, so a
-    # 200-message window left Primary showing ~26 messages. At 500 it shows
-    # ~113. Raising it further needs paging in the provider, not a bigger
-    # number here.
-    #
-    # Cost: messages.list gives ids only and each needs one messages.get --
-    # there is no batch -- so the window is a round-trip count. 500 measured
-    # at 12.4s cold; the window memo and history.list keep steady state
-    # sub-second (warm SELECT 0.00s).
-    { mail-bridge-personal = {
+    # Oneshot driven by mbsync-pull.timer; nothing about it is long-running.
+    # The config it reads is ~/.mbsyncrc (home.file above), pull-only on both
+    # channels, so this unit cannot alter anything on Graph or Gmail.
+    { mbsync-pull = {
       Unit = {
-        Description = "mail-bridge — loopback IMAP bridge for the personal Gmail mailbox";
-        After = [ "network-online.target" ];
-        Wants = [ "network-online.target" ];
+        Description = "mbsync — one-way pull of both mailboxes into ~/areas/mail";
+        # Work goes through the loopback bridge, so that unit has to be up;
+        # personal goes to Gmail, so the network does. `Wants` rather than
+        # `Requires`: one channel being unreachable should not cancel the other.
+        After = [ "network-online.target" "mail-bridge.service" ];
+        Wants = [ "network-online.target" "mail-bridge.service" ];
       };
       Service = {
-        Type = "simple";
-        # ortie's `google` account, which carries gmail.modify. Same quoting
-        # rule as the work unit: systemd splits an unquoted Environment= on
-        # whitespace and would drop every argument after `ortie`.
+        Type = "oneshot";
+        # cyrus-sasl only loads mechanism plugins from SASL_PATH, and the
+        # library mbsync links against ships no XOAUTH2 — without this the
+        # personal channel fails with "No worthy mechs found". The .so lives in
+        # <pkg>/lib/sasl2.
+        #
+        # SASL_PATH REPLACES the built-in search path rather than extending it,
+        # so the stock plugin directory has to be named too (colon-separated):
+        # the work channel authenticates to mail-bridge's loopback IMAP with
+        # PLAIN, and pointing SASL_PATH at xoauth2 alone breaks that channel
+        # with the same "No worthy mechs found" the personal one had.
         Environment = [
-          ''"MAIL_BRIDGE_GMAIL_TOKEN_CMD=${lib.getExe pkgs.ortie} -a google token show"''
+          ("SASL_PATH=${pkgs.cyrus_sasl.out}/lib/sasl2"
+            + ":${pkgs.cyrus-sasl-xoauth2}/lib/sasl2")
         ];
+        # mbsync will not create a MaildirStore's Path for itself — it fails
+        # with "No such file or directory" — so make both roots first. The
+        # per-folder cur/new/tmp trees are `Create Near`'s job.
+        ExecStartPre =
+          "${pkgs.coreutils}/bin/mkdir -p /home/eh/areas/mail/work /home/eh/areas/mail/personal";
+        # flock, non-blocking: a slow cold pull must not stack up behind the
+        # 5-minute timer. `-n` makes an overlapping run bail instead of queue,
+        # and `-E 0` makes that bail exit 0, so a skipped tick is not a failed
+        # unit. Without -E flock exits 1 on conflict, which is also mbsync's own
+        # error status — SuccessExitStatus=1 would have hidden real failures.
         ExecStart =
-          "${pkgs.mail-bridge}/bin/mail-bridge imapd "
-          + "--provider gmail --account eddyhu@gmail.com --port 1144 --window 500";
-        Restart = "on-failure";
-        RestartSec = 30;
+          "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
+          + "${pkgs.isync}/bin/mbsync --config %h/.mbsyncrc mail";
+        # INDEX, then TAG, and in that order: the tagger addresses messages by
+        # `id:`, so a message notmuch has not indexed yet cannot be tagged.
+        #
+        # Both are ExecStartPost rather than part of the flock'd command, so a
+        # skipped tick (flock -n bails when a slow pull is still running) still
+        # re-indexes and re-tags what the PREVIOUS run pulled.
+        #
+        # `-` prefix on the tagger: a failure there costs the sidebar's
+        # Focused/Other rows until the next tick, and must not mark the pull
+        # itself failed -- the mail is already on disk by then.
+        ExecStartPost = [
+          "${pkgs.notmuch}/bin/notmuch new --quiet"
+          ("-${pkgs.python3}/bin/python3 "
+            + "${./files/notmuch-tag-bridge.py}")
+          # Personal's half of the same idea, and a different source: Work's
+          # verdicts come from mail-bridge's UID map, Gmail's from a server-side
+          # search. Also `-`: a failed tagging costs the split-inbox rows until
+          # the next tick and must not fail the pull.
+          ("-${pkgs.python3}/bin/python3 "
+            + "${./files/notmuch-tag-gmail.py}")
+        ];
+        # A transient network fault or an unrefreshed token should retry on the
+        # next tick, not immediately; the timer is the retry loop, so no
+        # Restart= here (oneshot units driven by a timer must not respawn).
+        TimeoutStartSec = "15min";
       };
-      # Same single-owner rule as Work, on port 1144 and independently: the
-      # Personal account stays live through the whole Work canary.
-      Install.WantedBy =
-        lib.optionals (config.services.mail-bridge.accounts.personal.mode == "live") [ "default.target" ];
+      # No Install.WantedBy — the timer is what pulls this in, and per the
+      # brief nothing is enabled or started in this generation.
     }; }
     # ydotoold: virtual uinput device daemon that `ydotool` talks to over
     # %t/.ydotool_socket. Runs as the user (not root) — /dev/uinput is reachable
@@ -3940,6 +4069,21 @@ in
         Persistent = true;        # catch up after the laptop was asleep
       };
       Install.WantedBy = [ "timers.target" ];
+    }; }
+    # 5min, the cadence the retired mail-bridge-archive-cycle timers ran at.
+    # Persistent=false: a missed tick is worthless — the next pull fetches
+    # everything that accumulated anyway, and catching up after a suspend would
+    # only fire a redundant run at resume.
+    { mbsync-pull = {
+      Unit.Description = "Pull both mailboxes into ~/areas/mail (mbsync, every 5min)";
+      Timer = {
+        OnBootSec = "2min";        # after the network and mail-bridge are up
+        OnUnitActiveSec = "5min";
+        Persistent = false;
+      };
+      # NOT enabled in this generation — the brief is prepare-and-build only.
+      # Uncomment to wire it in, then `systemctl --user start mbsync-pull.timer`.
+      # Install.WantedBy = [ "timers.target" ];
     }; }
     { aerc-addressbook = {
       Unit.Description = "Rebuild the aerc address book a few times a day";

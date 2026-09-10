@@ -42,7 +42,7 @@ writeShellScript "aerc-html-chromium-kitty" ''
   # Same prefetch the chawan filter uses: a browser will not load an https image
   # into an http document, and the mail's remote images would otherwise phone
   # home from the reading pane.
-  python3 ${mailInlineImages} "$DIR" 4 40 1.0 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
+  python3 ${mailInlineImages} <<< "$PART" > "$DIR/index.html" 2>/dev/null \
     || printf '%s' "$PART" > "$DIR/index.html"
 
   python3 ${mailServe} "$DIR" > "$DIR/port" 2>/dev/null &
