@@ -867,29 +867,79 @@ exit 0
     # are not: `max-width` never binds (700px and 1600px render identically)
     # and `body{max-width:none}` does nothing at all. `td{width:auto}` is still
     # not set -- that is the rule that collapses a newsletter's table grid.
-    WIDEN='img{display:none!important}table{width:100%!important}'
-
-    # A FILE, NOT STDIN. Interactive cha needs stdin for the KEYBOARD, so the
-    # document cannot also arrive there: `cha - < /dev/tty` reads the terminal
-    # as the document, finds no HTML, and prints its usage message. (Dump mode
-    # does not have this problem, which is how it passed review and failed in
-    # aerc.)
+    # A FIXED MEASURE, because both extremes were wrong. Left alone, a mail
+    # renders at whatever its own markup says: the 640px newsletter came out at
+    # a 28-character ribbon. `table{width:100%}` fixed that and replaced it with
+    # the opposite problem -- no upper bound at all, so width became whatever
+    # each mail happened to produce.
     #
-    # A temp file is enough. The loopback HTTP server this used to stand up was
-    # required only because chawan fetches a document's IMAGES only when the
-    # document itself is remote -- on file:// they stayed `[img]` forever. With
-    # images off that constraint is gone, so the file goes straight to disk and
-    # no server, port file or port-race loop is needed.
-    PART="$(cat)"
-    DIR="$(mktemp -d)"
-    trap 'rm -rf "$DIR"' EXIT INT TERM HUP
-    printf '%s' "$PART" > "$DIR/index.html"
+    # Measured over 14 real messages from both accounts (126 cols, `cha -d`),
+    # median / p90 / max characters per line:
+    #
+    #   table{width:100%} ....  53 / 79 / 80   <- no cap, wide spread
+    #   1152px on body+table .  65 / 70 / 72   <- bounded, consistent
+    #
+    # 1152px is 72 cells at a 16px cell, which is inside the 66-80 characters
+    # typography treats as readable. `body` is set as well as `table` because a
+    # mail with no table (a plain Gmail reply) is bounded by the body alone --
+    # and `body` width DOES bind, unlike `max-width`, which chawan ignores.
+    # NESTED TABLES MUST NOT EACH CLAIM THE MEASURE. Forcing `table{width}` on
+    # every table is what wrecked a marketing mail: Arc'teryx's layout is 132
+    # nested tables, each then demanding 1152px inside a parent that had it
+    # already, so indentation ran to 132 columns and the side-by-side boxes
+    # overlapped off the edge. Constrain the OUTERMOST table and let nested ones
+    # fill their parent instead.
+    #
+    # Measured over 14 real messages -- median width / max / worst indent:
+    #
+    #   table{width:1152px} on all ...  65 / 72 / 67   <- boxes overlap
+    #   + table table{width:auto} ....  54 / 72 / 34   <- structure back, prose thin
+    #   + table table{width:100%} ....  54 / 72 / 36   <- structure back, columns even
+    #
+    # The last one is what ships: `WOMEN'S   MEN'S` spaces correctly and the two
+    # sale boxes come out equal width, which `auto` leaves ragged.
+    # AERC GIVES THE FILTER NO TERMINAL, so chawan fell back to 80 columns.
+    # Measured with a probe rendered in the message view itself: COLUMNS is
+    # UNSET and `tput cols` returns 80, while the view is really 126 wide -- the
+    # ruler wrapped at 126. Every width measured outside aerc was therefore
+    # measuring a pane chawan never saw, and the 1152px measure was being
+    # squeezed into 1280px of assumed viewport, which is why the text came out
+    # at ~42 characters and a computed centring pushed it right.
+    #
+    # `display.columns` states the width outright, so nothing depends on an
+    # environment aerc does not provide. 126 is this pane; a different pane
+    # re-renders at its own width only if aerc starts exporting COLUMNS, so
+    # prefer the env when it IS set and fall back to the measured 126.
+    # EXPORT it: chawan reads COLUMNS from the environment, and `display.columns`
+    # is not an option it has. aerc exports nothing, so without this the render
+    # is 80 columns wide whatever the pane is.
+    export COLUMNS=''${COLUMNS:-126}
+    WIDEN='img{display:none!important}body{width:1152px!important}table{width:1152px!important}table table{width:100%!important}'
 
-    cha -c "$WIDEN" \
+    # DUMP, NOT INTERACTIVE -- and that is the whole fix for the render.
+    #
+    # Interactive `cha` is a full-screen TUI: it paints with absolute cursor
+    # positioning sized to the WHOLE terminal. aerc's message view is the
+    # terminal minus its header, so the first rendered line landed above the
+    # region and later lines collided -- measured on a real mail, the opening
+    # sentence vanished entirely and the signature was drawn on top of the
+    # body mid-sentence. It reads as clipping and is overdrawing.
+    #
+    # Interactive mode was only ever required to make IMAGES render, and images
+    # are off. `-d` emits plain text, aerc's own pager scrolls it, and no
+    # escape sequence reaches the message view. That also drops `< /dev/tty`
+    # and, in aerc.conf, the `!` that ran this in the embedded terminal.
+    # COLOUR SURVIVES THE DUMP. `-d` defaults to plain text, which threw away
+    # every link, heading and emphasis chawan had computed -- the render stopped
+    # looking like chawan at all. `display.color-mode=ansi` emits the same
+    # styling as ANSI escapes, which aerc's own pager renders. (8bit and 24bit
+    # both exit 1 here, so ansi is not a preference among three.)
+    cha -d -c "$WIDEN" \
+        -o display.color-mode=ansi \
         -o buffer.images=false \
         -o display.pixels-per-column=16 \
         -o display.force-pixels-per-column=true \
-        -I UTF-8 -O UTF-8 "$DIR/index.html" < /dev/tty
+        -T text/html -I UTF-8 -O UTF-8 -
     exit 0
   '';
 
@@ -2941,7 +2991,7 @@ in
       #
       # Real image/* PARTS are a different code path again and render inline --
       # see the [filters] note above about not registering an image/* filter.
-      text/html=!${aercHtmlChawan}
+      text/html=${aercHtmlChawan}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 

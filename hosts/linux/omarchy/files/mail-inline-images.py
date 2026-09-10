@@ -65,8 +65,29 @@ def extract_html(data):
     if body.get_content_type() == "text/plain":
         # No HTML alternative. Wrap it so the browser renders text as text
         # rather than collapsing every newline.
+        #
+        # `overflow-wrap:anywhere` is load-bearing, not tidiness. `pre-wrap`
+        # breaks at SPACES, and an Outlook safelink runs to 544 characters with
+        # none in it -- measured across this inbox. Such a line overflows the
+        # viewport, the browser scrolls right to fit it, and the first column of
+        # EVERY line goes off-screen. The symptom reads as "the render is
+        # clipped", which points at the pane rather than at one long URL.
+        #
+        # `margin:0` drops the default 8px body inset for a related reason: it
+        # is a fraction of a terminal cell, so it lands mid-glyph.
         content = (
-            "<meta charset=\"utf-8\"><pre style=\"white-space:pre-wrap;"
+            "<meta charset=\"utf-8\">"
+            # DARK, EXPLICITLY. This wrapper sets the only styling a plain-text
+            # mail has, and with no colour declared the browser used its own
+            # default -- dark grey on white, dimmed further against a dark
+            # terminal, which is why the text read as grey. `color-scheme` tells
+            # the engine which defaults to pick; the explicit pair is what
+            # actually decides it, because a renderer that ignores the meta
+            # still honours the properties. Only text/plain is styled here --
+            # an HTML mail keeps its own colours, which are not ours to override.
+            "<meta name=\"color-scheme\" content=\"dark\">"
+            "<pre style=\"margin:0;white-space:pre-wrap;overflow-wrap:anywhere;"
+            "color:#e6e6e6;background:#0f0f14;"
             "font:14px/1.5 ui-monospace,monospace\">"
             + _html.escape(content)
             + "</pre>"

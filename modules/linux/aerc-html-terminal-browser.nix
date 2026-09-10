@@ -316,6 +316,26 @@ PYEOF
     export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
     set -u
 
+    # NO HANDOFF WHEN AERC CAN NAME THE MESSAGE. `o` used to be two commands --
+    # `:pipe -m -b aerc-mail-serve` then `:exec-tty aerc-mail-tty` -- passing a
+    # URL through a shared file. `-b` is not optional (without it aerc opens a
+    # terminal tab for the output), so the serve ran CONCURRENTLY with this
+    # launcher and the read could beat the write: that is the "opens whatever
+    # was open last" bug. Waiting here does not fix it -- measured, the
+    # backgrounded pipe does not progress while :exec-tty holds the screen, so
+    # the wait times out and then reads the stale record anyway.
+    #
+    # So take the message directly: aerc expands {{.Filename}} to the message
+    # file (notmuch included) and this serves it SYNCHRONOUSLY before opening.
+    # One command, one process, nothing to race.
+    #
+    # If the template is not expanded, $1 is the literal "{{.Filename}}", which
+    # is not readable -- so this degrades to the old shared-file path rather
+    # than breaking.
+    if [ "$#" -ge 1 ] && [ -r "$1" ]; then
+      ${serve} < "$1" || true
+    fi
+
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
     if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
       echo "no served mail, or terminal-browser is not installed"; sleep 3; exit 1
