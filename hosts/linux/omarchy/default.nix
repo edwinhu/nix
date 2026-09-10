@@ -834,7 +834,7 @@ exit 0
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
   aercHtmlChawanUnchecked = pkgs.writeShellScript "aerc-html-chawan-unchecked" ''
-    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.coreutils pkgs.ncurses ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.coreutils pkgs.ncurses ]}:$PATH
     set -u
 
     # NO IMAGES, and therefore none of the machinery that served them.
@@ -915,6 +915,19 @@ exit 0
     # is 80 columns wide whatever the pane is.
     export COLUMNS=''${COLUMNS:-126}
     WIDEN='img{display:none!important}body{width:1152px!important}table{width:1152px!important}table table{width:100%!important}'
+    # NO COLOUR THEME HERE, DELIBERATELY. A palette was tried -- transparent
+    # backgrounds, white body, accent headings -- to compensate for the missing
+    # bold, and it worked on the measurement (103 white-background runs to 0).
+    # It is not kept: the mail is authored black-on-white, that is legible, and
+    # restyling every message from outside is a large standing customisation
+    # bought for one missing attribute. The mail's own CSS renders as written.
+    #
+    # Worth recording so it is not re-litigated: chawan has NO dark-mode lever.
+    # display.color-scheme, display.prefers-color-scheme, display.dark-mode,
+    # buffer.color-scheme and buffer.dark are all `unknown option`, this mail
+    # carries no prefers-color-scheme rule to respond to one anyway, and
+    # display.default-background-color loses to the explicit white the mail
+    # sets on 83 of its own elements.
 
     # DUMP, NOT INTERACTIVE -- and that is the whole fix for the render.
     #
@@ -929,17 +942,31 @@ exit 0
     # are off. `-d` emits plain text, aerc's own pager scrolls it, and no
     # escape sequence reaches the message view. That also drops `< /dev/tty`
     # and, in aerc.conf, the `!` that ran this in the embedded terminal.
-    # COLOUR SURVIVES THE DUMP. `-d` defaults to plain text, which threw away
-    # every link, heading and emphasis chawan had computed -- the render stopped
-    # looking like chawan at all. `display.color-mode=ansi` emits the same
-    # styling as ANSI escapes, which aerc's own pager renders. (8bit and 24bit
-    # both exit 1 here, so ansi is not a preference among three.)
+    # COLOUR SURVIVES THE DUMP, BOLD DOES NOT. `-d` defaults to plain text,
+    # which threw away every link, heading and emphasis chawan had computed.
+    # A colour mode brings the colour back -- but NOT the weight: measured
+    # across every combination of `display.color-mode` (monochrome, ansi,
+    # eight-bit, true-color) and every value of `display.no-format-mode`
+    # (bold, italic, underline, reverse, strike, overline, blink), a `<b>`,
+    # a `<strong>` and an `<h1>` emit ZERO `ESC[1m`. Dump mode has no bold.
+    # An earlier note here said "8bit and 24bit both exit 1"; that was the
+    # wrong spelling, not a missing feature -- the values are `eight-bit` and
+    # `true-color`, and true-color works. It is used because it is the only
+    # mode that emits an explicit colour for BODY text; under ansi the body
+    # is left unstated and inherits whatever the terminal last set.
+    #
+    # So a dumped mail is FLAT, and no option here changes that. The place that
+    # still has weight is interactive chawan, which is what `o` opens; this
+    # filter is the inline preview and renders the mail's own colours.
+    # The mail's own CSS renders as authored; the contrast pass afterwards only
+    # drops a text colour where the mail stated NO background to put it on.
     cha -d -c "$WIDEN" \
-        -o display.color-mode=ansi \
+        -o display.color-mode=true-color \
         -o buffer.images=false \
         -o display.pixels-per-column=16 \
         -o display.force-pixels-per-column=true \
-        -T text/html -I UTF-8 -O UTF-8 -
+        -T text/html -I UTF-8 -O UTF-8 - \
+      | python3 ${./files/mail-ansi-contrast.py}
     exit 0
   '';
 
