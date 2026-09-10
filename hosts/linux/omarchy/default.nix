@@ -2387,6 +2387,18 @@ in
   # `:cf tag:flagged` reaches any of them without either account carrying twenty
   # rows to scroll past every day.
   #
+  # Personal has NO Archive row because it has no local Archive: Gmail archives
+  # by removing the INBOX label, which files the message under All Mail, and
+  # ~/.mbsyncrc excludes `[Gmail]/All Mail` from the pull -- mirroring it would
+  # be a second copy of every message. So an archived personal message leaves
+  # the local store entirely and is reachable only in Gmail. Work archives into
+  # a real folder and gets a row.
+  #
+  # Drafts is a FOLDER row, not `tag:draft`: on Work that tag matches 108 where
+  # the Drafts folder holds 4, because the maildir D flag lingers on messages
+  # that were once drafts. It is here at all because `folders-exclude` hides the
+  # maildir rows, so a postponed message would otherwise have no way back.
+  #
   # Dropped as splits that rarely earn a row rather than as clutter: Invoice
   # (7), Pitch (4) and Marketing (10) on Work, and Forums, which matched exactly
   # one message. Add a line back if one starts being a reason to open the client.
@@ -2394,7 +2406,8 @@ in
   # (Kept for the next reader: this was the sidebar of each account, as queries
   # rather than directories.)
   #
-  # Order here IS order in aerc. `folder:` is relative to the notmuch database
+  # Order here is order on screen ONLY because both accounts set
+  # `enable-folders-sort = false`; aerc sorts alphabetically by default. `folder:` is relative to the notmuch database
   # root (~/areas/mail), so the account name is the first path element.
   #
   # QUOTE THE WHOLE PATH, not the segment with the space in it:
@@ -2431,6 +2444,9 @@ in
     Waiting=folder:work/INBOX and tag:waiting
     Meeting=folder:work/INBOX and tag:meeting
     News=folder:work/INBOX and tag:news
+    Drafts=folder:work/Drafts
+    Sent=folder:"work/Sent Items"
+    Archive=folder:work/Archive
   '';
 
   xdg.configFile."aerc/queries-personal".text = ''
@@ -2439,6 +2455,8 @@ in
     Updates=folder:personal/INBOX and tag:updates
     Promotions=folder:personal/INBOX and tag:promotions
     Social=folder:personal/INBOX and tag:social
+    Drafts=folder:"personal/[Gmail]/Drafts"
+    Sent=folder:"personal/[Gmail]/Sent Mail"
   '';
 
   xdg.configFile."notmuch/default/config".text = ''
@@ -2505,12 +2523,25 @@ in
       # from the notmuch database too.
       source            = notmuch://
       query-map         = /home/eh/.config/aerc/queries-personal
-      # The sidebar is the query map and NOTHING else. `enable-maildir`
-      # defaults to TRUE, which lists every directory under the notmuch root
-      # ON TOP of the queries -- p/Bills, p/G/Trash, w/Deleted Items and the
-      # rest, twenty-odd rows of things nobody opens. `:cf <query>` still
-      # reaches any of them.
-      enable-maildir    = false
+      # HIDE the maildir rows, do not DISABLE maildir. `enable-maildir`
+      # defaults to true and lists every directory under the notmuch root on
+      # top of the query map -- and since both accounts share one database
+      # rooted at ~/areas/mail, each tab drew the OTHER account's folders too.
+      # But turning it off also takes `:delete`, `:archive` and the postpone
+      # target with it (aerc-notmuch(5)), so the switch is too blunt.
+      # `folders-exclude` hides the rows and keeps the commands. The `~` prefix
+      # makes it a REGULAR EXPRESSION, and it is matched against EVERY sidebar
+      # entry -- including the query-map rows, which under notmuch are what the
+      # sidebar is made of. `~.` therefore excluded Focused and Important along
+      # with the directories and left both accounts reading "connected, no
+      # messages". Anchor it to the maildir paths instead: every real directory
+      # under the notmuch root begins with the account name.
+      folders-exclude   = ~^(work|personal)/
+      # `enable-folders-sort` defaults to TRUE, which sorts the sidebar
+      # ALPHABETICALLY and buries the split under Archive/Drafts. Off, so the
+      # order of the query map is the order on screen -- splits first, then the
+      # places mail goes.
+      enable-folders-sort = false
       # SENDING still goes through the mail-bridge sendmail shim -- a maildir
       # cannot send. The composed bytes are base64url'd into
       # users.messages.send under ortie's brokered Google token. NO APP
@@ -2537,9 +2568,11 @@ in
       # grants no SMTP.
       source        = notmuch://
       query-map     = /home/eh/.config/aerc/queries-work
-      # See [Personal]: without this the maildir directory list is drawn on top
-      # of the query map.
-      enable-maildir = false
+      # See [Personal]: hides the directory rows without disabling the maildir
+      # commands.
+      folders-exclude = ~^(work|personal)/
+      # See [Personal]: without this the sidebar is alphabetical.
+      enable-folders-sort = false
       outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
       # See [Personal]: names a query-map row, not a folder.
       default       = Focused
