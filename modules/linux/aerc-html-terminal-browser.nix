@@ -142,7 +142,12 @@ let
 
     # 4s per image, 40 images, no zoom -- the mail renders at its authored size,
     # which is what a browser does.
-    python3 ${mailInlineImages} "$DIR" 4 40 1.0 <<< "$PART" > "$DIR/index.html" 2>/dev/null \
+    # The `||` here is a FALLBACK TO THE RAW MESSAGE, so a failing inliner does
+    # not error -- it serves RFC822 as index.html and the browser renders the
+    # headers as "html garbage". That is exactly what a stale call signature
+    # produced: the script takes NO arguments (it reads the whole message on
+    # stdin) and was still being handed `"$DIR" 4 40 1.0`.
+    python3 ${mailInlineImages} <<< "$PART" > "$DIR/index.html" 2>/dev/null \
       || printf '%s' "$PART" > "$DIR/index.html"
 
     # The server outlives this script on purpose: the browser has to be able to
