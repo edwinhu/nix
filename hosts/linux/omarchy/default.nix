@@ -1034,8 +1034,18 @@ exit 0
     # everything custom" pass. Every narrow render since traces to that one
     # removal, and no amount of user CSS compensates, because the ratio is
     # what decides how many cells a fixed-width mail occupies.
-    cha -o display.pixels-per-column=5 \
-        -o display.force-pixels-per-column=true \
+    # DUMP MODE, width set explicitly. Interactive chawan paints a TUI into
+    # aerc's filter terminal -- alt screen, absolute cursor moves, 77 erase-line
+    # escapes for one mail -- and aerc eats the first character of lines it
+    # redraws: "Thanks" arrives as "?hanks", "Bridget" as "ridget". Dump mode
+    # emits ZERO escapes, so there is nothing to overdraw.
+    #
+    # `-o display.columns` IS honoured (126 in, 126 out, measured). An earlier
+    # note here called it inert and sent the whole width investigation down the
+    # pixels-per-column path; it is wrong. `cha -d` ignores COLUMNS from the
+    # ENVIRONMENT, which is what that note had actually observed.
+    cha -d \
+        -o display.columns=''${COLUMNS:-100} \
         -o buffer.images=false \
         -c 'img{display:none!important}
             table{width:100%!important;max-width:100%!important}
@@ -1075,14 +1085,21 @@ exit 0
     # default mapping and every mail silently re-renders at a different text
     # density, which is precisely the class of damage the original gate existed
     # for.
-    # The ratio is now DERIVED per message rather than fixed, so the gate can no
-    # longer look for a literal. It asserts the two halves that make the
-    # derivation real: the option is passed, and the value is computed from the
-    # document. Losing either silently returns the mail to chawan's default
-    # density, which is the failure this gate has always existed for.
-    if ! grep -qE 'display\.pixels-per-column=("\$PPC"|[0-9]+)' ${aercHtmlChawanUnchecked}; then
-      echo "aerc-html-chawan: no display.pixels-per-column is passed to cha," >&2
-      echo "so the mail's text density is whatever chawan defaults to." >&2
+    # THE WIDTH LEVER DEPENDS ON THE MODE, and the filter is now a DUMP.
+    # Interactive chawan's lever was display.pixels-per-column, mapping CSS px
+    # to cells. Dump mode's lever is display.columns, which chawan honours
+    # exactly (126 in, 126 out, measured) -- while `cha -d` ignores COLUMNS
+    # from the ENVIRONMENT, which is the observation an older comment here
+    # mis-recorded as "display.columns is inert".
+    #
+    # Accept either, and refuse a script carrying NEITHER: without a width
+    # lever chawan falls back to its own default and every mail silently
+    # re-renders at a different width, which is what this gate has always
+    # existed to catch.
+    if ! grep -qE 'display\.(pixels-per-column=("\$PPC"|[0-9]+)|columns=)' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: no width lever is passed to cha -- neither" >&2
+      echo "display.columns (dump mode) nor display.pixels-per-column" >&2
+      echo "(interactive), so the width is whatever chawan defaults to." >&2
       exit 1
     fi
     # The containers must stay FLUID. Losing these rules returns every mail to
@@ -3117,14 +3134,11 @@ in
       # and displays sixel, which is why terminal-browser can never paint in
       # aerc's own pane and this can. Renders the mail to a PNG, scales it to
       # the pane, emits sixel, then the w3m text underneath.
-      # `!` = run the filter in a terminal, which is the ONLY way a DCS
-      # reaches a terminal that can draw it: without it aerc's pager strips
-      # the introducer and the sixel payload prints as literal text
-      # (q"1;1;1248;540#0;2;91;91;91...). The `!` was never the bug -- pairing
-      # it with an INTERACTIVE BROWSER was, because a browser repaints and the
-      # repaints overdraw ("Maxmly,"). This script prints an image and some
-      # text and exits, so there is nothing to repaint.
-      text/html=!${aercHtmlSixel}
+      # chawan renders the mail's own CSS. `!` runs it in a terminal, which
+      # it needs -- and which is NOT what garbled the view: an interactive
+      # renderer repainting is. The PICTURE is on `o`
+      # (aerc-mail-preview.sh), which draws sixel in this same pane.
+      text/html=${aercHtmlChawan}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 

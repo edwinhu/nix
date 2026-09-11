@@ -16,7 +16,7 @@ set -u
 OUT=${1:-$PWD/o-shot}
 mkdir -p "$OUT"
 exec python3 - "$OUT" <<'PY'
-import hashlib, json, subprocess, sys, time
+import hashlib, json, os, subprocess, sys, time
 
 OUT = sys.argv[1]
 sh = lambda *a: subprocess.run(a, capture_output=True, text=True).stdout
@@ -109,6 +109,26 @@ if at["at"][0] < 0 or at["at"][1] < 0:
     sys.exit(f"ABORT: window is still off-screen at {at['at']}; it will not repaint "
              "and every capture would be a stale buffer.")
 
+# 1a. REFUSE TO RUN INTO AN OPEN COMPOSER. Enter in [view] is `:reply -a`, so
+#     one leaked Enter opens a reply and EVERY later probe key types into the
+#     draft body -- a real draft to a real stranger picked up "jkqqqqq" and
+#     ":clear" that way. In [compose] the ex prefix is Ctrl-X, not ":", so a
+#     bare ":abort" only fills the To: field with junk.
+def composer_open():
+    return any("New Email" in l or "Send this email" in l for l in body(pane))
+
+if composer_open():
+    print("a compose window is open -- discarding it before doing anything else")
+    subprocess.run(["herdr", "pane", "send-keys", pane, "ctrl+x"], capture_output=True)
+    time.sleep(1)
+    subprocess.run(["herdr", "pane", "send-text", pane, "abort"], capture_output=True)
+    time.sleep(1)
+    subprocess.run(["herdr", "pane", "send-keys", pane, "enter"], capture_output=True)
+    time.sleep(3)
+    if composer_open():
+        sys.exit("ABORT: a compose window is open and would not close. Refusing "
+                 "to send keys into a draft.")
+
 # 1b. CLEAR ANY BROWSER STILL HOLDING THE PANE. A leftover instance from a
 #     previous run holds aerc's pane, and then the liveness probe cannot move
 #     a cursor because aerc is not the thing on screen -- the run aborts
@@ -153,6 +173,29 @@ for _ in range(12):
 else:
     sys.exit("aerc never reached its message list")
 
+# 3b. PICK THE TEST MESSAGE. A plain text reply proves almost nothing: the
+#     hard cases are image-heavy newsletters with nested tables, which is what
+#     broke every previous width and clipping fix. Default is Arc'teryx.
+target = os.environ.get("SHOT_TARGET", "arcteryx")
+at_list = any("\u2502" in l for l in body(pane)) and not composer_open()
+if target and not at_list:
+    print("not at the message list -- skipping the filter rather than typing an "
+          "ex command into whatever has focus")
+    target = ""
+if target:
+    subprocess.run(["herdr", "pane", "send-text", pane, f":filter from:{target}"],
+                   capture_output=True)
+    time.sleep(1)
+    subprocess.run(["herdr", "pane", "send-keys", pane, "enter"], capture_output=True)
+    hit = wait_for(pane, target[:6], budget=25) or wait_for(pane, target.capitalize()[:6], budget=5)
+    if not hit:
+        print(f"no message matched {target!r}; clearing the filter and using the list as-is")
+        subprocess.run(["herdr", "pane", "send-text", pane, ":clear"], capture_output=True)
+        subprocess.run(["herdr", "pane", "send-keys", pane, "enter"], capture_output=True)
+        time.sleep(2)
+    else:
+        print(f"filtered to {target!r}")
+
 # 4. BEFORE: a message open in aerc's own renderer. `o` only -- Enter in [view]
 #    is `:reply -a` and has opened reply composers to newsletters.
 subprocess.run(["herdr", "pane", "send-keys", pane, "o"], capture_output=True)
@@ -182,6 +225,10 @@ print(f"  {before_path}")
 print(f"  {after_path}")
 
 subprocess.run(["herdr", "pane", "send-keys", pane, "q"], capture_output=True)
+time.sleep(1)
+# Drop the filter, or the user finds their inbox showing one sender.
+subprocess.run(["herdr", "pane", "send-text", pane, ":clear"], capture_output=True)
+subprocess.run(["herdr", "pane", "send-keys", pane, "enter"], capture_output=True)
 # Deliberately NOT restored to its off-screen slot: there it cannot be
 # photographed at all, which is the condition this script exists to escape.
 PY
