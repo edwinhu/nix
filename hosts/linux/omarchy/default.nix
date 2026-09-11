@@ -919,7 +919,23 @@ exit 0
     # It is what a phone does with the same markup, and it is why the mail
     # ships a mobile layout at all.
 
-    cha -o display.pixels-per-column=4 \
+    # IMAGES OFF, AND THEIR BOXES WITH THEM. This is not a preference, it is
+    # the width bug. ~/.config/chawan/config.toml sets images = true, which is
+    # right for chawan in a real terminal; here the filter cannot draw them, so
+    # chawan reserves the layout box anyway and aerc paints an EMPTY WHITE SLAB
+    # -- measured on the Arc'teryx mail, half the pane, containing nothing --
+    # with the prose crushed into what is left and clipped at its left edge.
+    #
+    # `buffer.images=false` stops the reservation; the `img` rule then removes
+    # the `[img]` alt-text stubs that replace it, which otherwise hold cells
+    # open and push the text sideways all over again.
+    #
+    # This is also why the pty harness missed it: a painted blank region is not
+    # leading whitespace, so it measured a 9-column indent on a render whose
+    # text actually starts halfway across the pane.
+    cha -o display.pixels-per-column=5 \
+        -o buffer.images=false \
+        -c 'img{display:none!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';

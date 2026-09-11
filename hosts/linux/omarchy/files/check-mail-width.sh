@@ -34,11 +34,27 @@ COLS, ROWS = 126, 40
 # scored that as the best candidate and it was deployed before a screenshot
 # showed the text was destroyed. These numbers are what the mails actually do
 # undamaged.
+#
+# AND THEY CONFLICT. There is no single ratio that suits both: each mail fixes
+# its own container width, so the ratio that fills the pane for one overflows
+# it for the other. Measured, median width:
+#
+#            ppc=4    ppc=5
+#   docket .. 106       56
+#   arcteryx . 77(!)    94
+#
+# The (!) is not a win. At ppc=4 arcteryx's 600px container is 150 cells in a
+# 126-cell pane; chawan centres it, the offset goes NEGATIVE, and the left of
+# every line is cut off -- "Preferred" renders as "eferred". ppc=5 keeps the
+# container inside the viewport, so nothing is destroyed and docket is merely
+# narrow. These bounds are the no-damage ceilings, and docket's 106 is
+# deliberately NOT among them: it was only ever reachable while arcteryx was
+# being shredded.
 BOUNDS = {
     "dermot":   (("subject", "AI rundown"),   20,  1),
     "readwise": (("subject", "WSJ parser"),   60,  4),
-    "docket":   (("subject", "The Docket"),  100,  8),
-    "arcteryx": (("from",    "arcteryx"),     75, 10),
+    "docket":   (("subject", "The Docket"),   55,  8),
+    "arcteryx": (("from",    "arcteryx"),     90, 10),
 }
 
 def fixtures():
