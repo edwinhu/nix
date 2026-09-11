@@ -834,123 +834,92 @@ exit 0
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
   aercHtmlChawanUnchecked = pkgs.writeShellScript "aerc-html-chawan-unchecked" ''
-    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.coreutils pkgs.ncurses ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.coreutils ]}:$PATH
     set -u
 
-    # NO IMAGES, and therefore none of the machinery that served them.
+    # STOCK CHAWAN, plus ONE option. Everything else that used to be here --
+    # a user stylesheet rewriting the mail's widths, an image override, a
+    # forced COLUMNS, a colour palette, an ANSI post-processing pass -- was
+    # layered on to work around a render fault whose real cause was a stray
+    # `< /dev/tty`. That is fixed, so none of it is needed, and chawan renders
+    # the mail's own CSS as authored.
     #
-    # What was here until now, and why it is gone: a python inliner rewriting
-    # `cid:` attachments to data: URIs, a python HTTP server spawned per message
-    # so chawan could FETCH those images, a 4s port-race loop waiting on it, a
-    # terminal cell-size probe, and six keybindings forcing a full repaint after
-    # every motion because already-drawn sixels do not move with the text. All
-    # of it existed to put images on screen; with images off it was pure cost on
-    # every mail opened. Recoverable from git -- the server arrived in dd5175c.
+    # WIDTH IS THE ONE THING CHAWAN CANNOT GET RIGHT BY ITSELF, because it is
+    # not a property of the document. chawan maps one terminal cell to
+    # `pixels-per-column` CSS px. At the cell's true width (16px here) one CSS
+    # px is one real px, so a mail authored at 640px occupies 640px of the
+    # pane -- about 40 cells -- and reads as a narrow column with a wide empty
+    # margin. A browser fits ~60 characters in that same 640px because
+    # proportional glyphs average ~8px, and a terminal cell is not
+    # proportional. Shrinking the ratio is what widens the layout.
     #
-    # The three helper scripts are NOT deleted: files/mail-inline-images.py,
-    # files/mail-serve.py and files/term-cell-size.py are still referenced by
-    # modules/linux/aerc-html-terminal-browser.nix and
-    # modules/linux/aerc-html-chromium-kitty.nix.
+    # THE RATIO IS MEASURED, and the sweep has to run in a real pty, driving
+    # the DEPLOYED filter the way aerc does -- message on a pipe at stdin, the
+    # terminal separate. Three instruments lied before this one did not:
     #
-    # Measured on "Reaction Daily Digest" (126 cols, chawan 0.4.4, `cha -d`):
-    # buffer.images=false ALONE leaves 8 `[img]` alt-text stubs -- WORSE than
-    # leaving images on, which left 3. Hiding them gives 0, and the text
-    # reflows: 31 lines against 37, with the reaction header on one line
-    # instead of split around a placeholder. So `display:none` is load-bearing,
-    # not cosmetics.
+    #   * `cha -d` lays out at a fixed 80 columns and IGNORES COLUMNS entirely
+    #     (80, 126 and 200 give byte-identical output), so dump-mode widths
+    #     describe a page the pager never draws -- and report this knob
+    #     BACKWARDS, showing indent grow as the ratio falls when it shrinks.
+    #   * Feeding the document INTO the pty makes the document and the keyboard
+    #     share a channel, which measures a render nobody sees.
+    #   * An unconsumed `ESC [ ? 25 h`, or an OSC title ended by ESC-backslash
+    #     rather than BEL, lands in the grid AS TEXT -- and chawan's title is
+    #     the file:// URL, a full-width row that inflates every median.
     #
-    # WIDTH. chawan maps one cell to `pixels-per-column` CSS px. At 16 -- the
-    # terminal's true cell -- a 640px mail is 40 cells and fits ~30 characters,
-    # where Chromium fits ~60 in the same 640px because proportional glyphs
-    # average ~8px. `table{width:100%}` restores that: median span 30 -> 62
-    # characters, which is Chromium's ~60. Two rules that LOOK like knobs and
-    # are not: `max-width` never binds (700px and 1600px render identically)
-    # and `body{max-width:none}` does nothing at all. `td{width:auto}` is still
-    # not set -- that is the rule that collapses a newsletter's table grid.
-    # A FIXED MEASURE, because both extremes were wrong. Left alone, a mail
-    # renders at whatever its own markup says: the 640px newsletter came out at
-    # a 28-character ribbon. `table{width:100%}` fixed that and replaced it with
-    # the opposite problem -- no upper bound at all, so width became whatever
-    # each mail happened to produce.
+    # A newsletter's FIRST screenful is also its masthead: nine rows of [img]
+    # and a rule. The check pages down before sampling, or it measures the logo
+    # and calls it the body.
     #
-    # Measured over 14 real messages from both accounts (126 cols, `cha -d`),
-    # median / p90 / max characters per line:
+    # Measured that way, median text width / median left indent:
     #
-    #   table{width:100%} ....  53 / 79 / 80   <- no cap, wide spread
-    #   1152px on body+table .  65 / 70 / 72   <- bounded, consistent
+    #                     docket        arcteryx
+    #   ppc=5 ........  70 / 11        87 /  9
+    #   ppc=4 ........ 106 /  8        77 /  9
+    #   ppc=3 ........ 118 /  8        77 / 11
+    #   ppc=2 ........ 126 / 10        77 / 15   indent regresses
+    #   ppc=3 +cells . 118 /  8       108 /  3   CLIPS -- see below
+    #   ppc=3 +cells
+    #         +no-img  111 /  8       122 /  3   CLIPS -- see below
     #
-    # 1152px is 72 cells at a 16px cell, which is inside the 66-80 characters
-    # typography treats as readable. `body` is set as well as `table` because a
-    # mail with no table (a plain Gmail reply) is bounded by the body alone --
-    # and `body` width DOES bind, unlike `max-width`, which chawan ignores.
-    # NESTED TABLES MUST NOT EACH CLAIM THE MEASURE. Forcing `table{width}` on
-    # every table is what wrecked a marketing mail: Arc'teryx's layout is 132
-    # nested tables, each then demanding 1152px inside a parent that had it
-    # already, so indentation ran to 132 columns and the side-by-side boxes
-    # overlapped off the edge. Constrain the OUTERMOST table and let nested ones
-    # fill their parent instead.
+    # ppc=4 ships. The two widest rows above are REJECTED, and the reason is
+    # the reason `check-mail-width.sh` now measures clipping as well as width:
+    # `td{display:block}` stacks the columns and the content then overflows the
+    # viewport, so lines are cut off at the LEFT edge -- "Introducing System 0"
+    # renders as "ugh System 0", "products" as "ducts". That damage RAISES
+    # median width, so a width-only gate scores it as the best candidate on
+    # offer. It was built and deployed on that score before a screenshot showed
+    # the text was destroyed.
     #
-    # Measured over 14 real messages -- median width / max / worst indent:
+    # `check-mail-width.sh` beside this file is that measurement, and it is the
+    # gate: it runs whatever aerc.conf currently points at, so it cannot drift
+    # from what is deployed.
     #
-    #   table{width:1152px} on all ...  65 / 72 / 67   <- boxes overlap
-    #   + table table{width:auto} ....  54 / 72 / 34   <- structure back, prose thin
-    #   + table table{width:100%} ....  54 / 72 / 36   <- structure back, columns even
-    #
-    # The last one is what ships: `WOMEN'S   MEN'S` spaces correctly and the two
-    # sale boxes come out equal width, which `auto` leaves ragged.
-    # AERC GIVES THE FILTER NO TERMINAL, so chawan fell back to 80 columns.
-    # Measured with a probe rendered in the message view itself: COLUMNS is
-    # UNSET and `tput cols` returns 80, while the view is really 126 wide -- the
-    # ruler wrapped at 126. Every width measured outside aerc was therefore
-    # measuring a pane chawan never saw, and the 1152px measure was being
-    # squeezed into 1280px of assumed viewport, which is why the text came out
-    # at ~42 characters and a computed centring pushed it right.
-    #
-    # `display.columns` states the width outright, so nothing depends on an
-    # environment aerc does not provide. 126 is this pane; a different pane
-    # re-renders at its own width only if aerc starts exporting COLUMNS, so
-    # prefer the env when it IS set and fall back to the measured 126.
-    # EXPORT it: chawan reads COLUMNS from the environment, and `display.columns`
-    # is not an option it has. aerc exports nothing, so without this the render
-    # is 80 columns wide whatever the pane is.
-    export COLUMNS=''${COLUMNS:-126}
-    WIDEN='img{display:none!important}body{width:1152px!important}table{width:1152px!important}table table{width:100%!important}'
-    # INTERACTIVE, NOT A DUMP. `cha -d` renders a mail FLAT: measured across
-    # every display.color-mode (monochrome, ansi, eight-bit, true-color) crossed
-    # with every display.no-format-mode value, a <b>, a <strong> and an <h1>
-    # emit ZERO ESC[1m. Dump mode has no bold at all, so headings, emphasis and
-    # hierarchy are gone no matter how it is configured, and no stylesheet or
-    # post-processing pass puts them back. Interactive chawan keeps them, and
-    # that is the whole reason it is what runs here.
+    # Two options that look like the right lever and are INERT: display.columns
+    # and display.width are accepted by the parser (a bogus key errors) yet
+    # change nothing.
     #
     # A FILE, NOT STDIN. Interactive cha needs stdin for the KEYBOARD, so the
-    # document cannot also arrive there: `cha - < /dev/tty` reads the terminal
-    # as the document, finds no HTML, and prints its usage message. (Dump mode
-    # does not have this problem, which is how it passed review and failed in
-    # aerc.)
-    #
-    # NO `< /dev/tty`. That redirect is what garbled the render -- "Max," and
-    # "Warmly," painted onto one row, two paragraphs interleaved. Inside aerc's
-    # embedded terminal /dev/tty is the OUTER terminal, so chawan sized itself
-    # to the whole ghostty window and drew that geometry into the smaller
-    # region aerc gave it, overwriting its own lines.
-    #
-    # It is not needed: the `!` prefix in aerc.conf runs this in aerc's own
-    # pty, so stdin ALREADY is a terminal, and the document arrives as a
-    # filename argument rather than on stdin -- which is the reason the temp
-    # file exists. Leave stdin alone and chawan measures the region it is in.
-    #
-    # No contrast post-processing either: it was a pipe, and a pipe takes the
-    # terminal away from an interactive pager.
+    # document cannot also arrive there -- `cha -` would read the terminal as
+    # the document. Hence the temp file and the filename argument.
     PART="$(cat)"
     DIR="$(mktemp -d)"
     trap 'rm -rf "$DIR"' EXIT INT TERM HUP
     printf '%s' "$PART" > "$DIR/index.html"
 
-    cha -c "$WIDEN" \
-        -o buffer.images=false \
-        -o display.pixels-per-column=16 \
-        -o display.force-pixels-per-column=true \
+    # LINEARISE THE COLUMNS. This is the one rule that is not styling: a
+    # marketing mail lays its body out as a TABLE of fixed-width cells, and a
+    # terminal cannot honour two 300px columns side by side in 126 cells. The
+    # Arc'teryx mail is 21 containers at 600px and 12 columns at 300px, so its
+    # text was pinned at a 77-column median no matter what the px-to-cell ratio
+    # was -- 300px IS 75 cells at ppc=4, which is the number that kept showing
+    # up. Making cells block-level stacks them instead, and the same mail
+    # measures 108 columns with its left indent down from 11 to 3.
+    #
+    # It is what a phone does with the same markup, and it is why the mail
+    # ships a mobile layout at all.
+
+    cha -o display.pixels-per-column=4 \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';
