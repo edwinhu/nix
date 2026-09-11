@@ -58,11 +58,16 @@ COLS, ROWS = 126, 40
 # container at all, which then measured 36 columns and was read as the filter
 # failing -- the newsletter itself declares width="640" and resolves fine.
 BOUNDS = {
-    "dermot":   ((("subject", "AI rundown"),),                        20,  2),
-    "readwise": ((("subject", "WSJ parser"),),                        95,  4),
-    "arcteryx": ((("from", "arcteryx"),),                            100, 12),
+    "dermot":   ((("subject", "AI rundown"),),                        60,  4),
+    "readwise": ((("subject", "WSJ parser"),),                        60,  4),
+    "arcteryx": ((("from", "arcteryx"), ("subject", "Outlet")),      100, 12),
     "nytdocket":((("from", "nytimes"), ("subject", "Docket")),       100, 12),
     "uvadocket":((("from", "law.virginia"), ("subject", "Docket")),  100, 12),
+    # The mail that exposed the per-message heuristic as unsupportable: a 600px
+    # HubSpot newsletter that renders as a ~32-character centred column. It
+    # lives under ~/areas/mail/Archive, which the old fixture glob never
+    # covered -- so the check could not even see the mail being complained about.
+    "dewey":    ((("from", "deweydata"), ("subject", "seminars")),   100, 12),
 }
 
 def fixtures():
@@ -72,7 +77,7 @@ def fixtures():
     # the Fall Outlet sale, and the UVA one a Docket from July rather than
     # today's -- so the numbers described documents with different layouts than
     # the ones being complained about.
-    files = sorted(glob.glob(os.path.expanduser("~/areas/mail/*/INBOX/cur/*")),
+    files = sorted(sum([glob.glob(os.path.expanduser(g)) for g in ("~/areas/mail/*/INBOX/cur/*", "~/areas/mail/*/cur/*", "~/areas/mail/*/*/cur/*")], []),
                    key=lambda f: os.path.getmtime(f), reverse=True)
     for f in files:
         if len(out) == len(BOUNDS):

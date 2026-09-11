@@ -953,55 +953,56 @@ exit 0
     # what "Introducing System 0" rendering as "ugh System 0" was. Too HIGH and
     # the mail sits in a narrow centred column. Dividing hits the one value
     # where the mail's own width IS the pane's width.
-    # THE PANE'S WIDTH, MEASURED ON THE PANE. `tput cols </dev/tty` reads the
-    # OUTER terminal, which inside aerc's embedded terminal answered 80 -- so a
-    # 600px mail computed 600/80 = 7 and rendered as a narrow centred column
-    # while the same filter, handed the real 126, rendered it at full width.
-    # stdout IS the pane here (aerc runs this with the `!` prefix, in its own
-    # pty), so ask stdout.
-    COLS=$(tput cols 2>/dev/null || echo 126)
-    [ "$COLS" -ge 40 ] 2>/dev/null || COLS=126
-    PPC=$(python3 - "$DIR/index.html" "$COLS" <<'PYWIDTH'
-import re, sys
-
-html = open(sys.argv[1], encoding="utf-8", errors="replace").read()
-cols = max(40, int(sys.argv[2]))
-
-# The mail's own container: the widest fixed width it states, in attributes or
-# inline styles. Ignore anything tiny (spacer gifs are width="1") and anything
-# absurd, so one stray declaration cannot set the ratio for the whole document.
-widths = [int(w) for w in re.findall(r'width\s*=\s*["\']?(\d{3,4})', html)]
-widths += [int(w) for w in re.findall(r'width\s*:\s*(\d{3,4})px', html)]
-widths = [w for w in widths if 300 <= w <= 1600]
-
-if not widths:
-    # No container -- a plain reply. chawan's own default already fills the
-    # pane, and forcing a ratio here only shrinks it.
-    print(8)
-else:
-    # FLOOR, NOT CEIL, and this one line is the whole width problem.
+    # ONE RATIO, AND FLUID CONTAINERS -- NOT A GUESS PER MESSAGE.
     #
-    # 600 / 126 = 4.76. Ceiling makes that 5, and at 5 the mail renders as a
-    # narrow centred column -- the exact complaint. Floor makes it 4, and the
-    # same mail's copy starts at column 4 and runs ~75 characters: "Save big on
-    # fan-favourite gear from last season. Score an extra 20% off" arrives
-    # whole. Rounding UP always buys margin at the cost of text, because the
-    # leftover is spent as centring.
+    # This used to read each mail's markup, guess its container width, and
+    # divide by the pane. That cannot be made to work: the guess is only ever
+    # as good as the next newsletter's markup. It broke on the Dewey Data mail,
+    # a 600px newsletter carrying two 1120px retina images -- the max() picked
+    # 1120, the ratio came out 8, and a 600px body rendered in 75 of 126 cells.
+    # Switching to the modal width fixed that one mail and would have broken on
+    # the next percentage layout. There is no statistic over arbitrary email
+    # markup that is right every time.
     #
-    # Ceiling was adopted to stop the container exceeding the viewport, since
-    # chawan centres an over-wide box and the left offset goes negative. That
-    # risk is real but it is not paid here: measured on this mail at ppc=4, the
-    # clipping rate is 0.0% and every sentence is intact.
-    import math
-    container = max(widths)
-    ppc = max(1, math.floor(container / cols))
-    print(max(3, min(16, ppc)))
-PYWIDTH
-)
-
-    cha -o display.pixels-per-column="$PPC" \
+    # So stop scaling to the document and let the document reflow to the pane:
+    #
+    #   * pixels-per-column=5, because 600 / 126 = 4.76 and the ratio must round
+    #     UP: at 4 a 600px mail is 150 cells in a 126-cell pane, chawan centres
+    #     the overflow, and the result reads as a narrow column with wide
+    #     margins -- which is the complaint. At 5 it is 120 cells and FITS.
+    #   * (the old note) pixels-per-column=4 makes the viewport ~504 CSS px, the
+    #     ~600px viewport essentially all HTML mail is authored against. A mail
+    #     that IS 600px therefore lands at full width with no parsing at all.
+    #   * Everything else is made FLUID, so a mail that is 640px, 1120px or
+    #     percentage-based reflows into the pane instead of being scaled to it:
+    #     tables fill the viewport, cells stack (a terminal cannot honour two
+    #     300px columns side by side), and nothing may exceed 100% -- which is
+    #     what stops an over-wide container being centred into a negative
+    #     offset and clipped at the left edge.
+    #
+    # The failure mode this replaces was per-mail and silent. This one is
+    # uniform: every mail is laid out for the pane it is in.
+    # FORCE IS NOT OPTIONAL -- it is the whole fix. Without
+    # display.force-pixels-per-column, chawan IGNORES pixels-per-column in
+    # interactive mode and uses the cell size the terminal reports (16px in
+    # ghostty), so a 600px mail becomes ~37 cells and renders as a narrow
+    # column indented ~45 into the pane. Measured in a pty reporting realistic
+    # cell pixels, on the Dewey newsletter:
+    #
+    #   ppc=5, no force ... median 76, indent 45   <- the bug, exactly
+    #   ppc=5 + force  ... median 87, indent  6
+    #
+    # This flag was in the filter originally and was deleted in a "roll back
+    # everything custom" pass. Every narrow render since traces to that one
+    # removal, and no amount of user CSS compensates, because the ratio is
+    # what decides how many cells a fixed-width mail occupies.
+    cha -o display.pixels-per-column=5 \
+        -o display.force-pixels-per-column=true \
         -o buffer.images=false \
-        -c 'img{display:none!important}td{display:block!important;width:auto!important}table{width:100%!important}body{width:100%!important}' \
+        -c 'img{display:none!important}
+            table{width:100%!important;max-width:100%!important}
+            td{display:block!important;width:auto!important;max-width:100%!important}
+            div,p,span,body{max-width:100%!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';
@@ -1045,10 +1046,18 @@ PYWIDTH
       echo "so the mail's text density is whatever chawan defaults to." >&2
       exit 1
     fi
-    if ! grep -q 'PPC=' ${aercHtmlChawanUnchecked}; then
-      echo "aerc-html-chawan: pixels-per-column is not computed from the" >&2
-      echo "message's own container width, so one global ratio is back and" >&2
-      echo "every mail but one renders at the wrong width." >&2
+    # The containers must stay FLUID. Losing these rules returns every mail to
+    # the layout its own markup asks for -- a fixed 600px column scaled into a
+    # corner of the pane, which is the bug this filter exists to fix, and it
+    # fails silently because the render still looks like a render.
+    if ! grep -q 'width:100%!important' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: tables are not forced fluid, so a fixed-width" >&2
+      echo "mail renders as a narrow column instead of filling the pane." >&2
+      exit 1
+    fi
+    if ! grep -q 'display:block!important' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: table cells are not stacked, so a two-column" >&2
+      echo "mail is squeezed into half the pane apiece." >&2
       exit 1
     fi
     ln -s ${aercHtmlChawanUnchecked} $out
