@@ -982,6 +982,20 @@ exit 0
     #
     # The failure mode this replaces was per-mail and silent. This one is
     # uniform: every mail is laid out for the pane it is in.
+    # br{display:none} REFLOWS HARD-WRAPPED MAIL. A plain-text reply arrives
+    # as HTML with a literal <br> at the end of every ~68-character line -- the
+    # wrapping is in the MARKUP, not the layout, so no width setting touches
+    # it. Suppressing the breaks lets the paragraph reflow to the pane:
+    # measured, that fixture goes 68 -> 122 columns, and the four newsletters
+    # are unharmed (arcteryx 108 -> 116, nyt 113 -> 114, uva 111 -> 110).
+    #
+    # THE COST, and it is real: a <br> used deliberately -- a signature block,
+    # a postal address, a list written as lines -- also collapses into a run.
+    # That is a cosmetic loss on short blocks against a readability gain on
+    # every hard-wrapped paragraph, which is most personal mail. If the
+    # signature mangling ever grates more than the narrow columns did, this one
+    # rule is what to remove.
+    #
     # FORCE IS NOT OPTIONAL -- it is the whole fix. Without
     # display.force-pixels-per-column, chawan IGNORES pixels-per-column in
     # interactive mode and uses the cell size the terminal reports (16px in
@@ -1002,7 +1016,8 @@ exit 0
         -c 'img{display:none!important}
             table{width:100%!important;max-width:100%!important}
             td{display:block!important;width:auto!important;max-width:100%!important}
-            div,p,span,body{max-width:100%!important}' \
+            div,p,span,body{max-width:100%!important}
+            br{display:none!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';

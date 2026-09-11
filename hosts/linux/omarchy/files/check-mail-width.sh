@@ -66,13 +66,11 @@ COLS, ROWS = 126, 40
 # failing -- the newsletter itself declares width="640" and resolves fine.
 BOUNDS = {
     "dermot":   ((("subject", "AI rundown"),),                        60,  4),
-    # 60, and it is NOT a rendering defect. This is a hard-wrapped plain-text
-    # reply: the line breaks are IN THE CONTENT, one block element per line, so
-    # the rendered width is the sender's wrap width and no layout setting moves
-    # it. Measured at ppc=5 with force: 68 under every uniform lever tried --
-    # padding removal, br suppression, white-space:normal, and ppc 3 through 8.
-    # Joining those lines would mean rewriting what the sender wrote.
-    "readwise": ((("subject", "WSJ parser"),),                        60,  4),
+    # 100 now. This was 60, on a finding that turned out to be wrong: the
+    # earlier note said no lever moved it, but br{display:none} moves it from
+    # 68 to 122 -- the hard wrap is a literal <br> per line, and suppressing
+    # the breaks lets the paragraph reflow. The bound rises with the render.
+    "readwise": ((("subject", "WSJ parser"),),                       100,  4),
     "arcteryx": ((("from", "arcteryx"), ("subject", "Outlet")),      100, 12),
     "nytdocket":((("from", "nytimes"), ("subject", "Docket")),       100, 12),
     "uvadocket":((("from", "law.virginia"), ("subject", "Docket")),  100, 12),
