@@ -931,6 +931,22 @@ exit 0
     trap 'rm -rf "$DIR"' EXIT INT TERM HUP
     printf '%s' "$PART" > "$DIR/index.html"
 
+    # TEMPORARY instrumentation: what width does aerc actually give a filter?
+    # WIDTH. aerc does NOT export COLUMNS to a filter -- measured: the filter
+    # env carries LINES, AERC_SUBJECT, AERC_FROM and no width at all -- so
+    # `''${COLUMNS:-100}` silently pinned every mail to 100 columns whatever the
+    # pane was, which is the narrow render that kept coming back.
+    #
+    # herdr knows: HERDR_PANE_ID and HERDR_BIN_PATH ARE inherited, and the
+    # widest line of the pane is its column count. Subtract aerc's sidebar
+    # (default 20) plus a column of padding to get the message view.
+    COLS=100
+    if [ -n "''${HERDR_PANE_ID:-}" ] && [ -x "''${HERDR_BIN_PATH:-}" ]; then
+      PANE=$("$HERDR_BIN_PATH" pane read "$HERDR_PANE_ID" 2>/dev/null \
+             | awk '{ if (length > m) m = length } END { print m+0 }')
+      [ "''${PANE:-0}" -gt 60 ] && COLS=$(( PANE - 21 ))
+    fi
+
     # LINEARISE THE COLUMNS. This is the one rule that is not styling: a
     # marketing mail lays its body out as a TABLE of fixed-width cells, and a
     # terminal cannot honour two 300px columns side by side in 126 cells. The
@@ -1045,7 +1061,7 @@ exit 0
     # pixels-per-column path; it is wrong. `cha -d` ignores COLUMNS from the
     # ENVIRONMENT, which is what that note had actually observed.
     cha -d \
-        -o display.columns=''${COLUMNS:-100} \
+        -o display.columns="$COLS" \
         -o buffer.images=false \
         -c 'img{display:none!important}
             table{width:100%!important;max-width:100%!important}
