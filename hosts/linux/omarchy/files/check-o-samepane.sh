@@ -99,6 +99,15 @@ before_panes = len([p for p in panes() if p["tab_id"] == tab])
 subprocess.run(["herdr", "pane", "send-keys", pane, "o"], capture_output=True)
 time.sleep(14)
 
+# THIS CHECK IS NOT TRUSTWORTHY AND MUST NOT BE USED AS A GATE.
+# It passes when terminal-browser REGISTERS against aerc's pane
+# (splitDir=None), and registering is not rendering: a window-targeted
+# screenshot of a "passing" run showed a BLANK pane. herdr composites kitty
+# graphics itself, so no text-stream signal -- escapes, bytes, letters --
+# distinguishes a painted pane from an empty one. The only instrument that can
+# settle it is a picture of the window: grim -T <stableId>, which captures a
+# specific toplevel no matter where it sits.
+#
 # ASK THE BROWSER, NOT THE PANE. herdr composites kitty graphics ITSELF -- its
 # config says the flag gates "herdr's own image compositing" -- so a painted
 # pane and a blank one both read as zero bytes through `pane read`, and the
