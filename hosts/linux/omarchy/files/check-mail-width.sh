@@ -67,7 +67,14 @@ BOUNDS = {
 
 def fixtures():
     out = {}
-    for f in glob.glob(os.path.expanduser("~/areas/mail/*/INBOX/cur/*")):
+    # NEWEST FIRST. An arbitrary match measures a mail the reader never opens:
+    # the Arc'teryx fixture was silently the Sperro SV announcement rather than
+    # the Fall Outlet sale, and the UVA one a Docket from July rather than
+    # today's -- so the numbers described documents with different layouts than
+    # the ones being complained about.
+    files = sorted(glob.glob(os.path.expanduser("~/areas/mail/*/INBOX/cur/*")),
+                   key=lambda f: os.path.getmtime(f), reverse=True)
+    for f in files:
         if len(out) == len(BOUNDS):
             break
         try:
@@ -131,6 +138,7 @@ def render(html):
     # screen one measures the header and calls it the body. Let it settle, then
     # page down and sample the screens that actually hold prose.
     buf = b""
+    snaps = []
     start = time.time()
     end = start + 16
     sent = 0
@@ -141,14 +149,17 @@ def render(html):
         r, _, _ = select.select([m_fd], [], [], 0.4)
         elapsed = time.time() - start
         if sent == 0 and elapsed > 4:
+            snaps.append(bytes(buf))
             try: os.write(m_fd, b" ")
             except OSError: pass
             sent = 1
         elif sent == 1 and elapsed > 7:
+            snaps.append(bytes(buf))
             try: os.write(m_fd, b" ")
             except OSError: pass
             sent = 2
         elif sent == 2 and elapsed > 10:
+            snaps.append(bytes(buf))
             sent = 3
         if not r:
             continue
@@ -172,7 +183,8 @@ def render(html):
         os.kill(pid, 15); os.waitpid(pid, 0)
     except (ProcessLookupError, ChildProcessError):
         pass
-    return buf
+    snaps.append(bytes(buf))
+    return snaps
 
 
 def screen(buf):
@@ -257,7 +269,13 @@ MAX_CLIP = 0.02
 bad = []
 print(f"aerc HTML render, {COLS}x{ROWS} pty, filter {os.path.basename(FILTER)}")
 for name, (_, min_w, max_i) in BOUNDS.items():
-    lines = [l for l in screen(render(fx[name])) if l.strip()]
+    seen = set()
+    lines = []
+    for snap in render(fx[name]):
+        for l in screen(snap):
+            if l.strip() and l not in seen:
+                seen.add(l)
+                lines.append(l)
     if not lines:
         print(f"  {name:9s} EMPTY")
         bad.append(name)
