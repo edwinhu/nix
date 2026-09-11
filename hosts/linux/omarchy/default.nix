@@ -834,7 +834,7 @@ exit 0
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
   aercHtmlChawanUnchecked = pkgs.writeShellScript "aerc-html-chawan-unchecked" ''
-    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.coreutils ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.ncurses pkgs.coreutils ]}:$PATH
     set -u
 
     # STOCK CHAWAN, plus ONE option. Everything else that used to be here --
@@ -919,23 +919,89 @@ exit 0
     # It is what a phone does with the same markup, and it is why the mail
     # ships a mobile layout at all.
 
-    # IMAGES OFF, AND THEIR BOXES WITH THEM. This is not a preference, it is
-    # the width bug. ~/.config/chawan/config.toml sets images = true, which is
-    # right for chawan in a real terminal; here the filter cannot draw them, so
-    # chawan reserves the layout box anyway and aerc paints an EMPTY WHITE SLAB
-    # -- measured on the Arc'teryx mail, half the pane, containing nothing --
-    # with the prose crushed into what is left and clipped at its left edge.
+    # IMAGES OFF, AND THEIR BOXES WITH THEM. ~/.config/chawan/config.toml sets
+    # images = true, which is right for chawan in a real terminal; here the
+    # filter cannot draw them, so chawan reserves the layout box anyway and
+    # aerc paints an EMPTY WHITE SLAB -- measured on the Arc'teryx mail, half
+    # the pane, containing nothing -- with the prose crushed into what is left.
+    # The `img` rule then removes the `[img]` alt-text stubs that replace the
+    # box and hold cells open in its place.
     #
-    # `buffer.images=false` stops the reservation; the `img` rule then removes
-    # the `[img]` alt-text stubs that replace it, which otherwise hold cells
-    # open and push the text sideways all over again.
+    # THE RATIO IS PER MESSAGE, because the thing it has to match is per
+    # message. chawan maps one cell to `pixels-per-column` CSS px, and a mail
+    # hardcodes its own container: Arc'teryx is 600px, the newsletters 640px,
+    # a plain reply has none at all. One global ratio maps exactly ONE
+    # container width onto this pane, so whatever suits Arc'teryx leaves the
+    # Docket in a third of the screen and vice versa -- measured, Docket 106 /
+    # Arc'teryx 77 at ppc=4, and Docket 56 / Arc'teryx 94 at ppc=5.
     #
-    # This is also why the pty harness missed it: a painted blank region is not
-    # leading whitespace, so it measured a 9-column indent on a render whose
-    # text actually starts halfway across the pane.
-    cha -o display.pixels-per-column=5 \
+    # STACK THE CELLS, which is safe ONLY once the ratio is per message. A
+    # marketing mail lays its body out as a table of fixed-width cells and a
+    # terminal cannot honour two 300px columns side by side, so Arc'teryx sat
+    # at a 94-column median. Blocking the cells lifts it to 114.
+    #
+    # This same rule was tried under the old GLOBAL ratio and rejected: it cut
+    # the left off every line ("Introducing System 0" as "ugh System 0"). That
+    # was not the rule's fault -- the global ratio made the container wider
+    # than the viewport, chawan centred the overflow, and the offset went
+    # negative. With the container sized to fit, the measured clipping on that
+    # same mail is 0.0%.
+    #
+    # So read the container out of the document and divide by the pane. Too
+    # LOW and the container exceeds the viewport, chawan centres it, the left
+    # offset goes NEGATIVE and the start of every line is cut off -- that is
+    # what "Introducing System 0" rendering as "ugh System 0" was. Too HIGH and
+    # the mail sits in a narrow centred column. Dividing hits the one value
+    # where the mail's own width IS the pane's width.
+    # THE PANE'S WIDTH, MEASURED ON THE PANE. `tput cols </dev/tty` reads the
+    # OUTER terminal, which inside aerc's embedded terminal answered 80 -- so a
+    # 600px mail computed 600/80 = 7 and rendered as a narrow centred column
+    # while the same filter, handed the real 126, rendered it at full width.
+    # stdout IS the pane here (aerc runs this with the `!` prefix, in its own
+    # pty), so ask stdout.
+    COLS=$(tput cols 2>/dev/null || echo 126)
+    [ "$COLS" -ge 40 ] 2>/dev/null || COLS=126
+    PPC=$(python3 - "$DIR/index.html" "$COLS" <<'PYWIDTH'
+import re, sys
+
+html = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+cols = max(40, int(sys.argv[2]))
+
+# The mail's own container: the widest fixed width it states, in attributes or
+# inline styles. Ignore anything tiny (spacer gifs are width="1") and anything
+# absurd, so one stray declaration cannot set the ratio for the whole document.
+widths = [int(w) for w in re.findall(r'width\s*=\s*["\']?(\d{3,4})', html)]
+widths += [int(w) for w in re.findall(r'width\s*:\s*(\d{3,4})px', html)]
+widths = [w for w in widths if 300 <= w <= 1600]
+
+if not widths:
+    # No container -- a plain reply. chawan's own default already fills the
+    # pane, and forcing a ratio here only shrinks it.
+    print(8)
+else:
+    # FLOOR, NOT CEIL, and this one line is the whole width problem.
+    #
+    # 600 / 126 = 4.76. Ceiling makes that 5, and at 5 the mail renders as a
+    # narrow centred column -- the exact complaint. Floor makes it 4, and the
+    # same mail's copy starts at column 4 and runs ~75 characters: "Save big on
+    # fan-favourite gear from last season. Score an extra 20% off" arrives
+    # whole. Rounding UP always buys margin at the cost of text, because the
+    # leftover is spent as centring.
+    #
+    # Ceiling was adopted to stop the container exceeding the viewport, since
+    # chawan centres an over-wide box and the left offset goes negative. That
+    # risk is real but it is not paid here: measured on this mail at ppc=4, the
+    # clipping rate is 0.0% and every sentence is intact.
+    import math
+    container = max(widths)
+    ppc = max(1, math.floor(container / cols))
+    print(max(3, min(16, ppc)))
+PYWIDTH
+)
+
+    cha -o display.pixels-per-column="$PPC" \
         -o buffer.images=false \
-        -c 'img{display:none!important}' \
+        -c 'img{display:none!important}td{display:block!important;width:auto!important}table{width:100%!important}body{width:100%!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';
@@ -969,9 +1035,20 @@ exit 0
     # default mapping and every mail silently re-renders at a different text
     # density, which is precisely the class of damage the original gate existed
     # for.
-    if ! grep -qE 'display\.pixels-per-column=[0-9]+' ${aercHtmlChawanUnchecked}; then
-      echo "aerc-html-chawan: no fixed display.pixels-per-column is passed to cha," >&2
+    # The ratio is now DERIVED per message rather than fixed, so the gate can no
+    # longer look for a literal. It asserts the two halves that make the
+    # derivation real: the option is passed, and the value is computed from the
+    # document. Losing either silently returns the mail to chawan's default
+    # density, which is the failure this gate has always existed for.
+    if ! grep -qE 'display\.pixels-per-column=("\$PPC"|[0-9]+)' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: no display.pixels-per-column is passed to cha," >&2
       echo "so the mail's text density is whatever chawan defaults to." >&2
+      exit 1
+    fi
+    if ! grep -q 'PPC=' ${aercHtmlChawanUnchecked}; then
+      echo "aerc-html-chawan: pixels-per-column is not computed from the" >&2
+      echo "message's own container width, so one global ratio is back and" >&2
+      echo "every mail but one renders at the wrong width." >&2
       exit 1
     fi
     ln -s ${aercHtmlChawanUnchecked} $out

@@ -22,6 +22,9 @@ exec python3 - "$FILTER" "$REPORT" <<'PY'
 import email, fcntl, glob, os, pty, re, select, statistics, struct, sys, termios, time
 
 FILTER, REPORT = sys.argv[1], sys.argv[2] == "1"
+# 126, the FULL terminal. aerc hides the sidebar in the message VIEW -- only
+# the message LIST is split -- so the filter gets the whole width. Measured on
+# the live screen with : header and body lines both run to 126.
 COLS, ROWS = 126, 40
 
 # fixture -> (matcher, min median width, max median indent)
@@ -50,11 +53,16 @@ COLS, ROWS = 126, 40
 # narrow. These bounds are the no-damage ceilings, and docket's 106 is
 # deliberately NOT among them: it was only ever reachable while arcteryx was
 # being shredded.
+# Each fixture matches on EVERY clause, not the first one that hits. Matching
+# uvadocket on the sender alone picked up an unrelated UVA mail with no
+# container at all, which then measured 36 columns and was read as the filter
+# failing -- the newsletter itself declares width="640" and resolves fine.
 BOUNDS = {
-    "dermot":   (("subject", "AI rundown"),   20,  1),
-    "readwise": (("subject", "WSJ parser"),   60,  4),
-    "docket":   (("subject", "The Docket"),   55,  8),
-    "arcteryx": (("from",    "arcteryx"),     90, 10),
+    "dermot":   ((("subject", "AI rundown"),),                        20,  2),
+    "readwise": ((("subject", "WSJ parser"),),                        95,  4),
+    "arcteryx": ((("from", "arcteryx"),),                            100, 12),
+    "nytdocket":((("from", "nytimes"), ("subject", "Docket")),       100, 12),
+    "uvadocket":((("from", "law.virginia"), ("subject", "Docket")),  100, 12),
 }
 
 def fixtures():
@@ -67,11 +75,16 @@ def fixtures():
         except Exception:
             continue
         subj, frm = m.get("Subject") or "", (m.get("From") or "").lower()
-        for name, ((field, needle), _, _) in BOUNDS.items():
+        for name, (clauses, _, _) in BOUNDS.items():
             if name in out:
                 continue
-            hay = subj if field == "subject" else frm
-            if needle.lower() not in hay.lower():
+            ok = True
+            for field, needle in clauses:
+                hay = subj if field == "subject" else frm
+                if needle.lower() not in hay.lower():
+                    ok = False
+                    break
+            if not ok:
                 continue
             for p in m.walk():
                 if p.get_content_type() == "text/html":
@@ -82,6 +95,7 @@ def fixtures():
                     out[name] = h
                     break
     return out
+
 
 def render(html):
     """Run the filter the way aerc does: the message on a PIPE at stdin, the
@@ -248,18 +262,39 @@ for name, (_, min_w, max_i) in BOUNDS.items():
         print(f"  {name:9s} EMPTY")
         bad.append(name)
         continue
-    w = statistics.median([len(l) for l in lines])
-    ind = statistics.median([len(l) - len(l.lstrip()) for l in lines])
+    # PROSE ONLY. Measuring every non-blank row counts the furniture: a
+    # horizontal rule, a stretched banner and a row of box-drawing characters
+    # are all full-width lines, so a rule that widens the SHELL and leaves the
+    # text untouched still moves the median. Measured that way Arc'teryx went
+    # 77 -> 122 while the reader saw no change at all in the body -- only the
+    # banner at the top got wider.
+    #
+    # A prose line is one carrying real words: 20+ letters. Rules, spacers and
+    # single-word buttons are excluded, so the number tracks the thing being
+    # complained about.
+    prose = [l for l in lines if sum(c.isalpha() for c in l) >= 20]
+    if not prose:
+        print(f"  {name:9s} NO PROSE ROWS")
+        bad.append(name)
+        continue
+    w = statistics.median([len(l) for l in prose])
+    ind = statistics.median([len(l) - len(l.lstrip()) for l in prose])
     clip, toks = clipped_fraction(lines, vocab(fx[name]))
     # Clipping is REPORTED, not gated: the heuristic flags dermot at 8.6%
     # and docket at 30% on renders that are visibly perfect, because quoted
     # text and entities produce tokens absent from the source. It caught the
     # real arcteryx clipping, so it earns its place as a signal to read --
     # not as a verdict.
-    ok = w >= min_w and ind <= max_i
+    # A CONTENT FLOOR, because width alone cannot tell a render from an error.
+    # Measured: a broken candidate emitted ONE line -- a 125-character shell
+    # error -- and passed every width bound in the table, so five variants were
+    # reported as fine when none of them had rendered at all.
+    MIN_ROWS = 8
+    ok = w >= min_w and ind <= max_i and len(lines) >= MIN_ROWS
     why = []
     if w < min_w: why.append("narrow")
     if ind > max_i: why.append("indented")
+    if len(lines) < 8: why.append("NO CONTENT")
     if clip > MAX_CLIP: why.append("clip? (advisory)")
     print(f"  {name:9s} median_w={w:5.0f} (min {min_w:3d})  median_indent={ind:4.0f} (max {max_i:2d})  "
           f"clipped={clip*100:5.1f}% (max {MAX_CLIP*100:.0f}%)  rows={len(lines):3d}  "
