@@ -833,6 +833,30 @@ exit 0
   #
   # Sixel, not kitty, for the same reason as the filter it replaces: aerc's
   # embedded terminal drops a child's kitty APC and decodes its sixel.
+  # text/html: a DUMP, not a browser.
+  #
+  # aerc's viewer filter is a pipe -- HTML on stdin, text on stdout -- and what
+  # was here was INTERACTIVE chawan, registered with aerc's `!` prefix so it
+  # took the terminal. A browser in that slot repaints, and its repaints land
+  # in the message view as overdrawn text: "Maxmly," for "Max," over "Warmly,",
+  # "Michael D. BlatchleyThanks so much." for two lines that are not adjacent.
+  # Every colour, stylesheet and escape-stripping workaround that accumulated
+  # here was aimed at damage the `!` was causing.
+  #
+  # w3m -dump, at the width aerc hands the filter in COLUMNS. It is the width
+  # fix and the garbling fix at once, and it needs no stylesheet: chawan maps
+  # CSS px to cells and so renders a 600px mail as a narrow column, while w3m
+  # reflows to the pane. Measured on a real message at -cols 126: w3m wraps at
+  # 125, `cha -d` at 80 (it ignores COLUMNS entirely), and both are clean --
+  # the garbling is the interactive mode alone.
+  aercHtmlW3m = pkgs.writeShellScript "aerc-html-w3m" ''
+    export PATH=${lib.makeBinPath [ pkgs.w3m pkgs.coreutils ]}:$PATH
+    set -u
+    # aerc exports COLUMNS for filters; the fallback is only for a hand-run.
+    exec w3m -dump -T text/html -cols "${COLUMNS:-100}" \
+         -o display_image=false -o auto_image=false
+  '';
+
   aercHtmlChawanUnchecked = pkgs.writeShellScript "aerc-html-chawan-unchecked" ''
     export PATH=${lib.makeBinPath [ pkgs.chawan pkgs.python3 pkgs.ncurses pkgs.coreutils ]}:$PATH
     set -u
@@ -3089,7 +3113,7 @@ in
       #
       # Real image/* PARTS are a different code path again and render inline --
       # see the [filters] note above about not registering an image/* filter.
-      text/html=!${aercHtmlChawan}
+      text/html=${aercHtmlW3m}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
