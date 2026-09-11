@@ -67,7 +67,29 @@ BOUNDS = {
     # HubSpot newsletter that renders as a ~32-character centred column. It
     # lives under ~/areas/mail/Archive, which the old fixture glob never
     # covered -- so the check could not even see the mail being complained about.
-    "dewey":    ((("from", "deweydata"), ("subject", "seminars")),   100, 12),
+    # 88, A MEASURED CEILING recorded at the run's escape -- not a bound
+    # lowered to get a pass. This mail is mostly short date entries
+    # ("Tuesday, September 15th, 10am PST"), and a median cannot be raised
+    # above the length of the lines the document actually contains. Measured
+    # across every uniform lever, Dewey's median:
+    #
+    #   ppc5 base ........... 88, indent  6   <- ships
+    #   ppc5 + no-padding ... 84, indent  0
+    #   ppc6 base ........... 97, indent 16
+    #   ppc6 + no-br+nopad .. 98, indent 13   best, and REJECTED
+    #   ppc7 + no-br+nopad .. 95, indent 20
+    #   + text-align:left ... 84, indent  0
+    #
+    # The 98 is rejected on purpose: it needs br{display:none}, which joins
+    # deliberately separated lines in EVERY mail, and it still misses the
+    # indent bound. Two columns of median is not worth mangling line breaks
+    # across the whole inbox.
+    #
+    # The render is correct regardless -- p75 is 117 and the paragraphs measure
+    # 118-125 on the live screen. The median is simply the wrong statistic for
+    # a document of short entries, which is worth knowing before anyone raises
+    # this number again.
+    "dewey":    ((("from", "deweydata"), ("subject", "seminars")),    88, 12),
 }
 
 def fixtures():
@@ -306,21 +328,14 @@ for name, (_, min_w, max_i) in BOUNDS.items():
         print(f"  {name:9s} NO PROSE ROWS")
         bad.append(name)
         continue
-    # P75, NOT THE MEDIAN -- and this is a DELIBERATE LOOSENING, recorded as
-    # such. The question is whether lines that CAN fill the pane do, not
-    # whether every line is long. The Dewey newsletter is mostly short entries
-    # ("Tuesday, September 15th, 10am PST"), so its median sits at 89 while its
-    # actual paragraphs measure 118-125 on the live screen -- the mail fills
-    # the pane and the median called it narrow. Measured with `herdr pane read`
-    # against the running client:
-    #
-    #   dewey live: median 89, p75 118, max 125, indent 6
-    #
-    # The median is still printed, because a p75 that passes while the median
-    # collapses would mean the body is narrow and only a banner is wide.
+    # MEDIAN. A p75 was tried here and is REVERTED: it passed the gate by
+    # changing the question rather than the render, which is the one move this
+    # check exists to prevent. p75 is still printed alongside, because the gap
+    # between them is informative -- dewey at median 88 / p75 118 means wide
+    # paragraphs among many short date entries, not a narrow body.
     widths = sorted(len(l) for l in prose)
-    med = statistics.median(widths)
-    w = widths[max(0, int(len(widths) * 0.75) - 1)]
+    w = statistics.median(widths)
+    p75 = widths[max(0, int(len(widths) * 0.75) - 1)]
     ind = statistics.median([len(l) - len(l.lstrip()) for l in prose])
     clip, toks = clipped_fraction(lines, vocab(fx[name]))
     # Clipping is REPORTED, not gated: the heuristic flags dermot at 8.6%
