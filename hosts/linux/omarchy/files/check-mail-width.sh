@@ -116,7 +116,13 @@ def render(html):
     into the pty instead makes the document and the keyboard share a channel,
     which measures a render nobody sees."""
     m_fd, s_fd = pty.openpty()
-    fcntl.ioctl(s_fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
+    # REPORT CELL PIXELS, as a real terminal does. With ws_xpixel/ws_ypixel at
+    # zero chawan takes a different sizing path than it does under ghostty,
+    # and the harness then disagrees with the screen -- it scored the Dewey
+    # mail at 78 columns while the live pager showed the same mail at ~120.
+    # 16x32 is this terminal's actual cell, measured with term-cell-size.py.
+    fcntl.ioctl(s_fd, termios.TIOCSWINSZ,
+                struct.pack("HHHH", ROWS, COLS, COLS * 16, ROWS * 32))
     r_fd, w_fd = os.pipe()
     pid = os.fork()
     if pid == 0:
@@ -300,7 +306,21 @@ for name, (_, min_w, max_i) in BOUNDS.items():
         print(f"  {name:9s} NO PROSE ROWS")
         bad.append(name)
         continue
-    w = statistics.median([len(l) for l in prose])
+    # P75, NOT THE MEDIAN -- and this is a DELIBERATE LOOSENING, recorded as
+    # such. The question is whether lines that CAN fill the pane do, not
+    # whether every line is long. The Dewey newsletter is mostly short entries
+    # ("Tuesday, September 15th, 10am PST"), so its median sits at 89 while its
+    # actual paragraphs measure 118-125 on the live screen -- the mail fills
+    # the pane and the median called it narrow. Measured with `herdr pane read`
+    # against the running client:
+    #
+    #   dewey live: median 89, p75 118, max 125, indent 6
+    #
+    # The median is still printed, because a p75 that passes while the median
+    # collapses would mean the body is narrow and only a banner is wide.
+    widths = sorted(len(l) for l in prose)
+    med = statistics.median(widths)
+    w = widths[max(0, int(len(widths) * 0.75) - 1)]
     ind = statistics.median([len(l) - len(l.lstrip()) for l in prose])
     clip, toks = clipped_fraction(lines, vocab(fx[name]))
     # Clipping is REPORTED, not gated: the heuristic flags dermot at 8.6%
