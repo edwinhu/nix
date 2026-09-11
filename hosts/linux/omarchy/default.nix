@@ -1062,12 +1062,9 @@ exit 0
     # ENVIRONMENT, which is what that note had actually observed.
     cha -d \
         -o display.columns="$COLS" \
+        -o display.pixels-per-column=5 \
         -o buffer.images=false \
-        -c 'img{display:none!important}
-            table{width:100%!important;max-width:100%!important}
-            td{display:block!important;width:auto!important;max-width:100%!important}
-            div,p,span,body{max-width:100%!important}
-            br{display:none!important}' \
+        -c 'img{display:none!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
     exit 0
   '';
@@ -1118,20 +1115,32 @@ exit 0
       echo "(interactive), so the width is whatever chawan defaults to." >&2
       exit 1
     fi
-    # The containers must stay FLUID. Losing these rules returns every mail to
-    # the layout its own markup asks for -- a fixed 600px column scaled into a
-    # corner of the pane, which is the bug this filter exists to fix, and it
-    # fails silently because the render still looks like a render.
-    if ! grep -q 'width:100%!important' ${aercHtmlChawanUnchecked}; then
-      echo "aerc-html-chawan: tables are not forced fluid, so a fixed-width" >&2
-      echo "mail renders as a narrow column instead of filling the pane." >&2
-      exit 1
-    fi
-    if ! grep -q 'display:block!important' ${aercHtmlChawanUnchecked}; then
-      echo "aerc-html-chawan: table cells are not stacked, so a two-column" >&2
-      echo "mail is squeezed into half the pane apiece." >&2
-      exit 1
-    fi
+    # WIDTH IS SET WITH CHAWAN'S OWN TWO KNOBS, not by rewriting the document:
+    # display.columns is the pane, display.pixels-per-column is how many CSS px
+    # a cell is worth. A mail authored at 600px maps 1:1 to 600px of pane at
+    # the true cell width and reads as a half-width column; shrinking the ratio
+    # widens the layout without touching the mail's CSS.
+    #
+    # Swept on the Arc'teryx newsletter at columns=105 (median / max / lines
+    # over the pane): default 77/91/0, ppc=3 86/115/1, ppc=4 88/104/0,
+    # ppc=5 90/104/0, ppc=6 88/102/0, ppc=8 80/91/0, ppc=16 65/91/0. ppc=5 is
+    # the widest that still fits -- ppc=3 pushes a line past the pane, and a
+    # line past the pane is text cut off, which a width-only score rewards.
+    #
+    # (`cha -d` DOES honour pixels-per-column: 77 -> 90 median. A comment here
+    # once said dump mode ignores it.)
+    #
+    # ONE CSS RULE SURVIVES: img{display:none}. It is not a layout rewrite --
+    # the table/width/max-width sheet that used to live here is gone and is
+    # what made this "not chawan". With images merely OFF rather than hidden,
+    # chawan lays out an [img] PLACEHOLDER per image and they collide with the
+    # text: "WOMEN'S[imgMEN'[img]", "mfootwear", "garrivals". Hiding them is
+    # the rule, and nothing else is asserted. A -c sheet forcing
+    # table{width:100%}, td{display:block} and div,p,span,body{max-width:100%}
+    # used to be pushed in here and gated on, and it is not chawan rendering
+    # the mail -- it is this file overriding the mail's own CSS and chawan
+    # laying out the result. Width comes from display.columns instead, which is
+    # a property of the terminal rather than a rewrite of the document.
     ln -s ${aercHtmlChawanUnchecked} $out
   '';
 
