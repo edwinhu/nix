@@ -105,3 +105,69 @@ nix flake update nix-secrets  # Update only secrets
   ~/.nix-profile/bin/<app>`, `ls -lat ~/.local/state/nix/profiles/`) before
   diagnosing. Omarchy 4's shell reads `DesktopEntries` across `XDG_DATA_DIRS`
   and watches for changes, so no launcher-reindex step is needed.
+
+## Any claim about what aerc renders must come from a screenshot
+
+`hosts/linux/omarchy/files/check-o-shot.sh <outdir>` is the ONLY instrument that
+settles what is on screen. Run it, look at the PNGs yourself, and send them to
+the user. Do not report a render as working on anything else.
+
+Nothing else here can answer the question, and each of these was believed and
+was wrong:
+
+- `terminal-browser ls --json` reporting `splitDir=null` means the browser
+  REGISTERED against the pane, not that it painted. A "passing" run's pane was
+  blank.
+- `herdr pane read` cannot see graphics at all: herdr composites kitty images
+  itself, so a painted pane and an empty one are both zero bytes. Every
+  escape-count and letter-count gate built on it was blind by construction.
+- A filter that works standalone proves the pipe, not the pane. The sixel
+  filter emits a valid 390KB DCS payload on the command line and still shows
+  no image inside aerc.
+
+The guards in that script exist because each failure below produced a confident
+wrong report:
+
+- **Right window.** Find the ghostty window DISPLAYING aerc via the herdr
+  workspace label and its active tab. herdr titles a window after the workspace
+  ("omarchy: assistant"), never the tab, so matching the title against "aerc"
+  rejects the correct window; `clients[0]` photographs an unrelated session.
+- **Liveness probe.** Move the cursor, require the pixels to change, over THREE
+  frames (`j` on the last message legitimately changes nothing). A frozen frame
+  is indistinguishable from a blank pane.
+- **Never float the window.** A floated window returns a cached buffer: three
+  frames and two runs apart all hashed identically.
+- **A dead aerc looks exactly like a frozen screen** — its last frame stays in
+  the pane. Check `ps -eo args= | grep -c '[b]in/aerc$'` before blaming the
+  compositor.
+- **Wait for the render.** The sixel filter goes through Chromium; shooting 2s
+  after the header appears photographs the text and reports the image missing.
+
+Driving aerc, hard-won:
+
+- `o` is safe to send. **Enter in [view] is `:reply -a`** and has opened reply
+  composers to newsletters. In [messages] `q` is `:prompt 'Quit?' quit`, not a
+  close. Read the pane to decide state before sending any key; never on a timer.
+- aerc runs as `.aerc-wrapped`, so `pkill -x aerc` reports success and kills
+  nothing.
+- `pkill -f <pattern>` matches the running script's own command line and kills
+  the shell (exit 144). Collect explicit PIDs with `ps -eo pid=,args=` instead.
+- Every `herdr` call prints a `mise` banner on stdout. Filter
+  `^mise ~/.config/mise` or it is counted as pane content.
+- `hyprctl dispatch` parses its argument as LUA on this build. Old spellings
+  (`dispatch setfloating address:0x…`) fail with a syntax error printed to
+  stdout and **exit 0**, so they look like they worked. The form that runs is
+  `hyprctl dispatch "hl.dsp.window.float{window='address:0x…'}"`.
+
+## aerc's text/html filter: what the `!` means
+
+`!` runs the filter IN A TERMINAL. It is required for graphics — without it
+aerc's pager strips the DCS introducer and a sixel payload prints as literal
+`q"1;1;1248;540#0;2;91;91;91…`. It is also what made an interactive browser
+overdraw the message view ("Maxmly," for "Max," over "Warmly,"). The rule is
+not "avoid `!`", it is: **a filter must print its output and exit. Never put
+something that repaints behind it.**
+
+aerc renders **sixel**, not kitty. A kitty-graphics probe inside `:term` prints
+its caption and no image; do not generalise that to "aerc has no graphics",
+which contradicts the working sixel path.

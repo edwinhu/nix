@@ -89,24 +89,53 @@ def shot(name):
 # hl.dsp.* and take a table. Errors go to stdout with exit 0, so an unchecked
 # call looks like it worked -- which is how a whole evening of "focus didn't
 # move it" was really "the command never ran".
-hypr("hl.dsp.window.float{window='%s'}" % addr)
-time.sleep(1)
-hypr("hl.dsp.window.bring_to_top()")
-time.sleep(3)
+# A FLOATED window returns a cached buffer, so put it back to tiled if a
+# previous run left it floating. hl.dsp.window.bring_to_top() re-tiles it.
+if w["floating"]:
+    hypr("hl.dsp.window.bring_to_top()")
+    time.sleep(3)
+    w = [c for c in json.loads(sh("hyprctl", "clients", "-j"))
+         if c["address"] == w["address"]][0]
+
+# DO NOT FLOAT THE WINDOW. Floating it (hl.dsp.window.float -> 800x600) makes
+# grim return a CACHED buffer: three frames and two separate runs all came
+# back with the identical hash 8a67e4d52f8d. Every live run was tiled at full
+# size, every stale one was floated. The float was added to drag an off-screen
+# window into view; it turned out to be the thing freezing the capture.
+
 at = [c for c in json.loads(sh("hyprctl", "clients", "-j")) if c["address"] == w["address"]][0]
 print(f"window at {at['at']} size {at['size']} floating={at['floating']}")
 if at["at"][0] < 0 or at["at"][1] < 0:
     sys.exit(f"ABORT: window is still off-screen at {at['at']}; it will not repaint "
              "and every capture would be a stale buffer.")
 
+# 1b. CLEAR ANY BROWSER STILL HOLDING THE PANE. A leftover instance from a
+#     previous run holds aerc's pane, and then the liveness probe cannot move
+#     a cursor because aerc is not the thing on screen -- the run aborts
+#     reporting a stale capture when the real state is "occupied". Explicit
+#     PIDs: `pkill -f` matches this script's own command line and kills the
+#     shell running it (exit 144, hit four times in one session).
+ps = sh("ps", "-eo", "pid=,args=")
+stale = [l.split(None, 1)[0] for l in ps.splitlines()
+         if ("terminal-browser" in l or "aerc-html-chawan" in l) and "awk" not in l]
+for pid in stale:
+    subprocess.run(["kill", "-TERM", pid], capture_output=True)
+if stale:
+    print(f"cleared {len(stale)} process(es) holding the pane")
+    time.sleep(3)
+
 # 2. LIVENESS. Move the cursor; the picture MUST change. This is the check the
 #    old screenshots never had, and it is why they were believed.
+# Compare ALL THREE frames: `j` on the last message of the list legitimately
+# changes nothing, and a two-frame probe then calls a perfectly live screen
+# stale and aborts a good run.
 _, a = shot("probe-a")
 subprocess.run(["herdr", "pane", "send-keys", pane, "j"], capture_output=True); time.sleep(2)
 _, b = shot("probe-b")
 subprocess.run(["herdr", "pane", "send-keys", pane, "k"], capture_output=True); time.sleep(2)
-print(f"liveness probe: {a} -> {b}")
-if a == b:
+_, c = shot("probe-c")
+print(f"liveness probe: {a} -> {b} -> {c}")
+if a == b == c:
     sys.exit("ABORT: capture is STALE (a cursor move did not change the pixels). "
              "Any before/after taken now would be a frozen frame, not evidence.")
 print("liveness probe: LIVE")
@@ -129,7 +158,10 @@ else:
 subprocess.run(["herdr", "pane", "send-keys", pane, "o"], capture_output=True)
 if not wait_for(pane, "Subject:"):
     sys.exit("no message opened")
-time.sleep(2)
+# The sixel filter renders the mail through Chromium before emitting the
+# image. Shooting 2s after the header appears photographs the text and reports
+# the picture missing.
+time.sleep(12)
 before_path, before_h = shot("BEFORE")
 before_panes = len([p for p in json.loads(herdr("pane", "list"))["result"]["panes"] if p["tab_id"] == tab])
 

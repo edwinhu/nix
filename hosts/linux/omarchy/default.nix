@@ -3113,7 +3113,18 @@ in
       #
       # Real image/* PARTS are a different code path again and render inline --
       # see the [filters] note above about not registering an image/* filter.
-      text/html=${aercHtmlW3m}
+      # SIXEL, not kitty: aerc's terminal drops kitty graphics from a filter
+      # and displays sixel, which is why terminal-browser can never paint in
+      # aerc's own pane and this can. Renders the mail to a PNG, scales it to
+      # the pane, emits sixel, then the w3m text underneath.
+      # `!` = run the filter in a terminal, which is the ONLY way a DCS
+      # reaches a terminal that can draw it: without it aerc's pager strips
+      # the introducer and the sixel payload prints as literal text
+      # (q"1;1;1248;540#0;2;91;91;91...). The `!` was never the bug -- pairing
+      # it with an INTERACTIVE BROWSER was, because a browser repaints and the
+      # repaints overdraw ("Maxmly,"). This script prints an image and some
+      # text and exits, so there is nothing to repaint.
+      text/html=!${aercHtmlSixel}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
