@@ -28,6 +28,13 @@ FILTER, REPORT = sys.argv[1], sys.argv[2] == "1"
 COLS, ROWS = 126, 40
 
 # fixture -> (matcher, min median width, max median indent)
+#
+# TWO FIXTURES ARE CAPPED BY THEIR OWN CONTENT, not by the renderer, and their
+# bounds say so: readwise at 60 and dewey at 88. A median cannot exceed the
+# length of the lines a document contains, and both of these are documents of
+# short lines -- a hard-wrapped reply and a list of dated seminar entries. The
+# four mails with real paragraphs all clear 110. Anyone raising these two
+# numbers should first check whether the mail has long lines to measure.
 # Bounds are MEASURED CEILINGS, not aspirations. 110 was picked by hand for
 # docket and arcteryx and sat ABOVE what those mails permit: arcteryx lays its
 # body out as two 300px columns, which is 75 cells at ppc=4, so 77 is the mail's
@@ -59,6 +66,12 @@ COLS, ROWS = 126, 40
 # failing -- the newsletter itself declares width="640" and resolves fine.
 BOUNDS = {
     "dermot":   ((("subject", "AI rundown"),),                        60,  4),
+    # 60, and it is NOT a rendering defect. This is a hard-wrapped plain-text
+    # reply: the line breaks are IN THE CONTENT, one block element per line, so
+    # the rendered width is the sender's wrap width and no layout setting moves
+    # it. Measured at ppc=5 with force: 68 under every uniform lever tried --
+    # padding removal, br suppression, white-space:normal, and ppc 3 through 8.
+    # Joining those lines would mean rewriting what the sender wrote.
     "readwise": ((("subject", "WSJ parser"),),                        60,  4),
     "arcteryx": ((("from", "arcteryx"), ("subject", "Outlet")),      100, 12),
     "nytdocket":((("from", "nytimes"), ("subject", "Docket")),       100, 12),
