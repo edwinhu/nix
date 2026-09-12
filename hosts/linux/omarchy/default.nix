@@ -1062,7 +1062,7 @@ exit 0
     # ENVIRONMENT, which is what that note had actually observed.
     cha -d \
         -o display.columns="$COLS" \
-        -o display.pixels-per-column=5 \
+        -o display.pixels-per-column=6 \
         -o display.color-mode=true-color \
         -o display.minimum-contrast=-1 \
         -o buffer.images=false \
@@ -1122,6 +1122,21 @@ exit 0
     # a cell is worth. A mail authored at 600px maps 1:1 to 600px of pane at
     # the true cell width and reads as a half-width column; shrinking the ratio
     # widens the layout without touching the mail's CSS.
+    #
+    # ppc=6, NOT 5, and the reason is the PAGE rather than the text. The mail
+    # paints a white container; if that container is wider than the pane the
+    # text runs off the white and onto the terminal background. Measured on the
+    # UVA Docket, widest painted white run against a 105-column pane:
+    #
+    #   ppc=4  105 cells   fits
+    #   ppc=5  126 cells   OVERFLOWS -- this is the "text flowing off the
+    #                      white page" and it shipped
+    #   ppc=6  105 cells   fits
+    #   ppc=7  105 cells   fits
+    #
+    # The sweep below chose 5 by scoring TEXT width and never looking at the
+    # container, which is the same error as the old width-only gate: damage
+    # that pushes text wider scores as an improvement.
     #
     # Swept on the Arc'teryx newsletter at columns=105 (median / max / lines
     # over the pane): default 77/91/0, ppc=3 86/115/1, ppc=4 88/104/0,
