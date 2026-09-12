@@ -1065,7 +1065,6 @@ exit 0
         -o display.pixels-per-column=5 \
         -o display.color-mode=true-color \
         -o display.minimum-contrast=-1 \
-        -o buffer.mark-links=true \
         -o buffer.images=false \
         -c 'img{display:none!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
@@ -1147,13 +1146,19 @@ exit 0
     #   buffer.styling=false         7056 / 184 / 0 /  81   <- control: styling
     #                                                          was already on
     #   buffer.scripting=true       26656 / 744 / 0 / 152   <- byte-identical
-    #   buffer.mark-links=true      42372 / 798 / 0 / 193
+    #   buffer.mark-links=true      42372 / 798 / 0 / 193   <- OFF: markers
+    #                                                          land mid-sentence
     #   display.minimum-contrast=-1 22493 / 463 / 0 / 152
     #   buffer.images=true          42899 /1172 / 0 / 250
     #
     # minimum-contrast=-1 is the one that matters for fidelity: chawan
     # otherwise OVERRIDES the mail's colours to keep text readable, and -1 is
     # "use exactly what the CSS says".
+    #
+    # NO LINK MARKERS. mark-links inserts [4], [5] INLINE, mid-sentence --
+    # "VIDEO: GET OUT OF JAIL [4]", "Episcopal Church) [5]MORE >" -- which is
+    # clutter in a newsletter, and it added 41 lines. A real chawan feature,
+    # and not one worth having here.
     #
     # NO JAVASCRIPT. buffer.scripting is off: it changed the render by zero
     # bytes on the Docket, so it buys nothing measurable, and it would run a
