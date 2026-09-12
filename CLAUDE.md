@@ -52,6 +52,9 @@ main machine, and the Macs), `client` (alarm), `server` (rjds — headless).
 that mapping lives; both package lists and every module that gates a service on
 a layer read it, so config and package cannot disagree.
 
+Homebrew casks follow the same layers (`modules/darwin/casks.nix`); dropping
+one does NOT uninstall it, because `onActivation.cleanup` is off.
+
 Put a new tool in exactly one layer, and add the layer to `layerNames` — each
 package list asserts it declares nothing `profiles.nix` does not name. Slim a
 machine by changing its profile, never by editing a package list. Gate anything

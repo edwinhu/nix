@@ -16,7 +16,7 @@
 
   homebrew = {
     enable = true;
-    casks = pkgs.callPackage ./casks.nix {};
+    casks = pkgs.callPackage ./casks.nix { profile = userInfo.profile or "full"; };
     brews = [
       "doxx"
       "presmihaylov/taps/ccagent"

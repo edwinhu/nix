@@ -151,7 +151,9 @@
         vwh7mb = {
           system = "aarch64-darwin";
           host = "macbook-pro";
-          profile = "full";
+          # Was the primary; now mostly a terminal for ssh'ing to omarchy, so
+          # it gets the same treatment as alarm.
+          profile = "client";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
