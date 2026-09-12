@@ -170,10 +170,16 @@
           profile = "server";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
-          # Reading/highlights tooling isn't used on this host, and installing
-          # it costs a git clone + bun compile on every switch. See
-          # scripts/setup-ai-tools.sh.
-          aiToolsSkip = [ "readwise" ];
+          # Workstation tools the default set installs that this host has no
+          # use for; each costs a git clone or bun compile on every switch.
+          # See scripts/setup-ai-tools.sh.
+          #   readwise  reading/highlights tooling, plus a login warning for a
+          #             token this host never needs
+          #   qmd       indexes ~/notes, which does not exist here — its own
+          #             bootstrap is already gated on that directory
+          #   opencode  a second agent TUI; claude and codex are the ones used
+          # cliproxy, agy, atuin, herdr and zg stay.
+          aiToolsSkip = [ "readwise" "qmd" "opencode" ];
         };
         # Omarchy (Arch Linux) desktop - uses minimal nix config, dotfiles managed separately
         # Key is "edwinhu-alarm" to avoid conflict with MBA's edwinhu, but actual username is edwinhu
