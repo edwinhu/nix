@@ -132,7 +132,7 @@
         # path as a new app, re-prompting for Full Disk Access / Photos / folders
         # every update. Grant FDA once to ~/.local/bin/claude-stable and it
         # survives updates. macbook-pro (vwh7mb) ONLY — gated on userInfo.host
-        # below; mba/omarchy/alarm use plain `claude`, and the shared scripts
+        # below; omarchy/alarm use plain `claude`, and the shared scripts
         # (ensure.sh, rc-watchdog, rc-recover) fall back to it there.
         #
         # This activation guarantees the link exists right after a build-switch

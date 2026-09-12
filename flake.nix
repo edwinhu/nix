@@ -157,13 +157,6 @@
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
-        edwinhu = {
-          system = "aarch64-darwin";
-          host = "mba";
-          profile = "full";
-          fullName = "Edwin Hu";
-          email = "eddyhu@gmail.com";
-        };
         eh2889 = {
           system = "x86_64-linux";
           host = "rjds";
@@ -183,8 +176,12 @@
           # cliproxy, agy, atuin, herdr and zg stay.
           aiToolsSkip = [ "readwise" "qmd" "opencode" ];
         };
-        # Omarchy (Arch Linux) desktop - uses minimal nix config, dotfiles managed separately
-        # Key is "edwinhu-alarm" to avoid conflict with MBA's edwinhu, but actual username is edwinhu
+        # Omarchy (Arch Linux on Asahi). Username is edwinhu; the key is
+        # "edwinhu-alarm" only because the MBA once claimed plain "edwinhu".
+        # That host is gone, so the key could be collapsed to "edwinhu" and the
+        # special case in apps/*/build-switch dropped with it -- left alone
+        # here because renaming the attribute is a change to how a live machine
+        # resolves its config, not a cleanup to fold into a deletion.
         "edwinhu-alarm" = {
           system = "aarch64-linux";
           host = "alarm";
