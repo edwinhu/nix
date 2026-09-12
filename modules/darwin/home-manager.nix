@@ -68,6 +68,10 @@
         # agents here (macOS) and systemd user services on Linux. Imported but
         # NOTHING is enabled on this Mac — see below.
         ../shared/reader-services.nix
+      ] ++ lib.optionals ((import ../shared/profiles.nix).has (userInfo.profile or "full") "docs") [
+        # yazi previewers: duckdb for tabular files, rich-preview for notebooks.
+        # Tracks the `docs` layer, same as on Linux.
+        ../shared/yazi.nix
       ];
 
       # NO always-on browser/CDP services on this laptop. This is no longer the
