@@ -77,7 +77,8 @@ let
 in
 {
   home.packages = [
-    pkgs.duckdb # the engine duckdb.yazi drives
+    # duckdb (the engine duckdb.yazi drives) is in the docs layer of
+    # shared/packages.nix, so darwin gets it too.
     pkgs.rich-cli # ditto for rich-preview
     # zsh (fazif's scripts are `#!/usr/bin/env zsh`) moved to the core layer
     # of shared/packages.nix, so a slimmed profile cannot drop it.

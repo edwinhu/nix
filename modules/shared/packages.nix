@@ -181,6 +181,10 @@ let
       onlyoffice-x2t  # lightweight OOXML converter; keep source-built docbuilder out of the base system
       yazi
       poppler-utils   # PDF previews for yazi
+      # duckdb drives duckdb.yazi (csv/tsv/parquet/xlsx). Here rather than in
+      # yazi.nix because darwin does not import that module, so a Mac got the
+      # plugin's engine nowhere -- it was being patched in by hand on mbp.
+      duckdb
     ];
 
     # Personal knowledge management and research CLIs.
