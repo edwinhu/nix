@@ -1065,7 +1065,6 @@ exit 0
         -o display.pixels-per-column=5 \
         -o display.color-mode=true-color \
         -o display.minimum-contrast=-1 \
-        -o buffer.scripting=true \
         -o buffer.mark-links=true \
         -o buffer.images=false \
         -c 'img{display:none!important}' \
@@ -1155,6 +1154,12 @@ exit 0
     # minimum-contrast=-1 is the one that matters for fidelity: chawan
     # otherwise OVERRIDES the mail's colours to keep text readable, and -1 is
     # "use exactly what the CSS says".
+    #
+    # NO JAVASCRIPT. buffer.scripting is off: it changed the render by zero
+    # bytes on the Docket, so it buys nothing measurable, and it would run a
+    # sender's code in the mail viewer -- a newsletter's script is the part
+    # that phones home. A feature that costs exposure and returns nothing is
+    # not a feature.
     #
     # IMAGES STAY OFF, and this is a limit of dump mode rather than a choice:
     # buffer.images=true emits ZERO sixel here (and at image-mode=sixel, and
