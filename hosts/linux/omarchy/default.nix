@@ -1063,6 +1063,7 @@ exit 0
     cha -d \
         -o display.columns="$COLS" \
         -o display.pixels-per-column=5 \
+        -o display.color-mode=true-color \
         -o buffer.images=false \
         -c 'img{display:none!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
@@ -1129,6 +1130,14 @@ exit 0
     #
     # (`cha -d` DOES honour pixels-per-column: 77 -> 90 median. A comment here
     # once said dump mode ignores it.)
+    #
+    # COLOUR IS THE OTHER HALF OF "render the mail's CSS". Dump mode defaults
+    # to NO colour: the filter emitted 0 SGR sequences, so a docket authored on
+    # #ffffff came out in the terminal's dark theme and nothing the mail said
+    # about colour reached the screen. Measured on the UVA Docket:
+    # none 0 SGR / 0 background, ansi 717 / 0, eight-bit 717 / 153,
+    # true-color 744 / 153. ansi cannot express a background at all here, so
+    # true-color ships.
     #
     # ONE CSS RULE SURVIVES: img{display:none}. It is not a layout rewrite --
     # the table/width/max-width sheet that used to live here is gone and is
