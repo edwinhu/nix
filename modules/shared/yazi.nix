@@ -79,7 +79,8 @@ in
   home.packages = [
     pkgs.duckdb # the engine duckdb.yazi drives
     pkgs.rich-cli # ditto for rich-preview
-    pkgs.zsh # fazif's scripts are `#!/usr/bin/env zsh`; not a login shell here
+    # zsh (fazif's scripts are `#!/usr/bin/env zsh`) moved to the core layer
+    # of shared/packages.nix, so a slimmed profile cannot drop it.
   ];
 
   xdg.configFile = {

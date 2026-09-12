@@ -1915,7 +1915,10 @@ in
     stateVersion = "25.05";
 
     # Cherry-picked packages not in Omarchy/pacman
-    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; })
+    packages = (import ../../../modules/linux/omarchy-packages.nix {
+      inherit pkgs;
+      profile = userInfo.profile or "full";
+    })
       # Brother DS-740D scanner: patched brscan5 + wrapped scanimage (`brscan`).
       # See the `brscan5Patched`/`brscan` let-bindings above. Three root-owned
       # deps home-manager (foreign distro, no NixOS hardware.sane module) can't

@@ -44,6 +44,19 @@ nix flake update nix-secrets  # Update only secrets
 - macOS GUI apps: `modules/darwin/casks.nix` (via nix-homebrew)
 - User-specific packages: Add to `home.packages` in platform modules
 
+## Profiles
+
+Each host names a `profile` in `userHosts` (flake.nix): `full` (omarchy, the
+main machine, and the Macs), `client` (alarm — LLM CLIs plus `herdr --remote`),
+`server` (rjds — headless). The profile selects LAYERS from
+`modules/shared/packages.nix` and `modules/linux/omarchy-packages.nix`; both
+files assert that `full` covers every layer.
+
+Put a new tool in exactly one layer. Slim a machine by changing its profile,
+never by editing a package list. `client`/`server` also drop what references a
+dropped package — a desktop entry or systemd unit naming one by store path pulls
+it back in.
+
 ## Common Tasks
 
 **Adding a new user:**

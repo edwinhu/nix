@@ -4,16 +4,25 @@
 
 let
   iconDir = ../../../modules/linux/desktop-icons;
+  profile = userInfo.profile or "full";
+  # Under the `client` profile this host is a thin box: LLM CLIs plus
+  # `herdr --remote` into omarchy. The desktop app stack (hints, beeper, the
+  # reader services) lives on the main machine, so the packages are gone from
+  # omarchy-packages.nix and everything that REFERENCES them has to go too —
+  # a desktop entry or unit pointing at a dropped package still drags it into
+  # the store.
+  full = profile == "full";
 in
 {
   imports = [
     ../../../modules/shared/home-secrets.nix
-    # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
-    # systemd user services + a timer here (Linux) and launchd agents on macOS.
-    ../../../modules/shared/reader-services.nix
     # chromium-flags.conf (CDP :9222, Google sign-in, Omarchy migration guards).
     # Shared with the omarchy host; the /etc policies it needs are documented there.
     ../../../modules/linux/chromium.nix
+  ] ++ lib.optionals full [
+    # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
+    # systemd user services + a timer here (Linux) and launchd agents on macOS.
+    ../../../modules/shared/reader-services.nix
   ];
 
   # Basic home-manager configuration
@@ -21,7 +30,7 @@ in
     stateVersion = "25.05";
 
     # Cherry-picked packages not in Omarchy/pacman
-    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs; });
+    packages = (import ../../../modules/linux/omarchy-packages.nix { inherit pkgs profile; });
 
     # Icon theme symlinks (Papirus installed via home-manager, needs symlinks)
     file.".local/share/icons/Papirus".source = "${pkgs.papirus-icon-theme}/share/icons/Papirus";
@@ -53,7 +62,7 @@ in
   # backend is the only one enabled (opencv visual-detection produced misaligned
   # duplicates and isn't needed now that apps expose accessibility). Add a
   # "<window-class>".scale_factor = 1 entry for any native app that hints wrong.
-  xdg.configFile."hints/config.json".text = builtins.toJSON {
+  xdg.configFile."hints/config.json" = lib.mkIf full { text = builtins.toJSON {
     hints = {
       hint_height = 22;
       hint_font_size = 11;
@@ -109,7 +118,7 @@ in
         };
       };
     };
-  };
+  }; };   # closes builtins.toJSON and the lib.mkIf wrapper
 
   # Enable home-manager
   programs.home-manager.enable = true;
@@ -119,7 +128,7 @@ in
   # bus (org.a11y.Status.IsEnabled). Without this, `hints` gets no real elements
   # for those apps and falls back to opencv edge-detection (misaligned dupes).
   # GTK apps expose it regardless, so this is what makes hints work everywhere.
-  dconf.settings = {
+  dconf.settings = lib.mkIf full {
     "org/gnome/desktop/interface".toolkit-accessibility = true;
   };
 
@@ -128,7 +137,7 @@ in
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
   # services inherit WAYLAND_DISPLAY etc. hintsd needs /dev/input (evdev) access,
   # i.e. the user in the `input` group — host/OS config, not managed here.
-  systemd.user.services.hintsd = {
+  systemd.user.services.hintsd = lib.mkIf full {
     Unit = {
       Description = "Hints daemon (keyboard GUI navigation)";
       PartOf = [ "graphical-session.target" ];
@@ -187,19 +196,6 @@ in
       type = "Application";
       icon = "morgen";
       categories = [ "Utility" ];
-    };
-
-    beepertexts = {
-      name = "Beeper";
-      comment = "Beeper messaging app";
-      # Use the absolute GUI path: ~/.local/bin/beeper is the Desktop API CLI
-      # and appears earlier on PATH in Walker's environment.
-      exec = "${pkgs.beeper}/bin/beeper --force-renderer-accessibility %U";  # expose a11y tree to hints (Electron)
-      terminal = false;
-      type = "Application";
-      icon = "beeper";
-      categories = [ "Network" ];
-      mimeType = [ "x-scheme-handler/beeper" ];
     };
 
     tailscale = {
@@ -284,6 +280,21 @@ in
       categories = [ "Network" "AudioVideo" ];
       mimeType = [ "x-scheme-handler/zoommtg" "x-scheme-handler/zoomus" ];
       startupNotify = true;
+    };
+  } // lib.optionalAttrs full {
+    # Electron app: installed only under the `full` profile, and a desktop
+    # entry naming it by store path would pull it back in on a thin host.
+    beepertexts = {
+      name = "Beeper";
+      comment = "Beeper messaging app";
+      # Use the absolute GUI path: ~/.local/bin/beeper is the Desktop API CLI
+      # and appears earlier on PATH in Walker's environment.
+      exec = "${pkgs.beeper}/bin/beeper --force-renderer-accessibility %U";  # expose a11y tree to hints (Electron)
+      terminal = false;
+      type = "Application";
+      icon = "beeper";
+      categories = [ "Network" ];
+      mimeType = [ "x-scheme-handler/beeper" ];
     };
   };
 }

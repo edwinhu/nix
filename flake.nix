@@ -133,23 +133,41 @@
 
   outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-aerc, nixpkgs-cliamp, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, neverest, himalaya-tui, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
     let
-      # Define user-host mappings
+      # Define user-host mappings.
+      #
+      # `profile` picks how much of the config a host gets. The layers live in
+      # modules/shared/packages.nix (cross-platform) and
+      # modules/linux/omarchy-packages.nix (Linux additions); both read the
+      # same three names:
+      #
+      #   full    the main machine — everything: mail, PKM, media, typesetting.
+      #   client  a box that only runs the LLM CLIs and `herdr --remote` into
+      #           the main machine. Core shell + AI tooling, no desktop apps.
+      #   server  headless. Core + dev + cloud + data; no mail, PKM, media,
+      #           typesetting, theming or file previews.
+      #
+      # Slimming a machine is a one-word change here, never a package-list edit.
       userHosts = {
         vwh7mb = {
           system = "aarch64-darwin";
           host = "macbook-pro";
+          profile = "full";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
         edwinhu = {
           system = "aarch64-darwin";
           host = "mba";
+          profile = "full";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
         eh2889 = {
           system = "x86_64-linux";
           host = "rjds";
+          # Headless build/serve box: gitea, the croc relay, docker. Nothing
+          # here reads mail, takes notes or renders a document.
+          profile = "server";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
           # Reading/highlights tooling isn't used on this host, and installing
@@ -162,6 +180,9 @@
         "edwinhu-alarm" = {
           system = "aarch64-linux";
           host = "alarm";
+          # Secondary laptop. Drives the LLM CLIs and reaches the Framework
+          # over `herdr --remote`; the mail/PKM/media stacks live on omarchy.
+          profile = "client";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
           username = "edwinhu";  # Actual username on the system
@@ -171,6 +192,8 @@
         eh = {
           system = "x86_64-linux";
           host = "omarchy";
+          # The main machine.
+          profile = "full";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };

@@ -98,7 +98,7 @@
       home = {
         stateVersion = "25.05"; # latest stable as of 20250527
         enableNixpkgsReleaseCheck = false;
-        packages = pkgs.callPackage ./packages.nix {};
+        packages = pkgs.callPackage ./packages.nix { profile = userInfo.profile or "full"; };
         sessionVariables = {
           # Secret paths will be set by the system
         };

@@ -1,8 +1,8 @@
-{ pkgs }:
+{ pkgs, profile ? "full" }:
 
 with pkgs;
 let
-  shared-packages = import ../shared/packages.nix { inherit pkgs; };
+  shared-packages = import ../shared/packages.nix { inherit pkgs profile; };
 in
 shared-packages ++ [
   # libreoffice-bin  # Moved to homebrew cask to reduce rsync time (783 MB app bundle)

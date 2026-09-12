@@ -1,8 +1,19 @@
 { self, config, pkgs, lib, user, userInfo, agenix, ... }:
 
+let
+  profile = userInfo.profile or "full";
+  # A headless box has no terminal to theme, no GUI toolkit to style, and no
+  # one looking at a file preview.
+  headless = profile == "server";
+in
 {
-  imports = [
+  # Gated as a block, not with mkIf: without ../shared/stylix.nix imported the
+  # stylix.* options do not exist, so a mkIf on them is an eval error rather
+  # than a no-op.
+  imports = lib.optionals (!headless) [
     ../shared/stylix.nix
+    # Linux-specific Stylix configuration (Qt theming)
+    { stylix.targets.qt = { enable = true; platform = "qtct"; }; }
     # Faithful docx->PDF via real Word in a QEMU Win11 x64 + KVM guest.
     # Imported so the options exist; enable per host once the guest is stood up:
     #   programs.wordRender.enable = true;  (see ../shared/word-render/README.md)
@@ -10,12 +21,6 @@
     # yazi previewers: duckdb for tabular files, rich-preview for notebooks.
     ../shared/yazi.nix
   ];
-
-  # Linux-specific Stylix configuration (Qt theming)
-  stylix.targets.qt = {
-    enable = true;
-    platform = "qtct";
-  };
 
   # Linux-specific configurations
   home = {
@@ -31,12 +36,13 @@
       # libreoffice removed 2026-06-10: Word Quartz handles docx rendering; shared
       # packages keep only the lightweight x2t converter.
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
+    ] ++ lib.optionals (!headless) [
       # Qt configuration tools for Stylix
       libsForQt5.qt5ct
       kdePackages.qt6ct
       libsForQt5.qtstyleplugin-kvantum
       kdePackages.qtstyleplugin-kvantum
-    ] ++ (import ../shared/packages.nix { inherit pkgs; });
+    ] ++ (import ../shared/packages.nix { inherit pkgs profile; });
     
     sessionVariables = {
       # Add Linux-specific environment variables
