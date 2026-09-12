@@ -1064,6 +1064,9 @@ exit 0
         -o display.columns="$COLS" \
         -o display.pixels-per-column=5 \
         -o display.color-mode=true-color \
+        -o display.minimum-contrast=-1 \
+        -o buffer.scripting=true \
+        -o buffer.mark-links=true \
         -o buffer.images=false \
         -c 'img{display:none!important}' \
         -I UTF-8 -O UTF-8 "$DIR/index.html"
@@ -1138,6 +1141,26 @@ exit 0
     # none 0 SGR / 0 background, ansi 717 / 0, eight-bit 717 / 153,
     # true-color 744 / 153. ansi cannot express a background at all here, so
     # true-color ships.
+    #
+    # EVERY CHAWAN FEATURE THAT CHANGES THE RENDER IS ON, measured one at a
+    # time on the UVA Docket (bytes / SGR / sixel / lines):
+    #   baseline                     26656 / 744 / 0 / 152
+    #   buffer.styling=false         7056 / 184 / 0 /  81   <- control: styling
+    #                                                          was already on
+    #   buffer.scripting=true       26656 / 744 / 0 / 152   <- byte-identical
+    #   buffer.mark-links=true      42372 / 798 / 0 / 193
+    #   display.minimum-contrast=-1 22493 / 463 / 0 / 152
+    #   buffer.images=true          42899 /1172 / 0 / 250
+    #
+    # minimum-contrast=-1 is the one that matters for fidelity: chawan
+    # otherwise OVERRIDES the mail's colours to keep text readable, and -1 is
+    # "use exactly what the CSS says".
+    #
+    # IMAGES STAY OFF, and this is a limit of dump mode rather than a choice:
+    # buffer.images=true emits ZERO sixel here (and at image-mode=sixel, and
+    # with images on in interactive mode too). All it adds is 98 lines of
+    # [img] placeholders that collide with the text. The picture comes from
+    # `o` instead.
     #
     # ONE CSS RULE SURVIVES: img{display:none}. It is not a layout rewrite --
     # the table/width/max-width sheet that used to live here is gone and is
