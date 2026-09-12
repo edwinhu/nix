@@ -1,0 +1,287 @@
+"""Exercise the Nix-defined `aerc-mail-term` launcher without building a profile.
+
+Run: python3 -m pytest -q modules/linux/test_aerc_mail_term.py
+The Nix packaging primitives are stubs; the evaluated shell and mail helpers are
+real. The launcher is what aerc's `o` runs inside its embedded terminal: it must
+serve the message it was handed and exec terminal-browser on the served URL.
+"""
+
+import ctypes
+import json
+import os
+import re
+import signal
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+from urllib.request import urlopen
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+HELPERS = ROOT / "hosts/linux/omarchy/files"
+
+MESSAGE = b"""MIME-Version: 1.0
+Subject: O-TERM FIXTURE subject
+From: Fixture <fixture@example.invalid>
+To: Fixture <fixture@example.invalid>
+Content-Type: multipart/alternative; boundary="oterm"
+
+--oterm
+Content-Type: text/plain; charset=utf-8
+
+O-TERM FIXTURE
+--oterm
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>O-TERM FIXTURE</p></body></html>
+--oterm--
+"""
+
+FAKE_BROWSER = """#!/usr/bin/env bash
+printf '%s\\n' "$@" > "$ARGV_OUT"
+env > "$ENV_OUT"
+exit 0
+"""
+
+HERDR_ENV = {
+    "HERDR_PANE_ID": "7",
+    "HERDR_SOCKET_PATH": "/run/user/1000/herdr.sock",
+    "HERDR_TAB_ID": "3",
+    "HERDR_ENV": "1",
+}
+
+
+# Sibling scripts the launcher may call (the serve step is one) evaluate to this
+# stand-in path, which the test replaces with a real executable copy.
+SIBLING = "/@nix-script@/"
+
+
+def capture(name):
+    """Evaluate the module with stubbed packaging, capturing one script's text."""
+    expression = r"""
+      import MODULE {
+        lib.makeBinPath = _: "/usr/bin:/bin";
+        writeText = name: _: "/nix/store/00000000000000000000000000000000-" + name;
+        writeShellScript = name: text:
+          if name == "WANTED" then
+            "TERM_BEGIN" + builtins.toJSON text + "TERM_END"
+          else "SIBLING" + name;
+        symlinkJoin = attrs: attrs.postBuild;
+        python3 = null; coreutils = null; aerc = null;
+        mailServe = SERVER;
+        mailInlineImages = INLINE;
+      }
+    """
+    expression = expression.replace("WANTED", name).replace("SIBLING", SIBLING)
+    expression = expression.replace(
+        "MODULE", str(ROOT / "modules/linux/aerc-html-terminal-browser.nix")
+    )
+    expression = expression.replace("SERVER", json.dumps(str(HELPERS / "mail-serve.py")))
+    expression = expression.replace(
+        "INLINE", json.dumps(str(HELPERS / "mail-inline-images.py"))
+    )
+    result = subprocess.run(
+        ["nix", "eval", "--impure", "--raw", "--expr", expression],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    out = result.stdout
+    if "TERM_BEGIN" not in out:
+        return ""
+    return json.loads(out.split("TERM_BEGIN", 1)[1].split("TERM_END", 1)[0])
+
+
+@pytest.fixture(scope="module")
+def script():
+    # Adopt only our detached descendants, so the test can reap the server it
+    # started rather than depending on the host's PID 1.
+    if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "PR_SET_CHILD_SUBREAPER")
+    text = capture("aerc-mail-term")
+    print(f"\ncaptured aerc-mail-term script: {len(text)} bytes", flush=True)
+    return text
+
+
+@pytest.fixture(scope="module")
+def serve_text():
+    return capture("aerc-mail-serve")
+
+
+@pytest.fixture
+def sandbox():
+    with tempfile.TemporaryDirectory(prefix="aerc-term-test-") as name:
+        root = Path(name)
+        home = root / "home"
+        runtime = root / "runtime"
+        docs = root / "docs"
+        for directory in (home, runtime, docs):
+            directory.mkdir()
+        browser = home / ".local/share/terminal-browser/app/bin/terminal-browser"
+        browser.parent.mkdir(parents=True)
+        browser.write_text(FAKE_BROWSER)
+        browser.chmod(0o755)
+        state = {
+            "root": root,
+            "home": home,
+            "runtime": runtime,
+            "argv": root / "argv.txt",
+            "envfile": root / "env.txt",
+            "urlfile": runtime / "aerc-mail-browser-url",
+            "message": root / "message.eml",
+        }
+        state["message"].write_bytes(MESSAGE)
+        state["env"] = dict(
+            os.environ,
+            HOME=str(home),
+            TMPDIR=str(docs),
+            XDG_RUNTIME_DIR=str(runtime),
+            ARGV_OUT=str(state["argv"]),
+            ENV_OUT=str(state["envfile"]),
+            **HERDR_ENV,
+        )
+        try:
+            yield state
+        finally:
+            _reap(state["urlfile"])
+
+
+def runnable(script, serve_text, sandbox):
+    """Give the launcher a real serve step where the module referenced one."""
+    marker = SIBLING + "aerc-mail-serve"
+    if marker not in script or not serve_text:
+        return script
+    path = sandbox["root"] / "aerc-mail-serve"
+    path.write_text("#!/usr/bin/env bash\n" + serve_text)
+    path.chmod(0o755)
+    return script.replace(marker, str(path))
+
+
+def _reap(urlfile):
+    try:
+        lines = urlfile.read_text().splitlines()
+    except OSError:
+        return
+    if len(lines) < 3 or not re.fullmatch(r"[1-9][0-9]*", lines[2]):
+        return
+    pid = int(lines[2])
+    try:
+        waited, _ = os.waitpid(pid, os.WNOHANG)
+        if waited == 0:
+            os.kill(pid, signal.SIGTERM)
+            os.waitpid(pid, 0)
+    except (ChildProcessError, ProcessLookupError, OSError):
+        pass
+
+
+def test_module_defines_aerc_mail_term(script):
+    assert script, "module defines no aerc-mail-term script"
+    subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+    print("bash -n accepted aerc-mail-term", flush=True)
+
+
+def test_launcher_serves_and_execs_terminal_browser(script, serve_text, sandbox):
+    assert script, "module defines no aerc-mail-term script"
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+         str(sandbox["message"])],
+        env=sandbox["env"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    print(result.stdout.decode(errors="replace"), flush=True)
+    print(result.stderr.decode(errors="replace"), flush=True)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+
+    assert sandbox["argv"].exists(), "terminal-browser was never executed"
+    argv = sandbox["argv"].read_text().splitlines()
+    print(f"ARGV: {argv}", flush=True)
+    assert "open" in argv, argv
+    urls = [a for a in argv if re.fullmatch(r"http://127\.0\.0\.1:\d+/index\.html", a)]
+    assert urls, argv
+    assert "--app-mode" in argv, argv
+    preload = [
+        a
+        for a in argv
+        if a.startswith("--preload=") and a.endswith("aerc-pager-keys.js")
+    ]
+    assert preload, argv
+
+    leaked = [
+        line
+        for line in sandbox["envfile"].read_text().splitlines()
+        if line.startswith("HERDR_")
+    ]
+    assert not leaked, f"multiplexer environment reached the browser: {leaked}"
+
+    with urlopen(urls[0], timeout=5) as response:
+        body = response.read()
+    print(f"HTTP {response.status} from {urls[0]}", flush=True)
+    assert b"O-TERM FIXTURE" in body, body[:400]
+
+    lines = sandbox["urlfile"].read_text().splitlines()
+    assert len(lines) == 3, lines
+    pid = int(lines[2])
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(200):
+        if not Path(f"/proc/{pid}").exists():
+            break
+        time.sleep(0.02)
+    print(f"server pid={pid} terminated", flush=True)
+
+
+MULTIPLEXER_VARS = (
+    "HERDR_PANE_ID",
+    "HERDR_SOCKET_PATH",
+    "HERDR_TAB_ID",
+    "HERDR_ENV",
+    "HERDR_WORKSPACE_ID",
+    "HERDR_BIN_PATH",
+    "HERDR_CONFIG_PATH",
+    "HERDR_SESSION",
+    "CMUX_SURFACE_ID",
+    "CMUX_WORKSPACE_ID",
+    "TMUX",
+    "ZELLIJ",
+    "WEZTERM_PANE",
+    "KITTY_WINDOW_ID",
+)
+
+
+def test_launcher_strips_multiplexer_env_without_compgen(script):
+    """The strip must name every variable, not enumerate the environment.
+
+    `compgen` is a bash builtin the nix-built bash does not carry, so a
+    compgen-driven loop expands to nothing and leaves HERDR_* set: the strip
+    silently no-ops. The sibling aerc-mail-window script names each variable in
+    an `env -u` clause; the launcher must do the same (or `unset` them).
+    """
+    assert script, "module defines no aerc-mail-term script"
+    assert "compgen" not in script, "launcher strips the environment with compgen"
+    missing = [
+        name
+        for name in MULTIPLEXER_VARS
+        if not re.search(rf"-u\s+{name}\b", script)
+        and not re.search(rf"\bunset\b[^\n]*\b{name}\b", script)
+    ]
+    assert not missing, f"launcher never removes: {missing}"
+
+
+def test_launcher_refuses_without_message(script, serve_text, sandbox):
+    assert script, "module defines no aerc-mail-term script"
+    missing = sandbox["root"] / "no-such-message.eml"
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+         str(missing)],
+        env=sandbox["env"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    print(f"exit={result.returncode}", flush=True)
+    print(result.stderr.decode(errors="replace"), flush=True)
+    assert result.returncode != 0, "launcher accepted a message file that is not there"
+    assert not sandbox["argv"].exists(), "browser ran without a message"

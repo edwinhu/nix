@@ -1,19 +1,14 @@
 # terminal-browser as aerc's HTML mail renderer, on aerc's OWN terminal.
 #
-# THE EMBEDDED PATH IS GONE. It ran the browser inside aerc's :term, which
-# allocates a second pty and paints the child into a region of aerc's screen.
-# For CELLS that relay is cheap -- nvim in the composer sends a few hundred
-# bytes a frame, diffed. For IMAGES it is not: the browser hands the terminal a
-# 5.75 MB frame as a file PATH in ~258 bytes, but aerc had to open, decode,
-# re-encode and re-stage its own copy to composite it. Two full-frame copies per
-# frame, ~170 MB/s at fifteen frames a second. That was the flashing and the lag,
-# and it cost a kitty-graphics decoder in vaxis that has been removed with it.
-#
-# WHAT REPLACED IT: aerc's :exec-tty (modules/linux/aerc-exec-tty.nix) suspends
-# aerc's UI and forks the browser as a DIRECT child on aerc's own terminal, so
-# it inherits aerc's process group, is the terminal's foreground group, and
-# talks to ghostty exactly as it does when run by hand. vaxis documents this
-# case; aerc simply had no command for it.
+# THE :term PATH IS BACK, on a cheaper mechanism. The earlier embedded attempt
+# DECODED the child's kitty frames to pixels and re-encoded them for the host --
+# two full-frame copies per frame, which is what flashed and lagged. The patched
+# vaxis (modules/linux/aerc-vaxis-passthrough.nix) now RELAYS the child's kitty
+# commands instead: it remaps image ids, re-places at the widget's origin and
+# answers the capability probe locally, never touching a pixel. So `o` runs
+# aerc-mail-term inside aerc's own :term, where terminal-browser has a real pty
+# and takes its openHere path. :exec-tty and the split/window/chrome launchers
+# remain for the cases that want to leave aerc.
 #
 # The document is served over loopback and its images pulled same-origin by the
 # same helpers the chawan filter uses: a browser will not load an https image
@@ -401,6 +396,38 @@ PYEOF
       --preload=${pagerKeys}
   '';
 
+  # IN AERC'S OWN :term. aerc expands {{.Filename}} to the message file, so this
+  # serves the mail SYNCHRONOUSLY and then becomes the browser -- one process,
+  # no shared-file race with a backgrounded :pipe.
+  term = writeShellScript "aerc-mail-term" ''
+    export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
+    set -u
+
+    if [ "$#" -lt 1 ] || [ ! -r "$1" ]; then
+      echo "aerc-mail-term: no readable message file"; sleep 3; exit 1
+    fi
+
+    ${serve} < "$1" || true
+
+    URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
+    if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
+      echo "no served mail, or terminal-browser is not installed"; sleep 3; exit 1
+    fi
+
+    # The multiplexer env makes terminal-browser hunt for a pane to split; under
+    # :term it has a real pty and must take its openHere path instead. Name every
+    # variable explicitly: enumerating the environment relies on a bash builtin
+    # the nix-built bash does not carry, so such a loop silently strips nothing.
+    exec env -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_ENV \
+             -u HERDR_WORKSPACE_ID -u HERDR_BIN_PATH -u HERDR_CONFIG_PATH \
+             -u HERDR_SESSION -u CMUX_SURFACE_ID -u CMUX_WORKSPACE_ID \
+             -u TMUX -u ZELLIJ -u WEZTERM_PANE -u KITTY_WINDOW_ID \
+      "${terminalBrowser}" open "$URL" \
+      --app-mode --app-name=aerc-mail-term \
+      --no-toolbar --no-frame --no-overlays --no-context-menu \
+      --preload=${pagerKeys}
+  '';
+
 in
 symlinkJoin {
   name = "aerc-html-terminal-browser";
@@ -411,6 +438,7 @@ symlinkJoin {
     ln -s ${launchSplit} $out/bin/aerc-html-terminal-browser-split
     ln -s ${window} $out/bin/aerc-mail-window
     ln -s ${tty} $out/bin/aerc-mail-tty
+    ln -s ${term} $out/bin/aerc-mail-term
     ln -s ${chrome} $out/bin/aerc-mail-chrome
   '';
 }

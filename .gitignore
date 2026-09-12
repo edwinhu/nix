@@ -18,4 +18,5 @@ scratch/
 # vaxis checkout the kitty-graphics patch is developed against; the patch
 # itself is committed under modules/linux, this tree is not.
 .vaxis-kitty/
+.vaxis-passthrough/
 .claude/plans/

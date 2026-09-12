@@ -1,0 +1,2621 @@
+diff --git c/image.go w/image.go
+index 07ef057..df26465 100644
+--- c/image.go
++++ w/image.go
+@@ -8,6 +8,8 @@ import (
+ 	"image/color"
+ 	"image/png"
+ 	"io"
++	"strings"
++	"sync"
+ 	"sync/atomic"
+ 
+ 	"go.rockorager.dev/vaxis/log"
+@@ -237,6 +239,276 @@ func (k *KittyImage) Resize(w int, h int) {
+ 	}()
+ }
+ 
++// kittyRelayChunk is the payload size of one transmission chunk. The kitty
++// protocol caps an escape code's payload at 4096 base64 bytes.
++const kittyRelayChunk = 4096
++
++// KittyRelay is one image on the HOST terminal whose bytes were produced by
++// somebody else -- a child process of an embedded terminal, whose own kitty
++// graphics commands are forwarded here rather than decoded into pixels.
++//
++// The relay owns a host image id of its own ([Vaxis.ReserveGraphicID]) and
++// nothing else: the controls and the base64 payload are handed to it already
++// parsed, rebuilt and validated by whoever is doing the relaying. It never
++// interprets them.
++type KittyRelay struct {
++	vx *Vaxis
++	id uint64
++
++	// mu guards the fields below it. SetTransmit runs on the embedded
++	// terminal's parser goroutine and writeTo runs inside the render, so the
++	// two genuinely race.
++	mu        sync.Mutex
++	rev       uint64
++	sentRev   uint64
++	controls  string
++	destroyed bool
++	// dropped records that the body this revision was given was reclaimed
++	// before it could be written. There is nothing to transmit, so the
++	// placement writes nothing at all rather than an empty image.
++	dropped bool
++
++	// pmu guards payload alone, so the body can be reclaimed by the budget
++	// below without taking mu. Lock order is kittyPayloads.mu, then mu, then
++	// pmu; nothing ever acquires them the other way around.
++	pmu     sync.Mutex
++	payload string
++}
++
++// kittyMaxRetainedPayloadBytes bounds the base64 bodies live relays pin at
++// once.
++//
++// A relay holds its body so a later frame can be re-transmitted, and those
++// bytes come from a CHILD process: a few images open at the protocol's own
++// per-transfer ceiling is tens of megabytes of base64 that no render will read
++// again. Past the budget the oldest retained body is reclaimed.
++const kittyMaxRetainedPayloadBytes = 8 << 20
++
++// kittyPayloads is the process-wide retained-body budget. It is global because
++// relays belong to no shared owner -- a relay is created from a *Vaxis but
++// several terminals, each with their own, must share one ceiling.
++var kittyPayloads struct {
++	mu    sync.Mutex
++	total int
++	held  []*KittyRelay // oldest retained body first
++}
++
++// storePayload replaces the retained body and keeps the running total honest.
++// The caller holds kittyPayloads.mu.
++func (r *KittyRelay) storePayload(body string) {
++	r.pmu.Lock()
++	defer r.pmu.Unlock()
++	kittyPayloads.total += len(body) - len(r.payload)
++	r.payload = body
++}
++
++// setPayload stores a body and reclaims older ones until the budget holds.
++func (r *KittyRelay) setPayload(body string) {
++	kittyPayloads.mu.Lock()
++	defer kittyPayloads.mu.Unlock()
++
++	r.storePayload(body)
++	kittyPayloads.held = dropKittyRelay(kittyPayloads.held, r)
++	if body == "" {
++		return
++	}
++	// The body just stored goes to the back, so it is the last one reclaimed.
++	kittyPayloads.held = append(kittyPayloads.held, r)
++
++	for kittyPayloads.total > kittyMaxRetainedPayloadBytes && len(kittyPayloads.held) > 1 {
++		victim := kittyPayloads.held[0]
++		kittyPayloads.held = dropKittyRelay(kittyPayloads.held, victim)
++		victim.mu.Lock()
++		if victim.sentRev != victim.rev {
++			// Reclaimed before it was ever written, so this revision can
++			// never be transmitted.
++			victim.dropped = true
++		}
++		victim.mu.Unlock()
++		victim.storePayload("")
++	}
++}
++
++func dropKittyRelay(relays []*KittyRelay, r *KittyRelay) []*KittyRelay {
++	kept := relays[:0]
++	for _, relay := range relays {
++		if relay == r {
++			continue
++		}
++		kept = append(kept, relay)
++	}
++	for i := len(kept); i < len(relays); i++ {
++		relays[i] = nil
++	}
++	return kept
++}
++
++// NewKittyRelay allocates a host image id for a relayed image. Nothing is
++// written to the terminal until the relay is given bytes with
++// [KittyRelay.SetTransmit] and placed with [KittyRelay.Place].
++func (vx *Vaxis) NewKittyRelay() *KittyRelay {
++	return &KittyRelay{vx: vx, id: vx.ReserveGraphicID()}
++}
++
++// ID is the host-side image id this relay was given.
++func (r *KittyRelay) ID() uint64 {
++	return r.id
++}
++
++// SetTransmit replaces the bytes this image is made of.
++//
++// controls is the comma-separated control string WITHOUT a=, i= or p=, which
++// the relay supplies itself; payload is the base64 body. Each call bumps the
++// revision, which is what makes the next render re-transmit rather than
++// re-place.
++func (r *KittyRelay) SetTransmit(controls, payload string) {
++	r.mu.Lock()
++	r.controls = controls
++	r.rev += 1
++	r.dropped = false
++	r.mu.Unlock()
++	r.setPayload(payload)
++}
++
++// Place draws the image at win's origin, pid cells wide and rows tall, with
++// placementKeys appended verbatim to the control string (the caller's rebuilt
++// c=, r=, x=, y=, w=, h=, z= selection).
++//
++// Like [KittyImage.Draw] this only queues a placement; the bytes are written
++// during the render.
++func (r *KittyRelay) Place(win Window, pid uint32, cols, rows int, placementKeys string) {
++	col, row := win.Origin()
++	r.mu.Lock()
++	rev := r.rev
++	r.mu.Unlock()
++	p := &placement{
++		col: col,
++		row: row,
++		id:  r.id,
++		w:   cols,
++		h:   rows,
++		rev: rev,
++		writeTo: func(w io.Writer) {
++			r.writePlacement(w, pid, placementKeys)
++		},
++		deleteFn: func(w io.Writer) {
++			r.writeDelete(w, pid)
++		},
++	}
++	r.vx.graphicsNext = append(r.vx.graphicsNext, p)
++}
++
++// Destroy frees the host image. It is written outside the frame, through the
++// writer's own mutex, because the child may stop sending at any point and a
++// freed image must not wait for the next render to be released.
++func (r *KittyRelay) Destroy() {
++	r.mu.Lock()
++	if r.destroyed {
++		r.mu.Unlock()
++		return
++	}
++	r.destroyed = true
++	r.controls = ""
++	r.mu.Unlock()
++	r.setPayload("")
++	r.vx.DeleteKittyImage(r.id)
++}
++
++// writePlacement emits either a full re-transmission or a bare re-placement,
++// depending on whether the bytes have changed since they were last written.
++func (r *KittyRelay) writePlacement(w io.Writer, pid uint32, placementKeys string) {
++	r.mu.Lock()
++	switch {
++	case r.destroyed, r.dropped:
++		// Either the image is gone or its body was reclaimed under the
++		// retained-bytes budget; in both cases there is nothing to say.
++		r.mu.Unlock()
++		return
++	case r.sentRev == r.rev:
++		// Same bytes, so the host still holds the image: ask it to put the
++		// existing one here again.
++		_, _ = fmt.Fprintf(w, "\x1B_Ga=p,i=%d,p=%d,q=2\x1B\\", r.id, pid)
++		r.mu.Unlock()
++		return
++	}
++	r.transmitLocked(w, pid, placementKeys)
++	r.sentRev = r.rev
++	r.mu.Unlock()
++
++	// The host holds the bytes now, so this copy is dead weight. Reclaiming
++	// it here is what keeps the steady state at zero retained bytes: the
++	// budget above only has to catch bodies that were never drawn.
++	r.setPayload("")
++}
++
++func (r *KittyRelay) transmitLocked(w io.Writer, pid uint32, placementKeys string) {
++	controls := joinKittyKeys(
++		"a=T",
++		r.controls,
++		placementKeys,
++		fmt.Sprintf("i=%d,p=%d,q=2", r.id, pid),
++	)
++	r.pmu.Lock()
++	body := r.payload
++	r.pmu.Unlock()
++	if len(body) <= kittyRelayChunk {
++		_, _ = fmt.Fprintf(w, "\x1B_G%s;%s\x1B\\", controls, body)
++		return
++	}
++	// Chunked: the first escape code carries the controls, every later one
++	// carries only m=, and m=0 marks the last.
++	first := body[:kittyRelayChunk]
++	body = body[kittyRelayChunk:]
++	_, _ = fmt.Fprintf(w, "\x1B_G%s,m=1;%s\x1B\\", controls, first)
++	for len(body) > 0 {
++		n := min(kittyRelayChunk, len(body))
++		more := 1
++		if n == len(body) {
++			more = 0
++		}
++		_, _ = fmt.Fprintf(w, "\x1B_Gm=%d,q=2;%s\x1B\\", more, body[:n])
++		body = body[n:]
++	}
++}
++
++func (r *KittyRelay) writeDelete(w io.Writer, pid uint32) {
++	r.mu.Lock()
++	destroyed := r.destroyed
++	r.mu.Unlock()
++	if destroyed {
++		// The image itself is gone, so free its data rather than only this
++		// placement.
++		_, _ = fmt.Fprintf(w, "\x1B_Ga=d,d=I,i=%d,q=2\x1B\\", r.id)
++		return
++	}
++	_, _ = fmt.Fprintf(w, "\x1B_Ga=d,d=i,i=%d,p=%d,q=2\x1B\\", r.id, pid)
++}
++
++// joinKittyKeys concatenates control fragments with commas, skipping the empty
++// ones so an absent group cannot produce a ",," the host reads as a malformed
++// key.
++func joinKittyKeys(parts ...string) string {
++	var b strings.Builder
++	for _, part := range parts {
++		if part == "" {
++			continue
++		}
++		if b.Len() > 0 {
++			b.WriteByte(',')
++		}
++		b.WriteString(part)
++	}
++	return b.String()
++}
++
++// DeleteKittyImage frees a host-side kitty image and every placement of it.
++//
++// The write goes through the writer's mutex rather than the frame, so it is
++// safe to call from outside the render loop.
++func (vx *Vaxis) DeleteKittyImage(id uint64) {
++	vx.writeControlString(fmt.Sprintf("\x1B_Ga=d,d=I,i=%d,q=2\x1B\\", id))
++}
++
+ type Sixel struct {
+ 	vx       *Vaxis
+ 	img      image.Image
+@@ -398,6 +670,10 @@ type placement struct {
+ 	id       uint64
+ 	w        int
+ 	h        int
++	// rev distinguishes two placements of the same image, at the same cell,
++	// whose BYTES differ -- a relayed frame replacing its predecessor. It is
++	// zero for every image this package encodes itself.
++	rev uint64
+ }
+ 
+ // samePlacement compares two placements for equality. Two placements are
+diff --git c/relay_rev_test.go w/relay_rev_test.go
+new file mode 100644
+index 0000000..9af2d05
+--- /dev/null
++++ w/relay_rev_test.go
+@@ -0,0 +1,61 @@
++package vaxis
++
++import (
++	"bytes"
++	"strings"
++	"testing"
++)
++
++// A relayed frame replaces its predecessor in place: the bytes change under the
++// same host image id at the same cell, so the render must emit a second a=T with
++// no delete in between (a delete would blank the pane for a frame on every frame
++// the child sends). Placing again without new bytes must write nothing at all.
++func TestKittyRelayRev(t *testing.T) {
++	var out bytes.Buffer
++	vx := newWriterTestVaxis(&out)
++	win := vx.Window()
++
++	r := vx.NewKittyRelay()
++
++	r.SetTransmit("f=32,s=8,v=8,t=d", "AAAA")
++	vx.graphicsNext = nil
++	r.Place(win, 1, 2, 1, "")
++	vx.render()
++	if _, err := vx.tw.Flush(); err != nil {
++		t.Fatal(err)
++	}
++	first := out.String()
++	if !strings.Contains(first, "a=T") {
++		t.Fatalf("first frame = %q, want an a=T transmit", first)
++	}
++
++	out.Reset()
++	r.SetTransmit("f=32,s=8,v=8,t=d", "BBBB")
++	vx.graphicsNext = nil
++	r.Place(win, 1, 2, 1, "")
++	vx.render()
++	if _, err := vx.tw.Flush(); err != nil {
++		t.Fatal(err)
++	}
++	second := out.String()
++	if !strings.Contains(second, "a=T") {
++		t.Fatalf("second frame = %q, want a second a=T transmit", second)
++	}
++	if !strings.Contains(second, "BBBB") {
++		t.Fatalf("second frame = %q, want the new payload", second)
++	}
++	if strings.Contains(second, "a=d,d=i") {
++		t.Fatalf("second frame = %q, want no delete before the replacement", second)
++	}
++
++	out.Reset()
++	vx.graphicsNext = nil
++	r.Place(win, 1, 2, 1, "")
++	vx.render()
++	if _, err := vx.tw.Flush(); err != nil {
++		t.Fatal(err)
++	}
++	if third := out.String(); third != "" {
++		t.Fatalf("re-place at the same rev wrote %q, want nothing", third)
++	}
++}
+diff --git c/vaxis.go w/vaxis.go
+index be1879e..ad2d276 100644
+--- c/vaxis.go
++++ w/vaxis.go
+@@ -11,6 +11,7 @@ import (
+ 	"os/signal"
+ 	"strings"
+ 	"sync"
++	"sync/atomic"
+ 	"time"
+ 
+ 	"go.rockorager.dev/vaxis/ansi"
+@@ -146,7 +147,7 @@ type Vaxis struct {
+ 	ready            bool
+ 	caps             capabilities
+ 	graphicsProtocol int
+-	graphicsIDNext   uint64
++	graphicsIDNext   atomic.Uint64
+ 	reqCursorPos     bool
+ 	charCache        map[string]int
+ 	cursorNext       cursorState
+@@ -643,7 +644,15 @@ outerNew:
+ 	// draw new placements
+ 	for _, p1 := range vx.graphicsNext {
+ 		for _, p2 := range vx.graphicsLast {
+-			if samePlacement(p1, p2) {
++			// rev is compared HERE and not in the delete loop above. A
++			// relayed image re-transmits under the same id at the same
++			// cell: the kitty protocol treats that as replacing the data
++			// in place, so the new bytes must be written even though the
++			// placement is geometrically identical -- but no delete may
++			// be emitted first, or the pane blanks for one frame on every
++			// frame the child sends. KittyImage and Sixel never touch rev,
++			// so both sides are 0 for them and this is the old test.
++			if samePlacement(p1, p2) && p1.rev == p2.rev {
+ 				// don't write existing placements
+ 				continue outerNew
+ 			}
+@@ -2176,6 +2185,16 @@ func (vx *Vaxis) CanInBandResize() bool {
+ }
+ 
+ func (vx *Vaxis) nextGraphicID() uint64 {
+-	vx.graphicsIDNext += 1
+-	return vx.graphicsIDNext
++	return vx.graphicsIDNext.Add(1)
++}
++
++// ReserveGraphicID allocates an image id from the same counter
++// [Vaxis.NewKittyGraphic] and [Vaxis.NewSixel] draw from.
++//
++// An embedder relaying another process's kitty graphics has to rename that
++// process's image ids into this terminal's namespace; taking them from the one
++// allocator is what keeps a relayed image from colliding with an image this
++// application transmitted itself.
++func (vx *Vaxis) ReserveGraphicID() uint64 {
++	return vx.nextGraphicID()
+ }
+diff --git c/widgets/term/action.go w/widgets/term/action.go
+index 80ed8d9..4dac381 100644
+--- c/widgets/term/action.go
++++ w/widgets/term/action.go
+@@ -41,6 +41,9 @@ func applySequence(vt *Model, seq ansi.Sequence) {
+ 			sixelAction{seq: seq}.apply(vt)
+ 		}
+ 	case ansi.APC:
++		if vt.kittyGraphics(seq.Data) {
++			return
++		}
+ 		vt.postEvent(EventAPC{Payload: seq.Data})
+ 	}
+ }
+diff --git c/widgets/term/image.go w/widgets/term/image.go
+index b5d7235..25e3375 100644
+--- c/widgets/term/image.go
++++ w/widgets/term/image.go
+@@ -16,6 +16,10 @@ type Image struct {
+ 	cols      int
+ 	img       image.Image
+ 	vaxii     []*vaxisImage
++	// kitty is set when this entry is not an image at all but a PLACEMENT of
++	// a host-side image the child transmitted. img stays nil for those: the
++	// pixels live in the host terminal, never here.
++	kitty *kittyPlacement
+ }
+ 
+ type positionedImage struct {
+@@ -36,4 +40,11 @@ func (img *Image) destroy() {
+ 		cached.vxImage.Destroy()
+ 	}
+ 	img.vaxii = nil
++	if img.kitty != nil {
++		// Every path in term.go that drops an *Image goes through here, so
++		// this is where a relayed placement stops being drawn -- without any
++		// of those paths having to know about the relay.
++		img.kitty.retire(img)
++		img.kitty = nil
++	}
+ }
+diff --git c/widgets/term/kitty.go w/widgets/term/kitty.go
+new file mode 100644
+index 0000000..47db759
+--- /dev/null
++++ w/widgets/term/kitty.go
+@@ -0,0 +1,455 @@
++package term
++
++import (
++	"strconv"
++	"strings"
++)
++
++// kittyCommand is one parsed kitty graphics escape code: the control key/value
++// pairs plus the (still base64) payload.
++//
++// Nothing here holds pixels. The embedded terminal RELAYS a child's graphics to
++// the host rather than decoding them, so a command is only ever taken apart far
++// enough to decide policy and to rebuild a control string of our own.
++type kittyCommand struct {
++	action     byte // a=, default 't'
++	medium     byte // t=, default 'd'
++	format     int  // f=, default 32
++	deleteWhat byte // d=, default 'a'
++
++	width  int // s=, source pixel width for raw formats
++	height int // v=, source pixel height for raw formats
++	size   int // S=, bytes to read from a file/shm source
++	offset int // O=, byte offset into a file/shm source
++
++	id        uint32 // i=
++	number    uint32 // I=
++	placement uint32 // p=
++
++	cols int // c=, display width in cells
++	rows int // r=, display height in cells
++
++	// x=, y=, w=, h= select the source rectangle: the region of the
++	// transmitted image this placement draws.
++	srcX int
++	srcY int
++	srcW int
++	srcH int
++
++	z int // z=, the placement's z-index
++
++	// unicodePlaceholder is U=. A sender asking for unicode placeholders wants
++	// the image positioned by placeholder CELLS it will print itself, which is
++	// a layout this widget does not implement and must not silently ignore.
++	unicodePlaceholder int
++
++	quiet      int  // q=, 1 suppresses OK, 2 suppresses everything
++	more       bool // m=1, another chunk follows
++	compressed bool // o=z
++
++	// moreSet records whether the sender named m= at all. Carrying m= is what
++	// makes a command part of a chunked transfer, so a command without the key
++	// is a whole command of its own and must never be folded into a transfer
++	// left in flight.
++	moreSet bool
++
++	// C=. 1 means "do not move the cursor". cursorMovementSet records whether
++	// the sender named C= at all; see moveCursorAfterKittyImage.
++	cursorMovement    int
++	cursorMovementSet bool
++
++	payload string
++
++	// base64OK is the result of scanning payload, and base64Checked says
++	// whether that scan has been done. The scan is O(len) over bytes a child
++	// chose, so it runs BEFORE the model lock is taken (prepareKittySequence)
++	// and is carried here rather than repeated under the lock.
++	base64OK      bool
++	base64Checked bool
++
++	// mediumName / mediumErr carry the result of validating a NAMED medium
++	// (t=s/t=f/t=t), and mediumChecked says whether that validation has been
++	// done. The validation is several syscalls against a path a child chose, so
++	// like the base64 scan it runs BEFORE the model lock is taken
++	// (Model.prepareKittySequence) and is carried here rather than repeated
++	// under the lock.
++	mediumName    string
++	mediumErr     error
++	mediumChecked bool
++}
++
++// kittyPrepared is the work a kitty APC needs that must NOT happen while the
++// model lock is held.
++type kittyPrepared struct {
++	data     string
++	payload  string
++	base64OK bool
++
++	// mediumName carries a named medium's validated name (t=s/t=f/t=t) and
++	// mediumErr the refusal, so the syscalls that decide it run off the lock.
++	// mediumChecked distinguishes "validated" from "not prepared".
++	mediumName    string
++	mediumErr     error
++	mediumChecked bool
++}
++
++// prepareKittySequence does a kitty APC's per-frame work off the lock: the
++// O(len) base64 scan of an inline payload, and the filesystem validation of a
++// named source.
++//
++// A child can send megabytes of base64 per frame, and a named source costs an
++// EvalSymlinks plus an Lstat; doing either inside Model.update, which holds
++// vt.mu, stalls every Draw and every reader for that long. nil means there was
++// nothing to prepare.
++//
++// It reads only vt.EnableKittyFileMedia, which is fixed at construction, so the
++// receiver is safe to touch without the lock.
++func (vt *Model) prepareKittySequence(data string) *kittyPrepared {
++	cmd, ok := parseKittyCommand(data)
++	if !ok {
++		return nil
++	}
++	switch cmd.medium {
++	case 'd':
++		if cmd.payload == "" {
++			return nil
++		}
++		return &kittyPrepared{
++			data:     data,
++			payload:  cmd.payload,
++			base64OK: isKittyBase64(cmd.payload),
++		}
++	case 's', 'f', 't':
++		name, err := vt.validateKittyMedium(cmd)
++		return &kittyPrepared{
++			data:          data,
++			payload:       cmd.payload,
++			mediumName:    name,
++			mediumErr:     err,
++			mediumChecked: true,
++		}
++	default:
++		return nil
++	}
++}
++
++// kittyChunkBase64OK answers the scan for one command, preferring the result
++// computed before the lock.
++func kittyChunkBase64OK(cmd kittyCommand) bool {
++	if cmd.base64Checked {
++		return cmd.base64OK
++	}
++	return isKittyBase64(cmd.payload)
++}
++
++// parseKittyCommand parses the data vaxis's ANSI parser hands us for an APC
++// sequence: the raw control string with the leading 'G' retained and no ESC_ /
++// ESC\ framing, "G<k=v,...>[;<base64 payload>]".
++//
++// ok is false when the data is not a kitty graphics command at all, so the
++// caller can fall back to posting an EventAPC. Unknown control keys are ignored
++// rather than fatal, per the protocol's forward-compatibility rule.
++func parseKittyCommand(data string) (kittyCommand, bool) {
++	if !strings.HasPrefix(data, "G") {
++		return kittyCommand{}, false
++	}
++	rest := data[1:]
++
++	controls := rest
++	payload := ""
++	if i := strings.IndexByte(rest, ';'); i >= 0 {
++		controls = rest[:i]
++		payload = rest[i+1:]
++	}
++
++	cmd := kittyCommand{
++		action:     't',
++		medium:     'd',
++		format:     32,
++		deleteWhat: 'a',
++		payload:    payload,
++	}
++
++	for _, pair := range strings.Split(controls, ",") {
++		if pair == "" {
++			continue
++		}
++		eq := strings.IndexByte(pair, '=')
++		if eq != 1 || len(pair) < 3 {
++			// Not key=value with a single-letter key: this is not a kitty
++			// control string.
++			return kittyCommand{}, false
++		}
++		key := pair[0]
++		value := pair[2:]
++		if !isASCIILetter(key) {
++			return kittyCommand{}, false
++		}
++
++		switch key {
++		case 'a':
++			cmd.action = value[0]
++		case 't':
++			cmd.medium = value[0]
++		case 'd':
++			cmd.deleteWhat = value[0]
++		case 'o':
++			cmd.compressed = value == "z"
++		case 'f':
++			cmd.format = kittyInt(value, cmd.format)
++		case 's':
++			cmd.width = kittyInt(value, cmd.width)
++		case 'v':
++			cmd.height = kittyInt(value, cmd.height)
++		case 'S':
++			cmd.size = kittyInt(value, cmd.size)
++		case 'O':
++			cmd.offset = kittyInt(value, cmd.offset)
++		case 'c':
++			cmd.cols = kittyInt(value, cmd.cols)
++		case 'r':
++			cmd.rows = kittyInt(value, cmd.rows)
++		case 'x':
++			cmd.srcX = kittyInt(value, cmd.srcX)
++		case 'y':
++			cmd.srcY = kittyInt(value, cmd.srcY)
++		case 'w':
++			cmd.srcW = kittyInt(value, cmd.srcW)
++		case 'h':
++			cmd.srcH = kittyInt(value, cmd.srcH)
++		case 'z':
++			cmd.z = kittyInt(value, cmd.z)
++		case 'U':
++			cmd.unicodePlaceholder = kittyInt(value, cmd.unicodePlaceholder)
++		case 'q':
++			cmd.quiet = kittyInt(value, cmd.quiet)
++		case 'C':
++			cmd.cursorMovement = kittyInt(value, cmd.cursorMovement)
++			cmd.cursorMovementSet = true
++		case 'm':
++			cmd.more = kittyInt(value, 0) == 1
++			cmd.moreSet = true
++		case 'i':
++			cmd.id = kittyUint32(value, cmd.id)
++		case 'I':
++			cmd.number = kittyUint32(value, cmd.number)
++		case 'p':
++			cmd.placement = kittyUint32(value, cmd.placement)
++		default:
++			// Unknown key: ignore it. A future protocol revision adding keys
++			// must not make existing images undisplayable.
++		}
++	}
++
++	return cmd, true
++}
++
++func isASCIILetter(b byte) bool {
++	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
++}
++
++func kittyInt(value string, fallback int) int {
++	n, err := strconv.Atoi(value)
++	if err != nil {
++		return fallback
++	}
++	return n
++}
++
++func kittyUint32(value string, fallback uint32) uint32 {
++	n, err := strconv.ParseUint(value, 10, 32)
++	if err != nil {
++		return fallback
++	}
++	return uint32(n)
++}
++
++// kittyMaxChunkedBytes bounds the base64 text accumulated for one transfer. The
++// control data is attacker-controlled, so a sender that never ends its transfer
++// would otherwise grow this without limit.
++const kittyMaxChunkedBytes = 32 << 20
++
++// kittyAssembly is a chunked transfer in flight.
++type kittyAssembly struct {
++	// cmd holds the FIRST chunk's controls, which are authoritative for the
++	// whole transfer; its payload field is empty and unused.
++	cmd kittyCommand
++	// payload accumulates the base64 text. Non-final chunks are guaranteed to
++	// be a multiple of 4 bytes, so concatenating the encoded text is safe.
++	payload strings.Builder
++	// base64OK is the AND of every chunk's scan. A concatenation of base64
++	// chunks is base64 exactly when each chunk is, so the whole transfer is
++	// judged without ever rescanning the accumulated body.
++	base64OK bool
++}
++
++func (a *kittyAssembly) append(payload string) bool {
++	if len(payload) > kittyMaxChunkedBytes-a.payload.Len() {
++		return false
++	}
++	a.payload.WriteString(payload)
++	return true
++}
++
++// assembleKittyChunks folds a chunked transmission back into a single command.
++//
++// complete is false when the sequence was a non-final chunk, or when a
++// malformed transfer was dropped: in both cases there is nothing to act on yet.
++func (vt *Model) assembleKittyChunks(cmd kittyCommand) (kittyCommand, bool) {
++	s := vt.kitty
++	if s == nil || s.inflight == nil {
++		if !cmd.more {
++			// The common case: a whole image in one sequence. The byte
++			// ceiling has to bound this path as well as the accumulator, or
++			// a sender simply declines to chunk and opts out of it.
++			if len(cmd.payload) > kittyMaxChunkedBytes {
++				vt.replyKitty(cmd, errKitty("EINVAL:payload too large"))
++				return kittyCommand{}, false
++			}
++			cmd.base64OK, cmd.base64Checked = kittyChunkBase64OK(cmd), true
++			return cmd, true
++		}
++		s = vt.kittyStateOf()
++		first := cmd
++		first.payload = ""
++		in := &kittyAssembly{cmd: first, base64OK: kittyChunkBase64OK(cmd)}
++		if in.append(cmd.payload) {
++			s.inflight = in
++		}
++		return kittyCommand{}, false
++	}
++
++	in := s.inflight
++	if !isKittyContinuation(in.cmd, cmd) {
++		// A sender must finish one image before sending any other graphics
++		// command. Something else arrived, so the partial transfer is
++		// abandoned rather than spliced into an unrelated command.
++		s.inflight = nil
++		return vt.assembleKittyChunks(cmd)
++	}
++
++	if !in.append(cmd.payload) {
++		s.inflight = nil
++		return kittyCommand{}, false
++	}
++	in.base64OK = in.base64OK && kittyChunkBase64OK(cmd)
++	if cmd.more {
++		return kittyCommand{}, false
++	}
++
++	done := in.cmd
++	done.payload = in.payload.String()
++	done.base64OK, done.base64Checked = in.base64OK, true
++	done.more = false
++	s.inflight = nil
++	return done, true
++}
++
++// isKittyContinuation reports whether cmd continues the transfer first opened.
++//
++// The m= key is the whole test: the protocol says continuation chunks carry
++// only m and optionally q, so a command WITHOUT m= is a complete command of its
++// own, never a continuation. Treating an m-less command as one means a single
++// lost final chunk swallows every image that follows it, forever.
++func isKittyContinuation(first, cmd kittyCommand) bool {
++	if !cmd.moreSet {
++		return false
++	}
++	if cmd.id != 0 && cmd.id != first.id {
++		return false
++	}
++	if cmd.number != 0 && cmd.number != first.number {
++		return false
++	}
++	// 't' is the default for a=, so an omitted action parses as 't'.
++	return cmd.action == 't' || cmd.action == first.action
++}
++
++// clampKittyCellGeometry bounds a placement's footprint to the screen.
++//
++// c= and r= are the display size in CELLS and are taken straight off the wire,
++// so a mail body rendered through this widget can name two billion rows. The
++// natural footprint has the same problem from the other end: a source at the
++// pixel ceiling over a one-pixel cell measures in the hundreds of thousands of
++// rows, and moveCursorAfterKittyImage runs one ind() per row.
++func (vt *Model) clampKittyCellGeometry(img *Image) {
++	if w := vt.width(); w > 0 && img.cols > w {
++		img.cols = w
++	}
++	if h := vt.height(); h > 0 && img.rows > h {
++		img.rows = h
++	}
++	img.cols = max(1, img.cols)
++	img.rows = max(1, img.rows)
++}
++
++// moveCursorAfterKittyImage moves the cursor past the image, but only when the
++// sender explicitly asked for that with C=0.
++//
++// The protocol's own default is C=0, i.e. move. Inside an embedded terminal
++// that default reads as "shove the page down on every image", so movement is
++// opt-in here: a sender that wants it says so.
++func (vt *Model) moveCursorAfterKittyImage(img *Image, cmd kittyCommand) {
++	if !cmd.cursorMovementSet || cmd.cursorMovement != 0 {
++		return
++	}
++	// ind() rather than a bare row increment, so the scroll region and the
++	// scrollback are honoured.
++	startCol := vt.cursor.col
++	for i := 0; i < img.rows; i += 1 {
++		vt.ind()
++	}
++	vt.cursor.col = min(startCol+column(img.cols), column(vt.width()-1))
++	vt.lastCol = false
++}
++
++// replyKitty answers the sender. The protocol requires a response to a=q, and
++// to any command carrying a non-zero image id or number; q=1 suppresses the OK
++// responses and q=2 suppresses failures as well.
++//
++// Getting this exactly right is what makes the relay usable: a sender probes
++// with a=q and no q= key at all, so it MUST hear back, while the frames it then
++// sends carry q=2 and must hear nothing.
++func (vt *Model) replyKitty(cmd kittyCommand, err error) {
++	if cmd.action != 'q' && cmd.id == 0 && cmd.number == 0 {
++		return
++	}
++	if err == nil && cmd.quiet >= 1 {
++		return
++	}
++	if err != nil && cmd.quiet >= 2 {
++		return
++	}
++
++	var b strings.Builder
++	b.WriteString("\x1B_Gi=")
++	b.WriteString(strconv.FormatUint(uint64(cmd.id), 10))
++	if cmd.number != 0 {
++		b.WriteString(",I=")
++		b.WriteString(strconv.FormatUint(uint64(cmd.number), 10))
++	}
++	if cmd.placement != 0 {
++		b.WriteString(",p=")
++		b.WriteString(strconv.FormatUint(uint64(cmd.placement), 10))
++	}
++	b.WriteByte(';')
++	if err == nil {
++		b.WriteString("OK")
++	} else {
++		b.WriteString(sanitizeKittyReply(err.Error()))
++	}
++	b.WriteString("\x1B\\")
++
++	vt.enqueueReplyString(b.String())
++}
++
++// sanitizeKittyReply keeps an error message from terminating or extending the
++// APC we are writing back into the child's input stream.
++func sanitizeKittyReply(msg string) string {
++	return strings.Map(func(r rune) rune {
++		if r < 0x20 || r == 0x7F {
++			return ' '
++		}
++		return r
++	}, msg)
++}
+diff --git c/widgets/term/kitty_cap_test.go w/widgets/term/kitty_cap_test.go
+new file mode 100644
+index 0000000..4c592c7
+--- /dev/null
++++ w/widgets/term/kitty_cap_test.go
+@@ -0,0 +1,90 @@
++package term
++
++// Round-2 gates.
++//
++// TestKittyPassthroughPayloadReleasedAfterWrite is the TOTAL RETAINED-BYTES
++// variant, not the release-after-write variant. The release-after-write form is
++// not expressible here: the bytes are pinned by (*vaxis.KittyRelay).payload, and
++// the only thing that clears it after a write is the render loop, which this
++// package cannot drive -- *vaxis.Vaxis has no exported constructor that takes a
++// writer. What IS expressible, and is the same defect measured a different way,
++// is that nothing bounds the sum of the payloads live relays hold: a child that
++// keeps several images open pins every one of their base64 bodies forever. The
++// gate asserts a ceiling on that sum.
++
++import (
++	"fmt"
++	"reflect"
++	"strings"
++	"testing"
++
++	"go.rockorager.dev/vaxis"
++)
++
++// kittyMaxPlacementsPerImage is the cap round 2 must enforce on the placements
++// one image may hold at once.
++const wantKittyMaxPlacementsPerImage = 256
++
++// kittyMaxRetainedPayloadBytes is the ceiling round 2 must enforce on the sum of
++// the base64 bodies live relays pin in memory.
++const wantKittyMaxRetainedPayloadBytes = 8 << 20
++
++// A child that re-places one image under a fresh p= every frame -- which is what
++// a browser painting a scrolling page does -- must not grow the widget's
++// placement list without bound.
++func TestKittyPassthroughPlacementCap(t *testing.T) {
++	host := &fakeKittyHost{kitty: true}
++	vt, _ := newPassthroughModel(t, host)
++
++	vt.WriteString("\x1b_Ga=T,f=32,s=800,v=480,t=d,i=7,p=1,q=2;AAAA\x1b\\")
++
++	const placements = 5000
++	for n := 2; n <= placements; n += 1 {
++		vt.WriteString(fmt.Sprintf("\x1b_Ga=p,i=7,p=%d,q=2\x1b\\", n))
++	}
++
++	s := vt.kitty
++	if s == nil {
++		t.Fatal("no kitty state after transmit")
++	}
++	ki := s.images[uint64(7)]
++	if ki == nil {
++		t.Fatal("no image for the child's i=7")
++	}
++	if got := len(ki.places); got > wantKittyMaxPlacementsPerImage {
++		t.Fatalf("placements grew to %d, want <= %d", got, wantKittyMaxPlacementsPerImage)
++	}
++	if got := len(vt.graphics); got > wantKittyMaxPlacementsPerImage {
++		t.Fatalf("graphics grew to %d, want <= %d", got, wantKittyMaxPlacementsPerImage)
++	}
++}
++
++// The relay pins the child's base64 body so a later frame can be re-transmitted.
++// Nothing bounds the total, so a handful of open images holds tens of megabytes
++// of base64 that no render will ever read again.
++func TestKittyPassthroughPayloadReleasedAfterWrite(t *testing.T) {
++	vx := &vaxis.Vaxis{}
++	body := strings.Repeat("A", 1<<20)
++
++	relays := make([]*vaxis.KittyRelay, 0, 16)
++	for i := 0; i < 16; i += 1 {
++		r := vx.NewKittyRelay()
++		r.SetTransmit("f=32,s=800,v=480,t=d", body)
++		relays = append(relays, r)
++	}
++
++	total := 0
++	for _, r := range relays {
++		total += retainedPayloadBytes(r)
++	}
++	if total > wantKittyMaxRetainedPayloadBytes {
++		t.Fatalf("relays retain %d bytes of payload, want <= %d", total, wantKittyMaxRetainedPayloadBytes)
++	}
++}
++
++// retainedPayloadBytes reads the relay's pinned body. reflect is used because
++// the field is unexported in another package and there is no accessor; Len on a
++// read-only string Value is allowed.
++func retainedPayloadBytes(r *vaxis.KittyRelay) int {
++	return reflect.ValueOf(r).Elem().FieldByName("payload").Len()
++}
+diff --git c/widgets/term/kitty_media.go w/widgets/term/kitty_media.go
+new file mode 100644
+index 0000000..39a0b56
+--- /dev/null
++++ w/widgets/term/kitty_media.go
+@@ -0,0 +1,221 @@
++package term
++
++import (
++	"errors"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"syscall"
++)
++
++// WithKittyFileMedia controls whether a child's kitty graphics command may name
++// a file or a POSIX shared-memory object as the source of its pixels (t=f, t=t,
++// t=s) rather than carrying them inline.
++//
++// It is off by default. Those media name a path taken directly from the child's
++// escape stream, and this terminal RELAYS that name to the HOST terminal, which
++// then opens it -- so enabling them for a child that renders untrusted input
++// hands the host an attacker-chosen path to read.
++func WithKittyFileMedia(enabled bool) Option {
++	return func(m *Model) {
++		m.EnableKittyFileMedia = enabled
++	}
++}
++
++const (
++	// kittyShmDir is where Linux keeps POSIX shared-memory objects: shm_open
++	// is implemented as open() against this tmpfs.
++	kittyShmDir = "/dev/shm"
++
++	// kittyTempMarker is the substring the protocol requires in the name of a
++	// t=t source.
++	kittyTempMarker = "tty-graphics-protocol"
++)
++
++// kittyStagingDirs are the only directories a legitimate sender stages pixels
++// in. Reads are confined to them by allowlist rather than by naming forbidden
++// trees: naming the forbidden places leaves everything unnamed -- $HOME, the
++// mail store, the git checkout -- reachable by any child that can write an
++// escape sequence, and aerc runs an untrusted mail body through a filter on
++// this widget.
++// kittyEvalSymlinks and kittyLstat are the two syscall-backed steps of source
++// validation, named so a test can count and time them.
++var (
++	kittyEvalSymlinks = filepath.EvalSymlinks
++	kittyLstat        = os.Lstat
++)
++
++// kittyStagingCache memoizes the staging roots. Deriving them costs one
++// EvalSymlinks per root, and isKittyInStagingDir runs on every validated frame
++// -- the roots are process-stable in a real terminal, so the work is done once.
++var kittyStagingCache atomic.Pointer[[]string]
++
++// resetKittyStagingDirs drops whatever kittyStagingDirs has memoized.
++func resetKittyStagingDirs() { kittyStagingCache.Store(nil) }
++
++func kittyStagingDirs() []string {
++	if cached := kittyStagingCache.Load(); cached != nil {
++		return *cached
++	}
++	dirs := buildKittyStagingDirs()
++	kittyStagingCache.Store(&dirs)
++	return dirs
++}
++
++func buildKittyStagingDirs() []string {
++	named := []string{"/tmp", kittyShmDir, os.TempDir()}
++	if tmp := os.Getenv("TMPDIR"); tmp != "" {
++		named = append(named, tmp)
++	}
++	// Carry the symlink-resolved form of each root as well: a source path is
++	// resolved before it is checked, so a staging root reached through a
++	// symlink would otherwise never match its own contents.
++	dirs := make([]string, 0, 2*len(named))
++	for _, dir := range named {
++		dirs = append(dirs, dir)
++		if resolved, err := kittyEvalSymlinks(dir); err == nil && resolved != dir {
++			dirs = append(dirs, resolved)
++		}
++	}
++	return dirs
++}
++
++// isKittyInStagingDir reports whether an already-resolved path lies inside one
++// of those directories.
++func isKittyInStagingDir(resolved string) bool {
++	for _, dir := range kittyStagingDirs() {
++		if isKittyWithin(dir, resolved) {
++			return true
++		}
++	}
++	return false
++}
++
++// isKittyWithin reports whether path lies strictly inside dir, comparing whole
++// path elements so that /tmpfoo does not count as being under /tmp.
++func isKittyWithin(dir string, path string) bool {
++	dir = filepath.Clean(dir)
++	if dir == "/" {
++		return true
++	}
++	return strings.HasPrefix(filepath.Clean(path), dir+string(filepath.Separator))
++}
++
++// kittyStagedName reports whether a basename is one a graphics sender
++// deliberately staged.
++//
++// Containment in a staging directory alone is not enough: a temp directory is
++// shared with every other program on the machine -- editor swap files,
++// downloaded attachments, another session's scratch tree -- so "somewhere under
++// /tmp" still names plenty worth handing to the host. Three names qualify: the
++// protocol's own tty-graphics-protocol marker, terminal-browser's frame files,
++// and the shared-memory objects it stages frames in.
++func kittyStagedName(base string) bool {
++	switch {
++	case strings.Contains(base, kittyTempMarker):
++		return true
++	case strings.HasPrefix(base, "terminal-browser-") && strings.HasSuffix(base, ".rgba"):
++		return true
++	case strings.HasPrefix(base, "px-"):
++		return true
++	}
++	return false
++}
++
++// resolveKittyPath follows symlinks, as the protocol requires, and reports the
++// symlink loop or missing file as an error rather than naming something else.
++func resolveKittyPath(path string) (string, error) {
++	if path == "" || strings.ContainsRune(path, 0) {
++		return "", errKitty("EINVAL:invalid path")
++	}
++	resolved, err := filepath.EvalSymlinks(filepath.Clean(path))
++	if err != nil {
++		return "", errKitty("ENOENT:cannot resolve source")
++	}
++	return resolved, nil
++}
++
++// validateKittyFile checks a t=f / t=t source and returns the RESOLVED path.
++//
++// The resolved path is what gets forwarded to the host, not the child's
++// original: forwarding the original re-opens the TOCTOU window the resolution
++// closed, because the symlink the child named may point somewhere else by the
++// time the host follows it.
++func validateKittyFile(path string) (string, error) {
++	resolved, err := resolveKittyPath(path)
++	if err != nil {
++		return "", err
++	}
++	if !isKittyInStagingDir(resolved) {
++		return "", errKitty("EPERM:source is not in a graphics staging directory")
++	}
++	if !kittyStagedName(filepath.Base(resolved)) {
++		return "", errKitty("EPERM:source is not named as a staged graphics file")
++	}
++	if err := checkKittyRegularAndOwned(resolved); err != nil {
++		return "", err
++	}
++	return resolved, nil
++}
++
++// validateKittyShm checks a t=s source and returns the shared-memory NAME.
++//
++// The name is a flat namespace with a conventional leading '/', so anything
++// left looking like a path after that slash is a traversal attempt: without
++// this check "/../../etc/shadow" resolves out of the tmpfs entirely.
++func validateKittyShm(name string) (string, error) {
++	trimmed := strings.TrimPrefix(name, "/")
++	if trimmed == "" || trimmed == "." || trimmed == ".." ||
++		strings.ContainsRune(trimmed, '/') || strings.ContainsRune(trimmed, 0) {
++		return "", errKitty("EINVAL:invalid shared memory object name")
++	}
++	if !kittyStagedName(trimmed) {
++		return "", errKitty("EPERM:shared memory object is not named as a staged frame")
++	}
++	if err := checkKittyRegularAndOwned(filepath.Join(kittyShmDir, trimmed)); err != nil {
++		return "", err
++	}
++	return name, nil
++}
++
++// checkKittyRegularAndOwned refuses anything that is not an ordinary file this
++// user owns. Device files, FIFOs and sockets are not images, and a file owned
++// by somebody else was not staged by the child we are relaying for.
++func checkKittyRegularAndOwned(path string) error {
++	fi, err := kittyLstat(path)
++	if err != nil {
++		return errKitty("ENOENT:cannot stat source")
++	}
++	if !fi.Mode().IsRegular() {
++		return errKitty("EPERM:only regular files may be used as a source")
++	}
++	stat, ok := fi.Sys().(*syscall.Stat_t)
++	if !ok {
++		return errKitty("EPERM:cannot establish source ownership")
++	}
++	if int(stat.Uid) != os.Getuid() {
++		return errKitty("EPERM:source is not owned by this user")
++	}
++	return nil
++}
++
++// kittyHostIsLocal reports whether the host terminal is on this machine.
++//
++// Over SSH the host opens the name in ITS OWN filesystem, so a path validated
++// here names a different file there -- at best nothing, at worst somebody
++// else's. Relaying file and shm media is only meaningful locally.
++func kittyHostIsLocal() bool {
++	return os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_TTY") == ""
++}
++
++// errKitty builds a reply error. The text before the colon is the code the
++// protocol puts on the wire, so it must stay stable.
++func errKitty(msg string) error {
++	return errors.New(msg)
++}
++
++func errKittyf(format string, args ...any) error {
++	return fmt.Errorf(format, args...)
++}
+diff --git c/widgets/term/kitty_passthrough.go w/widgets/term/kitty_passthrough.go
+new file mode 100644
+index 0000000..ab00537
+--- /dev/null
++++ w/widgets/term/kitty_passthrough.go
+@@ -0,0 +1,754 @@
++package term
++
++import (
++	"encoding/base64"
++	"fmt"
++	"strings"
++	"sync/atomic"
++
++	"go.rockorager.dev/vaxis"
++)
++
++// kittyDrainLocks counts how many times drainKittyDestroys has taken vt.mu.
++// It observes the lock traffic on the sequence path; the tests read it.
++var kittyDrainLocks int32
++
++func resetKittyDrainLocks() { atomic.StoreInt32(&kittyDrainLocks, 0) }
++
++// kittyRelayHost is the host terminal as the embedded terminal sees it.
++type kittyRelayHost interface {
++	CanKittyGraphics() bool
++	NewKittyRelay() kittyRelay
++}
++
++// kittyRelay is one host-side image whose bytes come from the child.
++type kittyRelay interface {
++	ID() uint64
++	SetTransmit(controls, payload string)
++	Place(win vaxis.Window, pid uint32, cols, rows int, placementKeys string)
++	Destroy()
++}
++
++// vaxisKittyHost adapts the real *vaxis.Vaxis to the interface above.
++type vaxisKittyHost struct {
++	vx *vaxis.Vaxis
++}
++
++func (h vaxisKittyHost) CanKittyGraphics() bool { return h.vx.CanKittyGraphics() }
++
++func (h vaxisKittyHost) NewKittyRelay() kittyRelay { return h.vx.NewKittyRelay() }
++
++// kittyMaxImages bounds the images one child may hold open on the HOST at once.
++// A sender using a fresh i= per frame -- the ordinary convention, and what a
++// browser child does -- would otherwise leak a host image per frame.
++const kittyMaxImages = 32
++
++// kittyMaxPlacementsPerImage bounds the placements one image may hold at once.
++//
++// Every a=p under a fresh p= allocates an *Image in vt.graphics and an entry in
++// the image's own list, and p= is the CHILD's to choose: a sender that re-places
++// one image under a new placement id each frame -- which is what a browser
++// painting a scrolling page does -- would otherwise grow both lists for as long
++// as it runs. Past the cap the oldest placement of that image is retired, which
++// also tells the host to drop it.
++const kittyMaxPlacementsPerImage = 256
++
++// kittyAnonPIDBase is where synthetic placement ids start. The kitty protocol
++// reserves nothing, but a sender that omits p= still needs a stable placement
++// id on the host, and keeping ours far from the small numbers senders pick
++// makes a collision inside one image's namespace implausible.
++const kittyAnonPIDBase uint32 = 0x40000000
++
++// kittyImage is one image the child transmitted, mapped onto one host image.
++type kittyImage struct {
++	key     uint64
++	id      uint32 // child i=
++	number  uint32 // child I=
++	relay   kittyRelay
++	places  []*Image
++	deleted bool
++}
++
++// kittyPlacement is the kitty half of an *Image in vt.graphics. The *Image
++// itself carries no pixels (img.img stays nil): the host holds them.
++type kittyPlacement struct {
++	image   *kittyImage
++	pid     uint32 // child p=
++	hostPID uint32
++	keys    string // rebuilt c=, r=, x=, y=, w=, h=, z=
++}
++
++// kittyState is the per-Model relay state. It lives on Model rather than in a
++// package-global map so two terminals cannot see each other's images.
++type kittyState struct {
++	inflight *kittyAssembly
++	images   map[uint64]*kittyImage
++	order    []uint64 // oldest first, for the kittyMaxImages cap
++	nextPID  uint32
++
++	// pendingDestroy holds relays whose host image has been freed in the model
++	// but not yet on the host. Destroy is a synchronous write to the real
++	// terminal, so it is collected here under vt.mu and performed after the
++	// lock is released; see drainKittyDestroys.
++	pendingDestroy []kittyRelay
++}
++
++func (vt *Model) kittyStateOf() *kittyState {
++	if vt.kitty == nil {
++		vt.kitty = &kittyState{images: map[uint64]*kittyImage{}}
++	}
++	return vt.kitty
++}
++
++// kittyHostTerminal is the host, with a fallback to the vaxis Draw attached.
++// WithVaxis installs the adapter up front; this covers a Model built without
++// that option whose first Draw supplied one.
++func (vt *Model) kittyHostTerminal() kittyRelayHost {
++	if vt.kittyHost != nil {
++		return vt.kittyHost
++	}
++	if vt.vx != nil {
++		vt.kittyHost = vaxisKittyHost{vx: vt.vx}
++		return vt.kittyHost
++	}
++	return nil
++}
++
++func (vt *Model) hostCanKittyGraphics() bool {
++	host := vt.kittyHostTerminal()
++	return host != nil && host.CanKittyGraphics()
++}
++
++// kittyGraphics handles an APC as a kitty graphics command. It reports whether
++// the sequence was one; false means the caller posts EventAPC as before.
++func (vt *Model) kittyGraphics(data string) bool {
++	cmd, ok := parseKittyCommand(data)
++	if !ok {
++		return false
++	}
++	if p := vt.kittyPrep; p != nil && p.data == data {
++		cmd.base64OK, cmd.base64Checked = p.base64OK, true
++		// A prepared medium result belongs to the exact command it was computed
++		// from. A chunked transfer's controls are the FIRST chunk's while its
++		// name arrives in pieces, so a command carrying m= at all keeps none of
++		// it and the locked path validates the assembled command live.
++		if p.mediumChecked && !cmd.moreSet {
++			cmd.mediumName, cmd.mediumErr, cmd.mediumChecked = p.mediumName, p.mediumErr, true
++		}
++	}
++	cmd, complete := vt.assembleKittyChunks(cmd)
++	if complete {
++		vt.applyKittyCommand(cmd)
++	}
++	// An incomplete command was a chunk of a larger transfer. It was still a
++	// kitty command, so it is consumed rather than leaked to the application.
++	return true
++}
++
++func (vt *Model) applyKittyCommand(cmd kittyCommand) {
++	if cmd.unicodePlaceholder == 1 {
++		// U=1 asks us to position the image by placeholder cells the sender
++		// prints itself. Consuming that in silence leaves a sender waiting
++		// for a picture that will never be drawn where it expects it.
++		vt.replyKitty(cmd, errKitty("ENOTSUP:unicode placeholders are not supported"))
++		return
++	}
++	switch cmd.action {
++	case 'q':
++		vt.replyKitty(cmd, vt.kittyQuery(cmd))
++	case 'T', 't':
++		vt.kittyTransmit(cmd)
++	case 'p':
++		vt.kittyRePlace(cmd)
++	case 'd':
++		vt.kittyDelete(cmd)
++	default:
++		// The animation actions (a=f, a=a, a=c) are not relayed. They are
++		// still kitty commands, so they are consumed rather than leaked to
++		// the application -- but a sender that asked for a response must hear
++		// one, or it waits forever instead of falling back.
++		vt.replyKitty(cmd, errKittyf("ENOTSUP:action a=%s not supported", string(cmd.action)))
++	}
++}
++
++// kittyQuery answers a=q locally. A sender probes before it will use the
++// protocol at all, so an unanswered query reads as "no kitty support"; a probe
++// answered OK for a medium we would later refuse is worse, because the sender
++// then paints with a transport that silently drops every frame.
++func (vt *Model) kittyQuery(cmd kittyCommand) error {
++	if !vt.hostCanKittyGraphics() {
++		return errKitty("ENOTSUP:host terminal has no kitty graphics support")
++	}
++	switch cmd.medium {
++	case 'd':
++		return nil
++	case 'f', 't', 's':
++		_, err := vt.kittyMediumResult(cmd)
++		return err
++	default:
++		return errKittyf("EINVAL:transmission medium %q not supported", string(cmd.medium))
++	}
++}
++
++// kittyMediumResult is validateKittyMedium's answer for this command, taken
++// from the off-lock prepare step when it has one.
++//
++// The prepared answer is only ever attached to the command it was computed from
++// (kittyGraphics matches on the raw APC data), so this returns the same verdict
++// the live call would -- it just does not pay EvalSymlinks and Lstat again while
++// vt.mu is held. The live call remains for commands that reached here without a
++// prepare: an assembled chunked transfer, or a caller that is not the APC path.
++func (vt *Model) kittyMediumResult(cmd kittyCommand) (string, error) {
++	if cmd.mediumChecked {
++		return cmd.mediumName, cmd.mediumErr
++	}
++	return vt.validateKittyMedium(cmd)
++}
++
++// validateKittyMedium decides whether a non-inline source may be named to the
++// HOST, and returns the name the host should be given.
++func (vt *Model) validateKittyMedium(cmd kittyCommand) (string, error) {
++	if !vt.EnableKittyFileMedia {
++		return "", errKitty("EPERM:file and shared memory transmission media are disabled")
++	}
++	if !kittyHostIsLocal() {
++		return "", errKitty("EPERM:file and shared memory media need a local host terminal")
++	}
++	decoded, err := decodeKittyName(cmd.payload)
++	if err != nil {
++		return "", err
++	}
++	switch cmd.medium {
++	case 's':
++		return validateKittyShm(decoded)
++	case 'f', 't':
++		return validateKittyFile(decoded)
++	default:
++		return "", errKittyf("EINVAL:transmission medium %q not supported", string(cmd.medium))
++	}
++}
++
++// decodeKittyName decodes the base64 NAME a non-inline medium carries. Names
++// are short, so there is no size concern here; the point is that a name is
++// bytes, not text, until it has been decoded.
++func decodeKittyName(payload string) (string, error) {
++	enc := base64.StdEncoding
++	if len(payload)%4 != 0 {
++		enc = base64.RawStdEncoding
++	}
++	raw, err := enc.DecodeString(payload)
++	if err != nil {
++		return "", errKitty("EINVAL:bad base64 payload")
++	}
++	return string(raw), nil
++}
++
++// kittyForwardPayload is the payload to relay to the host.
++//
++// For t=d the child's own base64 is passed through, but only after it is
++// confirmed to BE base64: an ESC or a backslash in it would terminate the APC
++// we are writing to the host and let the child inject its own control
++// sequences into the real terminal. For the named media the validated name is
++// re-encoded, so the bytes on the wire are ours.
++func (vt *Model) kittyForwardPayload(cmd kittyCommand) (string, error) {
++	if cmd.medium == 'd' {
++		if !kittyChunkBase64OK(cmd) {
++			return "", errKitty("EINVAL:payload is not base64")
++		}
++		return cmd.payload, nil
++	}
++	name, err := vt.kittyMediumResult(cmd)
++	if err != nil {
++		return "", err
++	}
++	return base64.StdEncoding.EncodeToString([]byte(name)), nil
++}
++
++func isKittyBase64(s string) bool {
++	for i := 0; i < len(s); i++ {
++		c := s[i]
++		switch {
++		case c >= 'A' && c <= 'Z',
++			c >= 'a' && c <= 'z',
++			c >= '0' && c <= '9',
++			c == '+', c == '/', c == '=', c == '-', c == '_':
++		default:
++			return false
++		}
++	}
++	return true
++}
++
++// kittyForwardControls rebuilds the transmission control string from the PARSED
++// command.
++//
++// The child's own control bytes are never forwarded. They are an unvalidated
++// string from an untrusted process, and everything this terminal writes ends up
++// inside an APC on the HOST's stream; rebuilding from typed fields is what makes
++// an injection impossible rather than merely unlikely. a=, i= and p= are absent
++// deliberately: the relay supplies its own.
++func kittyForwardControls(cmd kittyCommand) string {
++	parts := make([]string, 0, 7)
++	parts = append(parts, fmt.Sprintf("f=%d", cmd.format))
++	if cmd.width > 0 {
++		parts = append(parts, fmt.Sprintf("s=%d", cmd.width))
++	}
++	if cmd.height > 0 {
++		parts = append(parts, fmt.Sprintf("v=%d", cmd.height))
++	}
++	parts = append(parts, fmt.Sprintf("t=%s", string(cmd.medium)))
++	if cmd.compressed {
++		parts = append(parts, "o=z")
++	}
++	if cmd.size > 0 {
++		parts = append(parts, fmt.Sprintf("S=%d", cmd.size))
++	}
++	if cmd.offset > 0 {
++		parts = append(parts, fmt.Sprintf("O=%d", cmd.offset))
++	}
++	return strings.Join(parts, ",")
++}
++
++// kittyPlacementKeys rebuilds the placement half of the control string, again
++// from typed fields only.
++func kittyPlacementKeys(cmd kittyCommand) string {
++	parts := make([]string, 0, 7)
++	if cmd.cols > 0 {
++		parts = append(parts, fmt.Sprintf("c=%d", cmd.cols))
++	}
++	if cmd.rows > 0 {
++		parts = append(parts, fmt.Sprintf("r=%d", cmd.rows))
++	}
++	if cmd.srcX > 0 {
++		parts = append(parts, fmt.Sprintf("x=%d", cmd.srcX))
++	}
++	if cmd.srcY > 0 {
++		parts = append(parts, fmt.Sprintf("y=%d", cmd.srcY))
++	}
++	if cmd.srcW > 0 {
++		parts = append(parts, fmt.Sprintf("w=%d", cmd.srcW))
++	}
++	if cmd.srcH > 0 {
++		parts = append(parts, fmt.Sprintf("h=%d", cmd.srcH))
++	}
++	if cmd.z != 0 {
++		parts = append(parts, fmt.Sprintf("z=%d", cmd.z))
++	}
++	return strings.Join(parts, ",")
++}
++
++// kittyKey is the child's name for an image. i= and I= are separate namespaces,
++// so they are kept apart here too.
++func kittyKey(cmd kittyCommand) (uint64, bool) {
++	switch {
++	case cmd.id != 0:
++		return uint64(cmd.id), true
++	case cmd.number != 0:
++		return 1<<32 | uint64(cmd.number), true
++	default:
++		return 0, false
++	}
++}
++
++func (vt *Model) kittyTransmit(cmd kittyCommand) {
++	host := vt.kittyHostTerminal()
++	if host == nil || !host.CanKittyGraphics() {
++		vt.replyKitty(cmd, errKitty("ENOTSUP:host terminal has no kitty graphics support"))
++		return
++	}
++	payload, err := vt.kittyForwardPayload(cmd)
++	if err != nil {
++		vt.replyKitty(cmd, err)
++		return
++	}
++
++	ki := vt.kittyImageFor(cmd, host)
++	ki.relay.SetTransmit(kittyForwardControls(cmd), payload)
++
++	if cmd.action == 'T' {
++		err = vt.placeKittyRelay(ki, cmd)
++	}
++	vt.replyKitty(cmd, err)
++}
++
++// kittyImageFor finds or creates the host image a command names. Reusing the
++// entry is what keeps the HOST image id stable across frames, so the host
++// replaces the picture in place instead of being handed a new image -- and a
++// new image per frame is both a leak and a visible flash.
++func (vt *Model) kittyImageFor(cmd kittyCommand, host kittyRelayHost) *kittyImage {
++	s := vt.kittyStateOf()
++	key, addressable := kittyKey(cmd)
++	if addressable {
++		if ki := s.images[key]; ki != nil && !ki.deleted {
++			return ki
++		}
++	} else {
++		// Nothing could name this image again, so it gets a private key that
++		// no later command can collide with.
++		s.nextPID += 1
++		key = 1<<33 | uint64(s.nextPID)
++	}
++
++	ki := &kittyImage{
++		key:    key,
++		id:     cmd.id,
++		number: cmd.number,
++		relay:  host.NewKittyRelay(),
++	}
++	s.images[key] = ki
++	s.order = append(s.order, key)
++	vt.evictOldestKittyImages(s)
++	return ki
++}
++
++// evictOldestKittyImages frees the host images beyond the cap, oldest first.
++func (vt *Model) evictOldestKittyImages(s *kittyState) {
++	for len(s.order) > kittyMaxImages {
++		key := s.order[0]
++		s.order = s.order[1:]
++		if ki := s.images[key]; ki != nil {
++			vt.destroyKittyImage(s, ki)
++		}
++	}
++}
++
++// placeKittyRelay records where the host should draw the image. It positions
++// like the sixel path -- origin at the cursor, sourceRow scrollback-absolute --
++// so every geometry path in term.go (scrollback shift, reflow, cull, clear)
++// applies to a relayed image unchanged.
++func (vt *Model) placeKittyRelay(ki *kittyImage, cmd kittyCommand) error {
++	s := vt.kittyStateOf()
++
++	hostPID := cmd.placement
++	if hostPID == 0 {
++		s.nextPID += 1
++		hostPID = kittyAnonPIDBase | s.nextPID
++	}
++
++	cols := cmd.cols
++	rows := cmd.rows
++	if cols <= 0 {
++		cols = vt.sixelCellCols(cmd.width)
++	}
++	if rows <= 0 {
++		rows = vt.sixelCellRows(cmd.height)
++	}
++
++	// A repeated (image, placement) pair UPDATES the existing *Image rather
++	// than allocating one. The host image id and the host placement id both
++	// stay put, and the kitty protocol treats a re-transmission under the same
++	// id as replacing the data, so the frame swaps atomically instead of
++	// blanking between a delete and a place.
++	for _, img := range ki.places {
++		if img.kitty == nil || img.kitty.pid != cmd.placement {
++			continue
++		}
++		img.cols, img.rows = cols, rows
++		vt.clampKittyCellGeometry(img)
++		img.origin.row = int(vt.cursor.row)
++		img.origin.col = int(vt.cursor.col)
++		img.sourceRow = vt.activeScreen.scrollbackLen() + int(vt.cursor.row)
++		img.kitty.keys = kittyPlacementKeys(cmd)
++		vt.moveCursorAfterKittyImage(img, cmd)
++		return nil
++	}
++
++	if len(ki.places) >= kittyMaxPlacementsPerImage {
++		vt.evictOldestKittyPlacements(ki)
++		if len(ki.places) >= kittyMaxPlacementsPerImage {
++			return errKitty("EINVAL:too many placements of one image")
++		}
++	}
++
++	img := &Image{
++		cols: cols,
++		rows: rows,
++		kitty: &kittyPlacement{
++			image:   ki,
++			pid:     cmd.placement,
++			hostPID: hostPID,
++			keys:    kittyPlacementKeys(cmd),
++		},
++	}
++	vt.clampKittyCellGeometry(img)
++	img.origin.row = int(vt.cursor.row)
++	img.origin.col = int(vt.cursor.col)
++	img.sourceRow = vt.activeScreen.scrollbackLen() + int(vt.cursor.row)
++
++	vt.graphics = append(vt.graphics, img)
++	ki.places = append(ki.places, img)
++	vt.moveCursorAfterKittyImage(img, cmd)
++	return nil
++}
++
++// evictOldestKittyPlacements retires placements, oldest first, until the image
++// has room for one more.
++func (vt *Model) evictOldestKittyPlacements(ki *kittyImage) {
++	for len(ki.places) >= kittyMaxPlacementsPerImage {
++		doomed := ki.places[0].kitty
++		before := len(ki.places)
++		vt.retireKittyPlacements(ki, func(kp *kittyPlacement) bool { return kp == doomed })
++		if len(ki.places) >= before {
++			// Nothing was retired, so retrying would spin. The caller
++			// refuses the placement instead.
++			return
++		}
++	}
++}
++
++// kittyRePlace implements a=p: display an image transmitted earlier. Answering
++// ENOENT rather than dropping this silently is what tells a sender to
++// re-transmit; a client that never hears back redraws forever.
++func (vt *Model) kittyRePlace(cmd kittyCommand) {
++	s := vt.kittyStateOf()
++	key, addressable := kittyKey(cmd)
++	if !addressable {
++		vt.replyKitty(cmd, errKitty("ENOENT:no image with the given id"))
++		return
++	}
++	ki := s.images[key]
++	if ki == nil || ki.deleted {
++		vt.replyKitty(cmd, errKitty("ENOENT:no image with the given id"))
++		return
++	}
++	vt.replyKitty(cmd, vt.placeKittyRelay(ki, cmd))
++}
++
++// kittyDelete implements a=d. The d= key selects what goes; lowercase removes
++// placements and keeps the host image so a later a=p still works, while
++// uppercase frees the host image too.
++func (vt *Model) kittyDelete(cmd kittyCommand) {
++	s := vt.kitty
++	if s == nil {
++		return
++	}
++	what := cmd.deleteWhat
++	freeData := what >= 'A' && what <= 'Z'
++	if freeData {
++		what += 'a' - 'A'
++	}
++
++	switch what {
++	case 'a':
++		for _, ki := range vt.kittyImagesSnapshot(s) {
++			vt.retireKittyPlacements(ki, func(*kittyPlacement) bool { return true })
++			if freeData {
++				vt.destroyKittyImage(s, ki)
++			}
++		}
++	case 'i':
++		vt.deleteKittyByMatch(s, freeData, cmd, func(ki *kittyImage) bool {
++			return ki.id != 0 && ki.id == cmd.id
++		})
++	case 'n':
++		vt.deleteKittyByMatch(s, freeData, cmd, func(ki *kittyImage) bool {
++			return ki.number != 0 && ki.number == cmd.number
++		})
++	case 'c':
++		for _, ki := range vt.kittyImagesSnapshot(s) {
++			vt.retireKittyPlacements(ki, func(kp *kittyPlacement) bool {
++				return vt.kittyPlacementAtCursor(kp)
++			})
++		}
++	default:
++		// d=f deletes animation frames, which are not relayed, and the
++		// remaining selectors address geometry this widget does not track.
++		// Deleting nothing is safer than deleting the wrong image.
++	}
++}
++
++func (vt *Model) deleteKittyByMatch(s *kittyState, freeData bool, cmd kittyCommand, match func(*kittyImage) bool) {
++	for _, ki := range vt.kittyImagesSnapshot(s) {
++		if !match(ki) {
++			continue
++		}
++		vt.retireKittyPlacements(ki, func(kp *kittyPlacement) bool {
++			// p= narrows the delete to a single placement.
++			return cmd.placement == 0 || kp.pid == cmd.placement
++		})
++		if freeData {
++			vt.destroyKittyImage(s, ki)
++		}
++	}
++}
++
++func (vt *Model) kittyImagesSnapshot(s *kittyState) []*kittyImage {
++	out := make([]*kittyImage, 0, len(s.images))
++	for _, key := range s.order {
++		if ki := s.images[key]; ki != nil {
++			out = append(out, ki)
++		}
++	}
++	return out
++}
++
++func (vt *Model) kittyPlacementAtCursor(kp *kittyPlacement) bool {
++	row, col := int(vt.cursor.row), int(vt.cursor.col)
++	for _, img := range kp.image.places {
++		if img.kitty != kp {
++			continue
++		}
++		if row < img.origin.row || row >= img.origin.row+img.rows {
++			return false
++		}
++		return col >= img.origin.col && col < img.origin.col+img.cols
++	}
++	return false
++}
++
++// retireKittyPlacements drops the matching placements out of the graphics list.
++func (vt *Model) retireKittyPlacements(ki *kittyImage, match func(*kittyPlacement) bool) {
++	doomed := map[*Image]struct{}{}
++	for _, img := range ki.places {
++		if img.kitty != nil && match(img.kitty) {
++			doomed[img] = struct{}{}
++		}
++	}
++	if len(doomed) == 0 {
++		return
++	}
++	kept := vt.graphics[:0]
++	for _, img := range vt.graphics {
++		if _, ok := doomed[img]; ok {
++			continue
++		}
++		kept = append(kept, img)
++	}
++	clearImageTail(vt.graphics, len(kept))
++	vt.graphics = kept
++	for img := range doomed {
++		// destroy() retires the record from ki.places.
++		img.destroy()
++	}
++}
++
++// destroyKittyImage frees the host image and everything that referred to it.
++//
++// The host write itself is NOT done here. Every caller runs under vt.mu, and
++// Destroy writes synchronously to the real terminal, so the relay is queued and
++// drainKittyDestroys performs the write once the lock is released -- the shape
++// releaseKittyRelays already uses. The ki.deleted guard above is what keeps
++// each image queued, and so destroyed, exactly once.
++func (vt *Model) destroyKittyImage(s *kittyState, ki *kittyImage) {
++	if ki.deleted {
++		return
++	}
++	vt.retireKittyPlacements(ki, func(*kittyPlacement) bool { return true })
++	ki.deleted = true
++	if ki.relay != nil {
++		s.pendingDestroy = append(s.pendingDestroy, ki.relay)
++		// Published under vt.mu; read lock-free by drainKittyDestroys.
++		vt.kittyDestroyPending.Store(true)
++	}
++	delete(s.images, ki.key)
++	for i, key := range s.order {
++		if key == ki.key {
++			s.order = append(s.order[:i], s.order[i+1:]...)
++			break
++		}
++	}
++}
++
++// retireKittyImage is called from Image.destroy(), so an *Image dropped by any
++// of term.go's own geometry paths -- a scrollback trim, a reflow, a clear --
++// stops being placed without those paths knowing kitty exists.
++func (kp *kittyPlacement) retire(img *Image) {
++	ki := kp.image
++	if ki == nil {
++		return
++	}
++	kept := ki.places[:0]
++	for _, place := range ki.places {
++		if place == img {
++			continue
++		}
++		kept = append(kept, place)
++	}
++	clearImageTail(ki.places, len(kept))
++	ki.places = kept
++}
++
++// clearImageTail zeroes the slots a filter left beyond the new length.
++// Reslicing shortens the view, not the backing array.
++func clearImageTail(images []*Image, n int) {
++	for i := n; i < len(images); i++ {
++		images[i] = nil
++	}
++}
++
++// drawKittyRelays re-places every visible relayed image at the widget's origin.
++// It runs BEFORE drawGraphics, whose vaxis images are a different mechanism
++// entirely; a relayed placement carries no pixels, so drawGraphics skips it.
++func (vt *Model) drawKittyRelays(win vaxis.Window, graphics []positionedImage) {
++	for _, graphic := range graphics {
++		kp := graphic.img.kitty
++		if kp == nil || kp.image == nil || kp.image.relay == nil || kp.image.deleted {
++			continue
++		}
++		kp.image.relay.Place(
++			win.New(graphic.col, graphic.row, -1, -1),
++			kp.hostPID,
++			graphic.img.cols,
++			graphic.img.rows,
++			kp.keys,
++		)
++	}
++}
++
++// drainKittyDestroys performs the host writes destroyKittyImage queued. It is
++// called from the sequence path AFTER vt.mu is released, so an a=d or an
++// eviction frees the host image eagerly -- the render loop's placement delete
++// does not reach a transmit-only or already-culled image -- without the write
++// blocking Draw.
++//
++// The common case is that nothing is queued: update defers this call for every
++// parsed rune, not just for an a=d. That case costs one atomic load and takes
++// no lock at all. releaseKittyRelays stays the backstop for anything still
++// queued when the terminal closes.
++func (vt *Model) drainKittyDestroys() {
++	if !vt.kittyDestroyPending.Load() {
++		return
++	}
++	vt.mu.Lock()
++	atomic.AddInt32(&kittyDrainLocks, 1)
++	var pending []kittyRelay
++	if s := vt.kitty; s != nil {
++		pending, s.pendingDestroy = s.pendingDestroy, nil
++	}
++	vt.kittyDestroyPending.Store(false)
++	vt.mu.Unlock()
++
++	for _, relay := range pending {
++		relay.Destroy()
++	}
++}
++
++// releaseKittyRelays frees every host image this terminal opened. Close calls
++// it after the pty is closed, so nothing can transmit a replacement in between
++// and leave an image on the host that nothing will ever delete.
++func (vt *Model) releaseKittyRelays() {
++	vt.mu.Lock()
++	s := vt.kitty
++	vt.kitty = nil
++	var relays []kittyRelay
++	if s != nil {
++		// Anything destroyKittyImage queued and nobody drained yet would
++		// otherwise be dropped here, leaving an image on the host forever.
++		relays = append(relays, s.pendingDestroy...)
++		s.pendingDestroy = nil
++		vt.kittyDestroyPending.Store(false)
++		for _, ki := range vt.kittyImagesSnapshot(s) {
++			vt.retireKittyPlacements(ki, func(*kittyPlacement) bool { return true })
++			ki.deleted = true
++			if ki.relay != nil {
++				relays = append(relays, ki.relay)
++			}
++		}
++	}
++	vt.mu.Unlock()
++
++	// Destroy writes to the host terminal, so it happens outside our lock.
++	for _, relay := range relays {
++		relay.Destroy()
++	}
++}
+diff --git c/widgets/term/kitty_passthrough_test.go w/widgets/term/kitty_passthrough_test.go
+new file mode 100644
+index 0000000..7628e12
+--- /dev/null
++++ w/widgets/term/kitty_passthrough_test.go
+@@ -0,0 +1,205 @@
++package term
++
++import (
++	"os"
++	"strings"
++	"testing"
++
++	"go.rockorager.dev/vaxis"
++	"go.rockorager.dev/vaxis/ansi"
++)
++
++// The child's probe, its frame, and the delete that frees the frame's id. These
++// are the exact bytes terminal-browser sends.
++const (
++	passthroughProbe   = "\x1b_Gi=4207,a=q,t=d,f=24,s=1,v=1;AAAA\x1b\\"
++	passthroughFrame   = "\x1b[1;1H\x1b_Ga=T,f=32,s=800,v=480,t=d,i=7,p=1,C=1,q=2;AAAA\x1b\\"
++	passthroughDelete7 = "\x1b_Ga=d,d=I,i=7,q=2\x1b\\"
++)
++
++type fakeTransmit struct {
++	controls string
++	payload  string
++}
++
++type fakePlacement struct {
++	col  int
++	row  int
++	pid  uint32
++	cols int
++	rows int
++	keys string
++}
++
++type fakeKittyRelay struct {
++	id         uint64
++	transmits  []fakeTransmit
++	placements []fakePlacement
++	destroyed  int
++}
++
++func (r *fakeKittyRelay) ID() uint64 { return r.id }
++
++func (r *fakeKittyRelay) SetTransmit(controls, payload string) {
++	r.transmits = append(r.transmits, fakeTransmit{controls: controls, payload: payload})
++}
++
++func (r *fakeKittyRelay) Place(win vaxis.Window, pid uint32, cols, rows int, placementKeys string) {
++	col, row := win.Origin()
++	r.placements = append(r.placements, fakePlacement{
++		col:  col,
++		row:  row,
++		pid:  pid,
++		cols: cols,
++		rows: rows,
++		keys: placementKeys,
++	})
++}
++
++func (r *fakeKittyRelay) Destroy() { r.destroyed++ }
++
++type fakeKittyHost struct {
++	kitty  bool
++	relays []*fakeKittyRelay
++}
++
++func (h *fakeKittyHost) CanKittyGraphics() bool { return h.kitty }
++
++func (h *fakeKittyHost) NewKittyRelay() kittyRelay {
++	relay := &fakeKittyRelay{id: uint64(4001 + len(h.relays))}
++	h.relays = append(h.relays, relay)
++	return relay
++}
++
++// A model with a pixel-aware size, so a frame sized in pixels has a cell
++// geometry to be placed at (cells are 10x20 px here).
++func newPassthroughModel(t *testing.T, host *fakeKittyHost) (*Model, *os.File) {
++	t.Helper()
++	vt, r := newReplyTestModel(t)
++	vt.kittyHost = host
++	vt.resize(80, 24)
++	vt.size = vaxis.Resize{Cols: 80, Rows: 24, XPixel: 800, YPixel: 480}
++	return vt, r
++}
++
++// A sender probes with a=q before it will use the protocol at all. The widget
++// answers locally, without asking the host.
++func TestKittyPassthroughQueryDirect(t *testing.T) {
++	vt, r := newPassthroughModel(t, &fakeKittyHost{kitty: true})
++
++	vt.WriteString(passthroughProbe)
++
++	want := "\x1b_Gi=4207;OK\x1b\\"
++	if got := readReply(t, r, len(want)); got != want {
++		t.Fatalf("kitty query reply = %q, want %q", got, want)
++	}
++}
++
++// With no kitty support on the host there is nothing to relay to, so the probe
++// must be refused rather than silently dropped.
++func TestKittyPassthroughQueryWithoutHostKitty(t *testing.T) {
++	vt, r := newPassthroughModel(t, &fakeKittyHost{kitty: false})
++
++	vt.WriteString(passthroughProbe)
++
++	want := "\x1b_Gi=4207;ENOTSUP"
++	if got := readReply(t, r, len(want)); got != want {
++		t.Fatalf("kitty query reply = %q, want prefix %q", got, want)
++	}
++}
++
++// A transmit-and-display is relayed to a host image with a host-allocated id,
++// and placed at the widget's origin on the next Draw. Re-sending the same frame
++// replaces the bytes in place rather than leaking a second host image.
++func TestKittyPassthroughTransmitPlacesRemapped(t *testing.T) {
++	host := &fakeKittyHost{kitty: true}
++	vt, r := newPassthroughModel(t, host)
++
++	vt.WriteString(passthroughFrame)
++	assertNoReply(t, r)
++
++	if len(host.relays) != 1 {
++		t.Fatalf("relays = %d, want 1", len(host.relays))
++	}
++	relay := host.relays[0]
++	if relay.id == 7 {
++		t.Fatalf("relay id = %d, want an id remapped off the child's 7", relay.id)
++	}
++	if len(relay.transmits) != 1 {
++		t.Fatalf("transmits = %d, want 1", len(relay.transmits))
++	}
++	if c := relay.transmits[0].controls; strings.Contains(c, "a=") || strings.Contains(c, "i=") {
++		t.Fatalf("transmit controls = %q, want no a= or i= key", c)
++	}
++	if got := relay.transmits[0].payload; got != "AAAA" {
++		t.Fatalf("transmit payload = %q, want %q", got, "AAAA")
++	}
++
++	vt.Draw(vaxis.Window{Width: 80, Height: 24})
++
++	if len(relay.placements) != 1 {
++		t.Fatalf("placements = %d, want 1", len(relay.placements))
++	}
++	want := fakePlacement{col: 0, row: 0, pid: 1, cols: 80, rows: 24, keys: ""}
++	if relay.placements[0] != want {
++		t.Fatalf("placement = %+v, want %+v", relay.placements[0], want)
++	}
++
++	vt.WriteString(passthroughFrame)
++
++	if len(host.relays) != 1 {
++		t.Fatalf("relays after replace = %d, want 1", len(host.relays))
++	}
++	if len(relay.transmits) != 2 {
++		t.Fatalf("transmits after replace = %d, want 2", len(relay.transmits))
++	}
++}
++
++// a=d on the child's id must free the host image it was remapped to, and stop
++// it being placed.
++func TestKittyPassthroughDeleteFreesHostImage(t *testing.T) {
++	host := &fakeKittyHost{kitty: true}
++	vt, r := newPassthroughModel(t, host)
++
++	vt.WriteString(passthroughFrame)
++	vt.WriteString(passthroughDelete7)
++	assertNoReply(t, r)
++
++	if len(host.relays) != 1 {
++		t.Fatalf("relays = %d, want 1", len(host.relays))
++	}
++	relay := host.relays[0]
++	if relay.destroyed != 1 {
++		t.Fatalf("destroyed = %d, want 1", relay.destroyed)
++	}
++
++	vt.Draw(vaxis.Window{Width: 80, Height: 24})
++
++	if len(relay.placements) != 0 {
++		t.Fatalf("placements = %d, want 0 after delete", len(relay.placements))
++	}
++}
++
++// An APC that is not a kitty graphics command must still reach the application
++// as an event. The kitty arm is an addition, not a replacement, and a widget
++// that swallowed every APC would break callers relying on EventAPC.
++func TestNonKittyAPCStillPostsEvent(t *testing.T) {
++	vt := New()
++	vt.resize(80, 24)
++	vt.events = make(chan vaxis.Event, 4)
++
++	vt.update(ansi.APC{Data: "not-a-kitty-command"})
++
++	select {
++	case ev := <-vt.events:
++		apc, ok := ev.(EventAPC)
++		if !ok {
++			t.Fatalf("event = %T, want EventAPC", ev)
++		}
++		if string(apc.Payload) != "not-a-kitty-command" {
++			t.Fatalf("payload = %q, want %q", apc.Payload, "not-a-kitty-command")
++		}
++	default:
++		t.Fatal("no EventAPC posted for a non-kitty APC")
++	}
++}
+diff --git c/widgets/term/kitty_perf_test.go w/widgets/term/kitty_perf_test.go
+new file mode 100644
+index 0000000..5965362
+--- /dev/null
++++ w/widgets/term/kitty_perf_test.go
+@@ -0,0 +1,233 @@
++package term
++
++import (
++	"encoding/base64"
++	"io/fs"
++	"os"
++	"path/filepath"
++	"sync"
++	"sync/atomic"
++	"testing"
++
++	"go.rockorager.dev/vaxis"
++)
++
++// stageKittyPerfFile writes a regular file under a staging directory whose
++// basename kittyStagedName accepts, and returns its path.
++func stageKittyPerfFile(t *testing.T) string {
++	t.Helper()
++	// t=f and t=s validation is only offered for a local host terminal.
++	t.Setenv("SSH_CONNECTION", "")
++	t.Setenv("SSH_TTY", "")
++
++	dir := t.TempDir()
++	path := filepath.Join(dir, "px-kittyperf.rgba")
++	if err := os.WriteFile(path, []byte("\x00\x00\x00\xff"), 0o600); err != nil {
++		t.Fatalf("stage source: %v", err)
++	}
++	resolved, err := filepath.EvalSymlinks(path)
++	if err != nil {
++		t.Fatalf("resolve staged source: %v", err)
++	}
++	if !isKittyInStagingDir(resolved) {
++		t.Skipf("t.TempDir() %q is not a kitty staging directory on this host", resolved)
++	}
++	return path
++}
++
++// kittyPerfNamedFrame is a transmit-and-display naming an external source.
++func kittyPerfNamedFrame(medium byte, name string) string {
++	return "\x1b_Ga=T,f=32,s=800,v=480,t=" + string(medium) +
++		",i=9,p=1,C=1,q=2;" + base64.StdEncoding.EncodeToString([]byte(name)) + "\x1b\\"
++}
++
++// (A) The syscalls that validate a NAMED medium (t=f / t=s) must happen in the
++// off-lock prepare step, not under vt.mu with every Draw and reader waiting.
++//
++// The observable is the stat itself: kittyLstat records whether vt.mu was held
++// when it ran. RED today, because validateKittyMedium is reached from
++// applySequence, which runs under the lock.
++func TestKittyPerfNamedMediaPreparedOffLock(t *testing.T) {
++	path := stageKittyPerfFile(t)
++
++	for _, medium := range []byte{'f', 's'} {
++		t.Run(string(medium), func(t *testing.T) {
++			name := path
++			if medium == 's' {
++				// A t=s name is a flat shm object name, and its file is
++				// looked for under /dev/shm; skip unless it can be staged.
++				name = "/" + filepath.Base(path)
++				shm := filepath.Join(kittyShmDir, filepath.Base(path))
++				if err := os.WriteFile(shm, []byte("\x00\x00\x00\xff"), 0o600); err != nil {
++					t.Skipf("cannot stage a shm object: %v", err)
++				}
++				t.Cleanup(func() { _ = os.Remove(shm) })
++			}
++
++			host := &fakeKittyHost{kitty: true}
++			vt, _ := newPassthroughModel(t, host)
++			vt.EnableKittyFileMedia = true
++
++			var mu sync.Mutex
++			var stats int
++			var underLock bool
++			restore := kittyLstat
++			kittyLstat = func(p string) (fs.FileInfo, error) {
++				held := true
++				if vt.mu.TryLock() {
++					vt.mu.Unlock()
++					held = false
++				}
++				mu.Lock()
++				stats++
++				underLock = underLock || held
++				mu.Unlock()
++				return restore(p)
++			}
++			t.Cleanup(func() { kittyLstat = restore })
++
++			vt.WriteString(kittyPerfNamedFrame(medium, name))
++
++			mu.Lock()
++			gotStats, gotUnderLock := stats, underLock
++			mu.Unlock()
++
++			if gotStats == 0 {
++				t.Fatalf("t=%s source was never stat'd; validation did not run", string(medium))
++			}
++			if gotUnderLock {
++				t.Fatalf("t=%s source validated UNDER vt.mu (%d stats); want it prepared off the lock",
++					string(medium), gotStats)
++			}
++		})
++	}
++}
++
++// (B) kittyStagingDirs resolves symlinks for every root on every containment
++// check. The set is process-wide and effectively fixed, so it must be built
++// once: the EvalSymlinks work for N checks must equal the work for one.
++func TestKittyPerfStagingDirsCached(t *testing.T) {
++	var mu sync.Mutex
++	var calls int
++	restore := kittyEvalSymlinks
++	kittyEvalSymlinks = func(p string) (string, error) {
++		mu.Lock()
++		calls++
++		mu.Unlock()
++		return restore(p)
++	}
++	t.Cleanup(func() { kittyEvalSymlinks = restore })
++
++	count := func(n int) int {
++		resetKittyStagingDirs()
++		mu.Lock()
++		calls = 0
++		mu.Unlock()
++		for i := 0; i < n; i++ {
++			isKittyInStagingDir("/tmp/px-kittyperf.rgba")
++		}
++		mu.Lock()
++		defer mu.Unlock()
++		return calls
++	}
++
++	one := count(1)
++	if one == 0 {
++		t.Fatalf("EvalSymlinks calls for one check = 0, want the staging roots to be resolved at least once")
++	}
++	five := count(5)
++	if five != one {
++		t.Fatalf("EvalSymlinks calls: 5 checks = %d, 1 check = %d; want the staging dirs built once and reused",
++			five, one)
++	}
++}
++
++// perfLockRelay records whether vt.mu was held when the host write in Destroy
++// ran. Destroy is a synchronous write to the real terminal, so holding the
++// model lock across it blocks every Draw for the length of that write.
++type perfLockRelay struct {
++	id        uint64
++	vt        *Model
++	destroyed int
++	underLock bool
++}
++
++func (r *perfLockRelay) ID() uint64 { return r.id }
++
++func (r *perfLockRelay) SetTransmit(controls, payload string) {}
++
++func (r *perfLockRelay) Place(win vaxis.Window, pid uint32, cols, rows int, placementKeys string) {}
++
++func (r *perfLockRelay) Destroy() {
++	r.destroyed++
++	if r.vt.mu.TryLock() {
++		r.vt.mu.Unlock()
++		return
++	}
++	r.underLock = true
++}
++
++type perfLockHost struct {
++	kitty  bool
++	vt     *Model
++	relays []*perfLockRelay
++}
++
++func (h *perfLockHost) CanKittyGraphics() bool { return h.kitty }
++
++func (h *perfLockHost) NewKittyRelay() kittyRelay {
++	relay := &perfLockRelay{id: uint64(5001 + len(h.relays)), vt: h.vt}
++	h.relays = append(h.relays, relay)
++	return relay
++}
++
++// (C) The a=d delete path frees the host image while still holding vt.mu, so
++// the host-tty write in Destroy runs under the lock. releaseKittyRelays already
++// shows the shape of the fix: collect under the lock, destroy after unlocking.
++// The image must still be freed exactly once.
++func TestKittyPerfDestroyOffLock(t *testing.T) {
++	host := &perfLockHost{kitty: true}
++	vt, r := newReplyTestModel(t)
++	host.vt = vt
++	vt.kittyHost = host
++	vt.resize(80, 24)
++	vt.size = vaxis.Resize{Cols: 80, Rows: 24, XPixel: 800, YPixel: 480}
++
++	vt.WriteString(passthroughFrame)
++	vt.Draw(vaxis.Window{Width: 80, Height: 24})
++	vt.WriteString(passthroughDelete7)
++	assertNoReply(t, r)
++
++	if len(host.relays) != 1 {
++		t.Fatalf("relays = %d, want 1", len(host.relays))
++	}
++	relay := host.relays[0]
++	if relay.destroyed != 1 {
++		t.Fatalf("destroyed = %d, want 1", relay.destroyed)
++	}
++	if relay.underLock {
++		t.Fatalf("relay.Destroy() ran UNDER vt.mu; want the host write done after the lock is released")
++	}
++}
++
++// (D) The destroy drain is deferred from Model.update, which runs once per
++// parsed rune or escape. It takes vt.mu unconditionally, before it can see
++// that nothing is queued, so ordinary text doubles the lock acquisitions on
++// the hottest path. Nothing pending must mean nothing locked.
++func TestKittyPerfDrainNoLockWhenIdle(t *testing.T) {
++	host := &fakeKittyHost{kitty: true}
++	vt, _ := newPassthroughModel(t, host)
++
++	// A fresh model: no a=d has been driven, so pendingDestroy is empty.
++	if s := vt.kitty; s != nil && len(s.pendingDestroy) != 0 {
++		t.Fatalf("pendingDestroy = %d, want an idle drain queue", len(s.pendingDestroy))
++	}
++
++	resetKittyDrainLocks()
++	vt.WriteString("hello world\r\n")
++	vt.WriteString("plain text, no kitty, no APC\r\n")
++
++	if got := atomic.LoadInt32(&kittyDrainLocks); got != 0 {
++		t.Fatalf("idle drain took vt.mu %d time(s) for non-kitty input; want 0 (guard the drain with a lock-free check)", got)
++	}
++}
+diff --git c/widgets/term/mouse.go w/widgets/term/mouse.go
+index 506a0f4..3adb4bc 100644
+--- c/widgets/term/mouse.go
++++ w/widgets/term/mouse.go
+@@ -72,7 +72,7 @@ func (vt *Model) handleMouse(msg vaxis.Mouse) string {
+ 	case mouseFormatURXVT:
+ 		return fmt.Sprintf("\x1b[%d;%d;%dM", button+32, msg.Col+1, msg.Row+1)
+ 	case mouseFormatSGRPixels:
+-		x, y := msg.XPixel, msg.YPixel
++		x, y := vt.mousePixels(msg)
+ 		return fmt.Sprintf("\x1b[<%d;%d;%d%c", button, x, y, mouseFinal(msg))
+ 	}
+ 
+@@ -90,6 +90,42 @@ func (vt *Model) handleMouse(msg vaxis.Mouse) string {
+ 	return "\x1b[M" + string(rune(button+32)) + encodedCol + encodedRow
+ }
+ 
++// mousePixels is the position to report for msg in SGR-pixel mouse mode
++// (DECSET 1016).
++//
++// A child that turns 1016 on is answered in PIXELS. The vaxis.Mouse an
++// embedding application delivers, though, was decoded from a HOST terminal that
++// is not itself in 1016 mode, so it carries cell coordinates and leaves
++// XPixel/YPixel at zero -- and reporting those verbatim puts every event at
++// pixel 0,0. Measured against terminal-browser, which enables 1003, 1006 and
++// 1016 in one handshake: four wheel-down events at 0;0 leave window.scrollY at
++// 0, while the same four at any in-viewport pixel move it by 240. The page
++// renders and the wheel does nothing, which reads as a hung pane rather than a
++// bug.
++//
++// So aim at the middle of the cell the event landed in, using the widget's own
++// pixel geometry, and only report the raw zeroes when no cell size is known.
++func (vt *Model) mousePixels(msg vaxis.Mouse) (int, int) {
++	if msg.XPixel != 0 || msg.YPixel != 0 {
++		return msg.XPixel, msg.YPixel
++	}
++	cellWidth, cellHeight := vt.mouseCellPixels()
++	if cellWidth <= 0 || cellHeight <= 0 {
++		return msg.XPixel, msg.YPixel
++	}
++	col, row := max(msg.Col, 0), max(msg.Row, 0)
++	return col*cellWidth + cellWidth/2 + 1, row*cellHeight + cellHeight/2 + 1
++}
++
++// mouseCellPixels is the pixel size of one cell, or 0,0 when the embedder has
++// not told this terminal how big a pixel is.
++func (vt *Model) mouseCellPixels() (int, int) {
++	if vt.size.Cols <= 0 || vt.size.Rows <= 0 {
++		return 0, 0
++	}
++	return vt.size.XPixel / vt.size.Cols, vt.size.YPixel / vt.size.Rows
++}
++
+ func supportedMouseButton(button vaxis.MouseButton) bool {
+ 	switch button {
+ 	case vaxis.MouseLeftButton,
+diff --git c/widgets/term/term.go w/widgets/term/term.go
+index e37955e..3fe3493 100644
+--- c/widgets/term/term.go
++++ w/widgets/term/term.go
+@@ -40,6 +40,16 @@ type Model struct {
+ 	// protocol state through the terminal widget. Only enable this when the
+ 	// host terminal supports Kitty keyboard encoding.
+ 	EnableKittyKeyboard bool
++
++	// EnableKittyFileMedia allows a child's kitty graphics command to name a
++	// FILE or a POSIX shared-memory object as the source of its pixels
++	// (t=f, t=t, t=s) instead of carrying them inline.
++	//
++	// Off by default, and that default is load-bearing: the name is relayed to
++	// the HOST terminal, which opens it, so a child that renders untrusted
++	// input would be choosing a path for the real terminal to read. Enable it
++	// only for children you trust.
++	EnableKittyFileMedia bool
+ 	// AllowKeyboardActionMode allows ANSI KAM (SM 2) to suppress keyboard input.
+ 	// It is disabled by default because applications can otherwise make the
+ 	// terminal ignore user typing.
+@@ -101,6 +111,17 @@ type Model struct {
+ 	syncTimer    *time.Timer
+ 	replyQueue   chan termReply
+ 	replyCancel  context.CancelFunc
++	kittyHost    kittyRelayHost
++	kitty        *kittyState
++	// kittyPrep carries the off-lock scan of the sequence being applied. It
++	// is set and cleared by update, both under vt.mu, and is nil elsewhere.
++	kittyPrep *kittyPrepared
++	// kittyDestroyPending mirrors "kitty.pendingDestroy is non-empty" outside
++	// the lock. update defers a drain once per parsed rune or escape, so the
++	// drain has to be able to decide it has nothing to do with a single atomic
++	// load; taking vt.mu to find an empty queue would double the lock traffic
++	// on the hottest path in the widget.
++	kittyDestroyPending atomic.Bool
+ }
+ 
+ type cursorState struct {
+@@ -125,6 +146,11 @@ func WithVaxis(vx *vaxis.Vaxis) Option {
+ 	return func(m *Model) {
+ 		m.vx = vx
+ 		m.EnableKittyKeyboard = vx != nil && vx.CanKittyKeyboard()
++		if vx != nil {
++			// The same instance is also the host a child's kitty graphics are
++			// relayed to.
++			m.kittyHost = vaxisKittyHost{vx: vx}
++		}
+ 	}
+ }
+ 
+@@ -413,9 +439,24 @@ func (vt *Model) invalidate() {
+ // update is called from the PTY routine...this is updating the internal model
+ // based on the underlying process
+ func (vt *Model) update(seq ansi.Sequence) {
++	// A kitty APC's per-frame work -- the O(len) base64 scan of an inline
++	// payload, the filesystem validation of a named source -- is over bytes a
++	// child chose and must not run under vt.mu, which every Draw and every
++	// reader also wants.
++	var prep *kittyPrepared
++	if apc, ok := seq.(ansi.APC); ok {
++		prep = vt.prepareKittySequence(apc.Data)
++	}
++
++	// Registered before the Unlock below so it runs after it: freeing a host
++	// image is a synchronous write to the real terminal.
++	defer vt.drainKittyDestroys()
++
+ 	vt.mu.Lock()
+ 	defer vt.mu.Unlock()
+ 	defer vt.invalidate()
++	vt.kittyPrep = prep
++	defer func() { vt.kittyPrep = nil }()
+ 	applySequence(vt, seq)
+ }
+ 
+@@ -1461,6 +1502,7 @@ func (vt *Model) Close() {
+ 	if ptyFile != nil {
+ 		_ = ptyFile.Close()
+ 	}
++	vt.releaseKittyRelays()
+ }
+ 
+ func (vt *Model) Draw(win vaxis.Window) {
+@@ -1478,6 +1520,7 @@ func (vt *Model) Draw(win vaxis.Window) {
+ 		win.ShowCursor(snapshot.cursorCol, snapshot.cursorRow, snapshot.cursorStyle)
+ 	}
+ 	vt.removeGraphicsPlacements(snapshot.vx, snapshot.allGraphics)
++	vt.drawKittyRelays(win, snapshot.graphics)
+ 	vt.drawGraphics(win, snapshot.vx, snapshot.graphics)
+ }
+ 
+@@ -1598,6 +1641,12 @@ func (vt *Model) drawGraphics(win vaxis.Window, vx *vaxis.Vaxis, graphics []posi
+ outer:
+ 	for _, graphic := range graphics {
+ 		img := graphic.img
++		if img.img == nil {
++			// A relayed kitty placement: the host holds the pixels, so there
++			// is nothing here to encode. drawKittyRelays already placed it,
++			// and vx.NewImage(nil) segfaults inside resizeImage.
++			continue
++		}
+ 		if vxImg := vt.cachedVaxisImage(img, vx); vxImg != nil {
+ 			win := win.New(graphic.col, graphic.row, -1, -1)
+ 			vxImg.Draw(win)
