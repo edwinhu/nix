@@ -5,13 +5,13 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
   profile = userInfo.profile or "full";
-  # Under the `client` profile this host is a thin box: LLM CLIs plus
-  # `herdr --remote` into omarchy. The desktop app stack (hints, beeper, the
-  # reader services) lives on the main machine, so the packages are gone from
-  # omarchy-packages.nix and everything that REFERENCES them has to go too —
-  # a desktop entry or unit pointing at a dropped package still drags it into
-  # the store.
-  full = profile == "full";
+  inherit (import ../../../modules/shared/profiles.nix) has;
+  # Each gate below names the LAYER its package comes from, so config and
+  # package can never disagree: a desktop entry or unit pointing at a package
+  # the profile dropped still drags it into the store.
+  desktop = has profile "desktop";  # hints
+  media = has profile "media";      # beeper
+  pkm = has profile "pkm";          # obsidian, the reader services
 in
 {
   imports = [
@@ -19,7 +19,7 @@ in
     # chromium-flags.conf (CDP :9222, Google sign-in, Omarchy migration guards).
     # Shared with the omarchy host; the /etc policies it needs are documented there.
     ../../../modules/linux/chromium.nix
-  ] ++ lib.optionals full [
+  ] ++ lib.optionals pkm [
     # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
     # systemd user services + a timer here (Linux) and launchd agents on macOS.
     ../../../modules/shared/reader-services.nix
@@ -62,7 +62,7 @@ in
   # backend is the only one enabled (opencv visual-detection produced misaligned
   # duplicates and isn't needed now that apps expose accessibility). Add a
   # "<window-class>".scale_factor = 1 entry for any native app that hints wrong.
-  xdg.configFile."hints/config.json" = lib.mkIf full { text = builtins.toJSON {
+  xdg.configFile."hints/config.json" = lib.mkIf desktop { text = builtins.toJSON {
     hints = {
       hint_height = 22;
       hint_font_size = 11;
@@ -128,7 +128,7 @@ in
   # bus (org.a11y.Status.IsEnabled). Without this, `hints` gets no real elements
   # for those apps and falls back to opencv edge-detection (misaligned dupes).
   # GTK apps expose it regardless, so this is what makes hints work everywhere.
-  dconf.settings = lib.mkIf full {
+  dconf.settings = lib.mkIf desktop {
     "org/gnome/desktop/interface".toolkit-accessibility = true;
   };
 
@@ -137,7 +137,7 @@ in
   # Wayland/D-Bus env into the systemd user manager, so graphical-session.target
   # services inherit WAYLAND_DISPLAY etc. hintsd needs /dev/input (evdev) access,
   # i.e. the user in the `input` group — host/OS config, not managed here.
-  systemd.user.services.hintsd = lib.mkIf full {
+  systemd.user.services.hintsd = lib.mkIf desktop {
     Unit = {
       Description = "Hints daemon (keyboard GUI navigation)";
       PartOf = [ "graphical-session.target" ];
@@ -281,9 +281,9 @@ in
       mimeType = [ "x-scheme-handler/zoommtg" "x-scheme-handler/zoomus" ];
       startupNotify = true;
     };
-  } // lib.optionalAttrs full {
-    # Electron app: installed only under the `full` profile, and a desktop
-    # entry naming it by store path would pull it back in on a thin host.
+  } // lib.optionalAttrs media {
+    # Electron app: a desktop entry naming it by store path would pull it back
+    # in on a host whose profile dropped the `media` layer.
     beepertexts = {
       name = "Beeper";
       comment = "Beeper messaging app";

@@ -2,22 +2,27 @@
 
 let
   profile = userInfo.profile or "full";
-  # A headless box has no terminal to theme, no GUI toolkit to style, and no
-  # one looking at a file preview.
-  headless = profile == "server";
+  inherit (import ../shared/profiles.nix) has;
+  # Theming and GUI toolkits follow the `desktop` layer; previewers follow the
+  # `docs` layer that ships yazi itself. A headless box renders documents but
+  # has no one looking at a styled terminal.
+  desktop = has profile "desktop";
+  docs = has profile "docs";
 in
 {
-  # Gated as a block, not with mkIf: without ../shared/stylix.nix imported the
+  # Gated as blocks, not with mkIf: without ../shared/stylix.nix imported the
   # stylix.* options do not exist, so a mkIf on them is an eval error rather
   # than a no-op.
-  imports = lib.optionals (!headless) [
+  imports = lib.optionals desktop [
     ../shared/stylix.nix
     # Linux-specific Stylix configuration (Qt theming)
     { stylix.targets.qt = { enable = true; platform = "qtct"; }; }
     # Faithful docx->PDF via real Word in a QEMU Win11 x64 + KVM guest.
     # Imported so the options exist; enable per host once the guest is stood up:
     #   programs.wordRender.enable = true;  (see ../shared/word-render/README.md)
+    # Needs a local KVM guest, so it tracks `desktop`, not `docs`.
     ../shared/word-render.nix
+  ] ++ lib.optionals docs [
     # yazi previewers: duckdb for tabular files, rich-preview for notebooks.
     ../shared/yazi.nix
   ];
@@ -36,7 +41,7 @@ in
       # libreoffice removed 2026-06-10: Word Quartz handles docx rendering; shared
       # packages keep only the lightweight x2t converter.
       agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
-    ] ++ lib.optionals (!headless) [
+    ] ++ lib.optionals desktop [
       # Qt configuration tools for Stylix
       libsForQt5.qt5ct
       kdePackages.qt6ct

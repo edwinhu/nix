@@ -47,15 +47,17 @@ nix flake update nix-secrets  # Update only secrets
 ## Profiles
 
 Each host names a `profile` in `userHosts` (flake.nix): `full` (omarchy, the
-main machine, and the Macs), `client` (alarm — LLM CLIs plus `herdr --remote`),
-`server` (rjds — headless). The profile selects LAYERS from
-`modules/shared/packages.nix` and `modules/linux/omarchy-packages.nix`; both
-files assert that `full` covers every layer.
+main machine, and the Macs), `client` (alarm), `server` (rjds — headless).
+`modules/shared/profiles.nix` maps each profile to LAYERS and is the only place
+that mapping lives; both package lists and every module that gates a service on
+a layer read it, so config and package cannot disagree.
 
-Put a new tool in exactly one layer. Slim a machine by changing its profile,
-never by editing a package list. `client`/`server` also drop what references a
-dropped package — a desktop entry or systemd unit naming one by store path pulls
-it back in.
+Put a new tool in exactly one layer, and add the layer to `layerNames` — each
+package list asserts it declares nothing `profiles.nix` does not name. Slim a
+machine by changing its profile, never by editing a package list. Gate anything
+that REFERENCES a layer's package on the same layer (`has profile "media"`): a
+desktop entry or systemd unit naming a package by store path pulls it back into
+the closure even when the package list dropped it.
 
 ## Common Tasks
 

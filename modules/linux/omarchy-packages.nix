@@ -227,20 +227,14 @@ let
     ];
   };
 
-  # Same profile names as shared/packages.nix. `full` must be every layer.
-  profiles = {
-    full   = builtins.attrNames linuxLayers;
-    client = [ "core" ];
-  };
+  inherit (import ../shared/profiles.nix) layersFor layerNames;
 
-  selected = profiles.${profile} or (throw
-    "omarchy-packages.nix: unknown profile '${profile}'; known: ${
-      lib.concatStringsSep ", " (builtins.attrNames profiles)}");
-
+  selected = layersFor profile;
   pick = set: lib.concatMap (name: set.${name} or []) selected;
 in
-assert lib.assertMsg (profiles.full == builtins.attrNames linuxLayers)
-  "omarchy-packages.nix: the `full` profile must list every layer";
+assert lib.assertMsg
+  (lib.all (n: lib.elem n layerNames) (builtins.attrNames linuxLayers))
+  "omarchy-packages.nix: declares a layer that profiles.nix does not name";
 assert lib.assertMsg
   (lib.all (n: lib.elem n (builtins.attrNames linuxLayers))
     (builtins.attrNames x86_64OnlyLayers))

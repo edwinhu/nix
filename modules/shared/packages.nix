@@ -196,18 +196,9 @@ let
     ];
   };
 
-  # Which layers each profile gets. `full` must be every layer — the assertion
-  # below is what keeps that true when a layer is added.
-  profiles = {
-    full   = builtins.attrNames layers;
-    client = [ "core" "ai" ];
-    server = [ "core" "ai" "dev" "cloud" "data" ];
-  };
-
-  selected = profiles.${profile} or (throw
-    "shared/packages.nix: unknown profile '${profile}'; known: ${
-      lib.concatStringsSep ", " (builtins.attrNames profiles)}");
+  inherit (import ./profiles.nix) layersFor layerNames;
 in
-assert lib.assertMsg (profiles.full == builtins.attrNames layers)
-  "shared/packages.nix: the `full` profile must list every layer";
-lib.concatMap (name: layers.${name}) selected
+assert lib.assertMsg
+  (lib.all (n: lib.elem n layerNames) (builtins.attrNames layers))
+  "shared/packages.nix: declares a layer that profiles.nix does not name";
+lib.concatMap (name: layers.${name} or []) (layersFor profile)
