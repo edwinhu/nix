@@ -1062,7 +1062,7 @@ exit 0
     # ENVIRONMENT, which is what that note had actually observed.
     cha -d \
         -o display.columns="$COLS" \
-        -o display.pixels-per-column=6 \
+        -o display.pixels-per-column=7 \
         -o display.color-mode=true-color \
         -o display.minimum-contrast=-1 \
         -o buffer.images=false \
@@ -1122,6 +1122,18 @@ exit 0
     # a cell is worth. A mail authored at 600px maps 1:1 to 600px of pane at
     # the true cell width and reads as a half-width column; shrinking the ratio
     # widens the layout without touching the mail's CSS.
+    #
+    # ppc=7, and the measurement that settles it is the PAGE and its MARGIN,
+    # not the text alone. On the UVA Docket in a 105-column pane
+    # (page width / gutter left over / median text line):
+    #
+    #   ppc=6  104 / 1  / 51    page runs edge to edge, no margin
+    #   ppc=7   95 / 10 / 59    a real gutter AND the longest text lines
+    #   ppc=8   90 / 15 / 52
+    #   ppc=10  82 / 23 / 44    gutter grows by shrinking the words
+    #
+    # ppc=7 is not a compromise between margin and readability: it is the best
+    # of both, because past it the gutter only grows by squeezing the text.
     #
     # ppc=6, NOT 5, and the reason is the PAGE rather than the text. The mail
     # paints a white container; if that container is wider than the pane the
