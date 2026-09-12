@@ -96,6 +96,12 @@ let
       # ~/nix/scripts/setup-ai-tools.sh, which writes mise stubs into ~/.local/bin
       # (no nix-tracked version pins; each tool self-updates on run).
       mise
+      # bun is not optional here: setup-ai-tools.sh installs qmd, readwise and
+      # zg with `bun install -g`, so a profile with `ai` but no bun bootstraps
+      # a broken tool set. bun-pinned, not stock bun: nixpkgs' 1.3.13 makes
+      # IMAP SEARCH ~47x slower and lifts test module poison, and mail-bridge
+      # is COMPILED with the pinned 1.3.14 (flake.nix). See bun-pinned.nix.
+      (pkgs.callPackage ./bun-pinned.nix {})
       # semantic search
       semtools  # search "query" files... — no indexing needed
       ast-grep
@@ -106,11 +112,6 @@ let
     dev = [
       cmake
       nodejs
-      # bun-pinned, not stock bun: nixpkgs' 1.3.13 makes IMAP SEARCH ~47x slower and
-      # lifts test module poison, and mail-bridge is COMPILED with the pinned 1.3.14
-      # (flake.nix). An interactive bun on a different version than the shipped
-      # binary is the inconsistency this removes. See bun-pinned.nix.
-      (pkgs.callPackage ./bun-pinned.nix {})
       zeromq
 
       # Language servers for Claude Code's LSP plugins (pyright-lsp, gopls-lsp,
