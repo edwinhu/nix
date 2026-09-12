@@ -1166,6 +1166,18 @@ exit 0
     # that phones home. A feature that costs exposure and returns nothing is
     # not a feature.
     #
+    # SIXEL IMAGES IN THE VIEW WERE TRIED AND MEASURED, twice, and do not work:
+    #
+    #   * chawan CAN emit sixel, but only from a PTY: with a LOCAL <img> it
+    #     emits 1 DCS interactive and 0 in dump mode, at image-mode=sixel,
+    #     kitty and auto alike. Dump mode never draws an image, whatever the
+    #     flags say.
+    #   * So the interactive variant was deployed and photographed. aerc still
+    #     showed NO image: saturated pixels 1.84% in the message view, against
+    #     15.0% when an image is genuinely on screen. It also dragged in
+    #     chawan's own status line ("Viewing <file:///tmp/.../index.html>") and
+    #     dropped text fidelity to 13/17 on wrapping.
+    #
     # IMAGES STAY OFF, and this is a limit of dump mode rather than a choice:
     # buffer.images=true emits ZERO sixel here (and at image-mode=sixel, and
     # with images on in interactive mode too). All it adds is 98 lines of
