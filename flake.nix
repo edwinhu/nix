@@ -176,13 +176,9 @@
           # cliproxy, agy, atuin, herdr and zg stay.
           aiToolsSkip = [ "readwise" "qmd" "opencode" ];
         };
-        # Omarchy (Arch Linux on Asahi). Username is edwinhu; the key is
-        # "edwinhu-alarm" only because the MBA once claimed plain "edwinhu".
-        # That host is gone, so the key could be collapsed to "edwinhu" and the
-        # special case in apps/*/build-switch dropped with it -- left alone
-        # here because renaming the attribute is a change to how a live machine
-        # resolves its config, not a cleanup to fold into a deletion.
-        "edwinhu-alarm" = {
+        # Omarchy (Arch Linux on Asahi). Config key == username, so
+        # build-switch resolves it with no special case.
+        edwinhu = {
           system = "aarch64-linux";
           host = "alarm";
           # Secondary laptop. Drives the LLM CLIs and reaches the Framework
@@ -190,7 +186,6 @@
           profile = "client";
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
-          username = "edwinhu";  # Actual username on the system
         };
         # Omarchy (Arch Linux) on Framework Desktop (AMD Ryzen AI Max, x86_64)
         # Config key == username "eh", so build-switch resolves it with no special case.

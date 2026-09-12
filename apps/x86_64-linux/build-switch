@@ -42,14 +42,9 @@ else
     
     export NIXPKGS_ALLOW_UNFREE=1
     
-    # Map username to config key (handles cases where username differs from config key)
-    # e.g., edwinhu on alarm uses config key "edwinhu-alarm"
-    HOSTNAME=$(hostname)
+    # Every config key in flake.nix is now the username, so no mapping.
     CONFIG_KEY="${USERNAME}"
-    if [ "$USERNAME" = "edwinhu" ] && [ "$HOSTNAME" = "alarm" ]; then
-        CONFIG_KEY="edwinhu-alarm"
-    fi
-    
+
     echo -e "${YELLOW}Building home-manager configuration: ${CONFIG_KEY} (user: ${USERNAME})${NC}"
     echo -e "${YELLOW}Starting build...${NC}"
     
