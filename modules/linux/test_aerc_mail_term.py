@@ -270,6 +270,70 @@ def test_launcher_strips_multiplexer_env_without_compgen(script):
     assert not missing, f"launcher never removes: {missing}"
 
 
+SEEN_MESSAGE = MESSAGE.replace(b"O-TERM FIXTURE", b"SEEN-RENAME FIXTURE")
+
+
+def test_launcher_recovers_seen_renamed_maildir_file(script, serve_text, sandbox):
+    """Opening an unread message renames the file before the launcher runs.
+
+    Marking a message Seen appends the `S` flag to the maildir info part, so
+    aerc's cached {{.Filename}} names a path that no longer exists. Only the
+    flags after `:2,` change, so the launcher must recover by globbing the base.
+    """
+    assert script, "module defines no aerc-mail-term script"
+    maildir = sandbox["root"] / "maildir-cur"
+    maildir.mkdir()
+    base = maildir / "1700000000.1_1.host,U=42"
+    (maildir / "1700000000.1_1.host,U=42:2,S").write_bytes(SEEN_MESSAGE)
+    stale = f"{base}:2,"
+    assert not Path(stale).exists(), stale
+
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+         stale],
+        env=sandbox["env"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    print(result.stdout.decode(errors="replace"), flush=True)
+    print(result.stderr.decode(errors="replace"), flush=True)
+    assert result.returncode == 0, result.stdout.decode(errors="replace")
+
+    assert sandbox["argv"].exists(), "terminal-browser was never executed"
+    argv = sandbox["argv"].read_text().splitlines()
+    print(f"ARGV: {argv}", flush=True)
+    assert "open" in argv, argv
+    urls = [a for a in argv if re.fullmatch(r"http://127\.0\.0\.1:\d+/index\.html", a)]
+    assert urls, argv
+
+    with urlopen(urls[0], timeout=5) as response:
+        body = response.read()
+    print(f"HTTP {response.status} from {urls[0]}", flush=True)
+    assert b"SEEN-RENAME FIXTURE" in body, body[:400]
+
+
+def test_launcher_refuses_when_no_flag_variant_exists(script, serve_text, sandbox):
+    """The glob fallback must not rescue a message that is genuinely gone."""
+    assert script, "module defines no aerc-mail-term script"
+    maildir = sandbox["root"] / "maildir-empty"
+    maildir.mkdir()
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+         str(maildir / "1700000000.9_9.host,U=99:2,")],
+        env=sandbox["env"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    print(f"exit={result.returncode}", flush=True)
+    output = result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
+    print(output, flush=True)
+    assert result.returncode != 0, "launcher accepted a message file that is not there"
+    assert "no readable message file" in output, output
+    assert not sandbox["argv"].exists(), "browser ran without a message"
+
+
 def test_launcher_refuses_without_message(script, serve_text, sandbox):
     assert script, "module defines no aerc-mail-term script"
     missing = sandbox["root"] / "no-such-message.eml"

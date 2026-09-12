@@ -403,11 +403,27 @@ PYEOF
     export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
     set -u
 
-    if [ "$#" -lt 1 ] || [ ! -r "$1" ]; then
+    # RECOVER THE RENAMED FILE. Opening an unread message marks it Seen, which
+    # renames it in place -- `S` is appended to the maildir info part, so
+    # `…,U=<uid>:2,` becomes `…,U=<uid>:2,S` -- while aerc still expands
+    # {{.Filename}} to the path it cached BEFORE the rename. Read messages
+    # already carry the flag and never move, which is why only unread ones
+    # failed. Only the flags after `:2,` change, so glob the stable base.
+    MSG="''${1:-}"
+    if [ -n "$MSG" ] && [ ! -r "$MSG" ]; then
+      base="''${MSG%:2,*}"
+      if [ "$base" != "$MSG" ]; then
+        for f in "$base":2,*; do
+          if [ -r "$f" ]; then MSG="$f"; break; fi
+        done
+      fi
+    fi
+
+    if [ -z "$MSG" ] || [ ! -r "$MSG" ]; then
       echo "aerc-mail-term: no readable message file"; sleep 3; exit 1
     fi
 
-    ${serve} < "$1" || true
+    ${serve} < "$MSG" || true
 
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
     if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
