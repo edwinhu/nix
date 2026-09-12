@@ -70,6 +70,10 @@ let
       # exists mostly to run `herdr --remote`, so this layer is its floor.
       croc  # fast P2P file transfer (direct over LAN when peers are local)
       websocat  # WebSocket client for Chrome DevTools Protocol
+      # Remote storage and Google Workspace. Small, and wanted anywhere files
+      # move or a Sheet gets read; the bulky SDKs stay in `cloud`.
+      rclone
+      gws
 
       # Encryption and security tools
       # `op` is NOT a nix package: desktop-app integration only accepts a CLI binary
@@ -141,11 +145,11 @@ let
       tuicr  # code-review TUI (in nixpkgs); replaces revdiff, driven by the tuicr Claude skill
     ];
 
-    # Cloud SDKs and remote storage.
+    # Heavyweight cloud SDKs. The everyday remote-storage CLIs (rclone, gws)
+    # are in `core` instead — they are small, and a host that syncs files or
+    # reads a Sheet is not thereby a host that needs a 570MB SDK.
     cloud = [
       google-cloud-sdk
-      rclone
-      gws
       postgresql
     ];
 
