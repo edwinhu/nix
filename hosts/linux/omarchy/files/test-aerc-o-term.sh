@@ -18,4 +18,4 @@ ls .craft/o-term-build/launcher/bin
 export AERC_BIN="$PWD/.craft/o-term-build/aerc/bin/aerc"
 export LAUNCHER_BIN="$PWD/.craft/o-term-build/launcher/bin"
 
-exec python3 -m pytest -q hosts/linux/omarchy/files/test_aerc_o_term.py
+exec python3 -m pytest -q hosts/linux/omarchy/files/test_aerc_o_term.py "$@"
