@@ -108,8 +108,1118 @@ index 9fb7bc2..2aa9e6f 100644
  			called := false
  			parse.exit = func() {
  				called = true
+diff --git c/herdr_relay.go w/herdr_relay.go
+new file mode 100644
+index 0000000..ed9abba
+--- /dev/null
++++ w/herdr_relay.go
+@@ -0,0 +1,1104 @@
++package vaxis
++
++import (
++	"bufio"
++	"bytes"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"path/filepath"
++	"sync"
++	"time"
++
++	"go.rockorager.dev/vaxis/log"
++)
++
++// herdrSink streams a relayed image's frames to a herdr pane over herdr's API
++// socket (pane.graphics.stream) instead of writing kitty escapes to the tty.
++// herdr composites pty kitty frames slowly and holds key repeats while it
++// does, so inside a herdr pane the socket is the only path that keeps a
++// scrolling child at its own frame rate.
++//
++// The sink itself is only the answer to "does this process sit in a herdr pane
++// that will take frames" -- the paneID, where to reach it, and how to dial. The
++// per-image state (the layer, the open stream, the writer goroutine) belongs to
++// [herdrStream], so one sink serves every relay.
++type herdrSink struct {
++	paneID string
++	socket string
++	dial   func(path string) (net.Conn, error)
++
++	// fileDir is the file_frame_directory herdr advertises when the client
++	// attached to the pane can hand a frame to its terminal as a path. That is
++	// the whole point of the socket: with a directory the terminal receives a
++	// 182-byte escape naming a file, without one herdr's client inlines every
++	// frame as megabytes of base64 and the pane stalls exactly as the tty path
++	// does. Empty means this herdr takes raw bodies on the stream instead.
++	fileDir string
++}
++
++// herdrFrame is one child frame the sink can stream: a raw pixel file the
++// child already wrote (kitty t=f), with its geometry and pixel format.
++type herdrFrame struct {
++	Path   string
++	Width  int
++	Height int
++	Format string // "rgba" (kitty f=32) or "rgb" (kitty f=24)
++}
++
++const (
++	// herdrDialTimeout and herdrRPCTimeout bound the one-shot requests
++	// (pane.graphics.info, pane.graphics.stream's opening handshake,
++	// pane.graphics.clear). A herdr that does not answer must leave the relay
++	// on the tty path rather than stalling the terminal that asked.
++	herdrDialTimeout = 500 * time.Millisecond
++	herdrRPCTimeout  = 2 * time.Second
++
++	// herdrFrameTimeout bounds one frame's write. A frame is a few tens of
++	// megabytes over a unix socket; past this herdr is not draining and the
++	// stream is treated as gone.
++	herdrFrameTimeout = 5 * time.Second
++
++	// herdrMaxDimension and herdrMaxFrameBytes bound what a CHILD may ask this
++	// process to read and forward. The geometry arrives as s= and v= on the
++	// child's escape stream, so without a ceiling a single frame names more
++	// bytes than any display could hold -- and the multiplication itself would
++	// overflow.
++	herdrMaxDimension  = 1 << 16
++	herdrMaxFrameBytes = 128 << 20
++
++	// herdrPrimaryLayer is the only layer herdr passes to its terminal as a
++	// file. A named layer is composited inline and capped at 16 MiB, which is
++	// the slow road this sink exists to leave, so a herdr that advertises a
++	// frame directory is streamed to `primary` instead.
++	herdrPrimaryLayer = "primary"
++
++	// herdrFrameAckType marks the reply that says herdr is done with a frame's
++	// file. It is the only line the stream ever sends; anything else is a
++	// refusal.
++	herdrFrameAckType = "pane_graphics_frame_ack"
++
++	// herdrFileSlots is how many frame files one layer rotates through.
++	//
++	// herdr reads a file only when its terminal gets to the frame, and says so
++	// afterwards with an ack, so the file backing an unacked revision still has
++	// a reader and must not be rewritten. Slots are what give the next frame
++	// somewhere else to go; four of them is several frame times of slack at 60
++	// fps, and each one costs a frame's worth of the advertised directory.
++	herdrFileSlots = 4
++)
++
++var errHerdrStreamGone = errors.New("herdr: graphics stream is gone")
++
++// herdrPaneFromEnv answers "does this process sit in a herdr pane that should
++// be offered frames at all" from the ENVIRONMENT alone -- no dial, no round
++// trip. It is the half of the decision a caller on the embedded terminal's
++// parser goroutine can afford to make: outside herdr, and with the escape hatch
++// set, the relay must behave exactly as it always has, and that has to be
++// settled without touching a socket.
++func herdrPaneFromEnv(env func(string) string) (pane, socket string, inPane bool) {
++	if env == nil {
++		return "", "", false
++	}
++	if env("AERC_TERM_HERDR_GRAPHICS") == "0" {
++		return "", "", false
++	}
++	pane, socket = env("HERDR_PANE_ID"), env("HERDR_SOCKET_PATH")
++	return pane, socket, pane != "" && socket != ""
++}
++
++// newHerdrSink decides whether this process sits in a herdr pane whose
++// graphics socket answers. env and dial are injected so a test can run a fake
++// herdr on a temporary unix socket.
++//
++// It DIALS, so it belongs on a goroutine of its own; see [probeHerdrSink].
++//
++// Returns (nil, nil) when HERDR_PANE_ID or HERDR_SOCKET_PATH is unset or
++// AERC_TERM_HERDR_GRAPHICS is "0"; an error when herdr does not answer
++// pane.graphics.info with pane_visible true.
++func newHerdrSink(env func(string) string, dial func(path string) (net.Conn, error)) (*herdrSink, error) {
++	pane, socket, inPane := herdrPaneFromEnv(env)
++	if !inPane || dial == nil {
++		return nil, nil
++	}
++	s := &herdrSink{paneID: pane, socket: socket, dial: dial}
++	if err := s.probe(); err != nil {
++		return nil, err
++	}
++	return s, nil
++}
++
++// herdrSinkPromise is one probe: in flight, or finished.
++//
++// The probe costs a dial and a round trip -- up to herdrDialTimeout +
++// herdrRPCTimeout -- and it is wanted on the embedded terminal's PARSER
++// goroutine, which holds the widget's lock and is what carries the child its
++// keystrokes. Waiting that long there stalls the whole pane, which is the exact
++// failure this sink exists to remove. So the answer is produced on a goroutine
++// of its own and collected by the only party that can afford to wait: a
++// stream's writer.
++//
++// Frames offered before the answer arrives WAIT IN THE MAILBOX; they are not
++// sent to the tty meanwhile. The other choice -- tty until the sink is ready --
++// would put the first frame of every image on the host terminal and then strand
++// it there, because a relay stops placing an image once the sink owns it and so
++// never tells the host to drop that first frame. What waiting costs instead is
++// that a probe which ends up failing loses the frames it held; the child's next
++// frame, a few milliseconds later, takes the tty path like every other frame
++// after it.
++type herdrSinkPromise struct {
++	done chan struct{}
++	// sink and err are written before done is closed and read only after it is
++	// closed, which is the whole of their synchronisation.
++	sink *herdrSink
++	err  error
++}
++
++var errHerdrNoPane = errors.New("herdr: not in a herdr pane")
++
++// probeHerdrSink starts the probe on its own goroutine and returns at once.
++func probeHerdrSink(env func(string) string, dial func(path string) (net.Conn, error)) *herdrSinkPromise {
++	p := &herdrSinkPromise{done: make(chan struct{})}
++	go func() {
++		defer close(p.done)
++		sink, err := newHerdrSink(env, dial)
++		switch {
++		case err != nil:
++			p.err = err
++		case sink == nil:
++			p.err = errHerdrNoPane
++		default:
++			p.sink = sink
++		}
++	}()
++	return p
++}
++
++// herdrSinkAnswered wraps a sink somebody else has already probed for, so a
++// caller holding one takes the same path the process-wide probe does.
++func herdrSinkAnswered(s *herdrSink) *herdrSinkPromise {
++	p := &herdrSinkPromise{done: make(chan struct{}), sink: s}
++	close(p.done)
++	return p
++}
++
++// refused reports a probe that HAS ALREADY answered, with an answer of no. It
++// never waits: an unanswered probe is not a refusal.
++//
++// This is what keeps the "herdr does not take frames" fallback honest. A relay
++// attached to a refused probe would still accept its first frame into the
++// mailbox and only then discover there is no sink -- and that frame is gone,
++// because the relay told the widget it owned the image and so nothing was ever
++// queued for the tty. One relay may lose one frame that way, to the probe that
++// was still in flight when it was created; every relay after the answer must
++// simply be a relay without a sink, which is byte-for-byte today's tty path.
++func (p *herdrSinkPromise) refused() bool {
++	select {
++	case <-p.done:
++		return p.err != nil
++	default:
++		return false
++	}
++}
++
++// wait blocks until the probe has answered, or until quit says the stream it
++// was for is gone.
++func (p *herdrSinkPromise) wait(quit <-chan struct{}) (*herdrSink, error) {
++	select {
++	case <-p.done:
++	case <-quit:
++		return nil, errHerdrStreamGone
++	}
++	if p.err != nil {
++		return nil, p.err
++	}
++	return p.sink, nil
++}
++
++// processHerdrSink is the one probe every relay in this process shares. Its
++// answer cannot change while the process runs, and a child that names a fresh
++// image id per frame must not buy a socket handshake per frame.
++var processHerdrSink struct {
++	once    sync.Once
++	promise *herdrSinkPromise
++}
++
++// herdrSinkForProcess returns that probe, starting it the first time it is
++// asked. It never blocks and never touches a socket on the caller's goroutine.
++// nil means this process is not in a herdr pane at all -- the one answer that
++// IS available immediately, because it is read from the environment.
++func herdrSinkForProcess() *herdrSinkPromise {
++	processHerdrSink.once.Do(func() {
++		if _, _, inPane := herdrPaneFromEnv(os.Getenv); !inPane {
++			return
++		}
++		processHerdrSink.promise = probeHerdrSink(os.Getenv, dialHerdr)
++	})
++	return processHerdrSink.promise
++}
++
++func dialHerdr(path string) (net.Conn, error) {
++	return net.DialTimeout("unix", path, herdrDialTimeout)
++}
++
++// herdrRequest is one newline-delimited JSON call on herdr's API socket.
++type herdrRequest struct {
++	ID     string         `json:"id"`
++	Method string         `json:"method"`
++	Params map[string]any `json:"params"`
++}
++
++// herdrReply is as much of herdr's answer as any caller here reads.
++type herdrReply struct {
++	Result struct {
++		Type               string `json:"type"`
++		PaneVisible        bool   `json:"pane_visible"`
++		FileFrameDirectory string `json:"file_frame_directory"`
++		Revision           uint64 `json:"revision"`
++	} `json:"result"`
++	Error json.RawMessage `json:"error"`
++}
++
++// herdrFrameHeader announces one frame. It carries the pixels one of two ways
++// and never both: file names a file herdr reads itself, and data_length says
++// exactly how many raw bytes follow this line -- herdr reads that many before
++// looking for the next header, so announcing a length the body does not match
++// desynchronises the stream for good.
++type herdrFrameHeader struct {
++	Format     string          `json:"format"`
++	Width      int             `json:"image_width"`
++	Height     int             `json:"image_height"`
++	Revision   uint64          `json:"revision"`
++	DataLength int64           `json:"data_length,omitempty"`
++	File       *herdrFrameFile `json:"file,omitempty"`
++	Placement  herdrPlacement  `json:"placement"`
++}
++
++// herdrFrameFile points at the frame instead of carrying it.
++type herdrFrameFile struct {
++	Path string `json:"path"`
++}
++
++// herdrPlacement is where the layer sits in the pane, in cells.
++type herdrPlacement struct {
++	ViewportCol int `json:"viewport_col"`
++	ViewportRow int `json:"viewport_row"`
++	GridCols    int `json:"grid_cols"`
++	GridRows    int `json:"grid_rows"`
++}
++
++// call performs a one-request connection: dial, send, read the single reply,
++// hang up. Every method but pane.graphics.stream works this way -- herdr closes
++// the connection itself once it has answered.
++func (s *herdrSink) call(id, method string, params map[string]any) (herdrReply, error) {
++	conn, err := s.dial(s.socket)
++	if err != nil {
++		return herdrReply{}, err
++	}
++	defer conn.Close()
++	_ = conn.SetDeadline(time.Now().Add(herdrRPCTimeout))
++	if err := herdrSend(conn, id, method, params); err != nil {
++		return herdrReply{}, err
++	}
++	return herdrRecv(bufio.NewReader(conn))
++}
++
++// probe asks herdr whether this pane will take frames at all, and how. It is
++// the one request the sink makes before it exists, so a herdr that does not
++// answer leaves every relay on the tty path.
++func (s *herdrSink) probe() error {
++	reply, err := s.call("info", "pane.graphics.info", map[string]any{"pane_id": s.paneID})
++	if err != nil {
++		return err
++	}
++	if !reply.Result.PaneVisible {
++		return fmt.Errorf("herdr: pane %s reports pane_visible false", s.paneID)
++	}
++	s.fileDir = usableHerdrFrameDir(reply.Result.FileFrameDirectory)
++	return nil
++}
++
++// usableHerdrFrameDir accepts an advertised frame directory only if frames can
++// actually be staged in it: an absolute path that is a directory today. A
++// relative or missing one would otherwise be discovered per frame, and every
++// frame that discovered it would be a frame the pane never showed.
++func usableHerdrFrameDir(dir string) string {
++	if dir == "" || !filepath.IsAbs(dir) {
++		return ""
++	}
++	dir = filepath.Clean(dir)
++	info, err := os.Stat(dir)
++	if err != nil || !info.IsDir() {
++		log.Debug("herdr: advertised frame directory %s is unusable, streaming raw bodies: %v", dir, err)
++		return ""
++	}
++	return dir
++}
++
++// openStream opens the one long-lived connection. It stays open and every frame
++// is written to it; herdr answers only the opening request.
++//
++// The reader that consumed the handshake is returned with the connection rather
++// than rebuilt later: it may hold buffered bytes, and a second reader over the
++// same socket would lose them.
++func (s *herdrSink) openStream(layerID string) (net.Conn, *bufio.Reader, error) {
++	conn, err := s.dial(s.socket)
++	if err != nil {
++		return nil, nil, err
++	}
++	_ = conn.SetDeadline(time.Now().Add(herdrRPCTimeout))
++	reader := bufio.NewReader(conn)
++	err = herdrSend(conn, "stream", "pane.graphics.stream", map[string]any{
++		"pane_id":  s.paneID,
++		"layer_id": layerID,
++		"z_index":  0,
++	})
++	if err == nil {
++		_, err = herdrRecv(reader)
++	}
++	if err != nil {
++		conn.Close()
++		return nil, nil, err
++	}
++	// Frames are written under their own deadline and the reply side blocks
++	// until herdr has something to say, so neither keeps the handshake's.
++	_ = conn.SetDeadline(time.Time{})
++	return conn, reader, nil
++}
++
++// clearLayer removes the layer from the pane.
++func (s *herdrSink) clearLayer(layerID string) {
++	_, err := s.call("clear", "pane.graphics.clear", map[string]any{
++		"pane_id":  s.paneID,
++		"layer_id": layerID,
++	})
++	if err != nil {
++		log.Debug("herdr: could not clear layer %s: %v", layerID, err)
++	}
++}
++
++func herdrSend(w io.Writer, id, method string, params map[string]any) error {
++	line, err := json.Marshal(herdrRequest{ID: id, Method: method, Params: params})
++	if err != nil {
++		return err
++	}
++	_, err = w.Write(append(line, '\n'))
++	return err
++}
++
++func herdrRecv(r *bufio.Reader) (herdrReply, error) {
++	line, err := r.ReadBytes('\n')
++	if err != nil {
++		return herdrReply{}, err
++	}
++	var reply herdrReply
++	if err := json.Unmarshal(line, &reply); err != nil {
++		return herdrReply{}, fmt.Errorf("herdr: unreadable reply %q", bytes.TrimSpace(line))
++	}
++	if len(reply.Error) > 0 {
++		return reply, fmt.Errorf("herdr: %s", bytes.TrimSpace(reply.Error))
++	}
++	return reply, nil
++}
++
++// herdrPlace is a layer's rectangle in pane cells.
++type herdrPlace struct {
++	col  int
++	row  int
++	cols int
++	rows int
++}
++
++// herdrStream is one image's layer on the pane: a one-slot newest-wins mailbox,
++// the goroutine that drains it onto the socket, and the rectangle the widget
++// last placed the image at.
++//
++// The mailbox is what keeps the child at its own frame rate. Writing a frame
++// costs a copy of the whole body, and the producer is the embedded terminal's
++// parser goroutine -- if it waited for that, the child would again be paced by
++// the compositor rather than by itself. So a frame that is superseded before it
++// is written is simply dropped, and the newest one always goes.
++type herdrStream struct {
++	// promise is the process's probe. The writer collects it; nobody else may
++	// wait on it.
++	promise *herdrSinkPromise
++	id      uint64
++
++	// wake carries "the state changed, look again". It is buffered so a
++	// producer never blocks and never loses a wakeup: a send that finds the
++	// slot full is dropped only because the writer has a token it has not
++	// consumed yet, and consuming it re-reads the state under mu.
++	wake chan struct{}
++	// acked carries "a frame file came free", from the goroutine reading
++	// herdr's acks to a writer waiting for somewhere to stage the next frame.
++	// Buffered and dropped the same way, for the same reason.
++	acked chan struct{}
++	quit  chan struct{}
++
++	mu sync.Mutex
++	// sink and layerID are the probe's answer, written once by the writer
++	// goroutine when it resolves the promise. They are guarded because close
++	// reads them from whatever goroutine tore the relay down.
++	sink      *herdrSink
++	layerID   string
++	started   bool
++	closed    bool
++	failed    bool
++	pending   *herdrFrame // the mailbox: the newest frame nobody has written
++	current   *herdrFrame // the frame the layer is showing
++	placed    bool
++	place     herdrPlace
++	sentPlace herdrPlace
++	revision  uint64
++	conn      net.Conn
++	// slots are the frame files this layer rotates through, and ackedRev is the
++	// highest revision herdr has finished with. A slot is free exactly when the
++	// revision last staged in it has been acked.
++	slots    []*herdrFileSlot
++	ackedRev uint64
++
++	closeOnce sync.Once
++	logOnce   sync.Once
++
++	// copyBuf is the writer goroutine's alone -- nothing else touches it, so it
++	// needs no lock. See herdrCopyBufferBytes for why it exists at all.
++	copyBuf []byte
++}
++
++// herdrCopyBufferBytes is the chunk one frame's body moves in.
++//
++// io.Copy's own default is 32 KiB, which turns a 15 MB frame into nine hundred
++// syscalls; a megabyte at a time is an order of magnitude fewer, and past that
++// the socket's send buffer -- not this one -- decides how many writes it takes.
++// A frame is never held whole, so the cost is this buffer per streaming layer.
++const herdrCopyBufferBytes = 1 << 20
++
++// herdrFileSlot is one file frames are staged in. rev is the revision the file
++// currently holds; it is free again once herdr has acked that revision.
++type herdrFileSlot struct {
++	path string
++	rev  uint64
++}
++
++// newHerdrStream is O(1): the probe it is given may not have answered yet, and
++// the layer cannot be chosen until it has. Nothing here dials, stats or waits,
++// because this runs on the embedded terminal's parser goroutine.
++func newHerdrStream(promise *herdrSinkPromise, id uint64) *herdrStream {
++	return &herdrStream{
++		promise: promise,
++		id:      id,
++		wake:    make(chan struct{}, 1),
++		acked:   make(chan struct{}, 1),
++		quit:    make(chan struct{}),
++	}
++}
++
++// offer puts a frame in the mailbox, replacing whatever was waiting there. It
++// reports false once the stream is closed or gone, which is the caller's signal
++// to go back to the tty path.
++func (s *herdrStream) offer(f herdrFrame) bool {
++	s.mu.Lock()
++	if s.closed || s.failed {
++		s.mu.Unlock()
++		return false
++	}
++	frame := f
++	s.pending = &frame
++	if !s.started {
++		s.started = true
++		go s.run()
++	}
++	s.mu.Unlock()
++	s.signal()
++	return true
++}
++
++// setPlacement records where the widget drew the image. The first frame waits
++// for this, and a later change re-sends the current frame at the new rectangle.
++func (s *herdrStream) setPlacement(col, row, cols, rows int) {
++	s.mu.Lock()
++	if s.closed {
++		s.mu.Unlock()
++		return
++	}
++	s.place = herdrPlace{col: col, row: row, cols: cols, rows: rows}
++	s.placed = true
++	s.mu.Unlock()
++	s.signal()
++}
++
++func (s *herdrStream) signal() {
++	select {
++	case s.wake <- struct{}{}:
++	default:
++	}
++}
++
++func (s *herdrStream) run() {
++	sink, layer, ok := s.resolveSink()
++	if !ok {
++		return
++	}
++	for {
++		select {
++		case <-s.wake:
++		case <-s.quit:
++			return
++		}
++		if !s.drain(sink, layer) {
++			return
++		}
++	}
++}
++
++// resolveSink collects the process's probe and settles which layer this stream
++// writes to. It is done HERE, on the writer goroutine, because the writer is
++// the only party that may wait for it: the frames offered meanwhile sit in the
++// one-slot mailbox, and the newest of them goes out the moment the answer
++// arrives.
++func (s *herdrStream) resolveSink() (*herdrSink, string, bool) {
++	sink, err := s.promise.wait(s.quit)
++	if err != nil {
++		s.fail(err)
++		return nil, "", false
++	}
++	// A herdr that takes files hands them to its terminal, and it only does
++	// that for `primary`; a layer of our own naming would be composited inline
++	// and put the pane back where it started.
++	layer := herdrPrimaryLayer
++	if sink.fileDir == "" {
++		layer = fmt.Sprintf("aerc-relay-%d", s.id)
++	}
++	s.mu.Lock()
++	live := !s.closed && !s.failed
++	if live {
++		// Published for close, which may have to clear the layer from another
++		// goroutine entirely.
++		s.sink, s.layerID = sink, layer
++	}
++	s.mu.Unlock()
++	return sink, layer, live
++}
++
++// drain writes frames until the mailbox is empty and the layer is showing the
++// current rectangle. It reports whether the stream is still usable.
++func (s *herdrStream) drain(sink *herdrSink, layer string) bool {
++	for {
++		s.mu.Lock()
++		if s.closed || s.failed {
++			s.mu.Unlock()
++			return false
++		}
++		if !s.placed {
++			// Nothing may be drawn before the widget has said where.
++			s.mu.Unlock()
++			return true
++		}
++		frame, resend := s.pending, false
++		switch {
++		case frame != nil:
++			s.pending = nil
++		case s.current != nil && s.place != s.sentPlace:
++			// The rectangle moved under the frame already on screen.
++			frame, resend = s.current, true
++		default:
++			s.mu.Unlock()
++			return true
++		}
++		s.revision += 1
++		rev, place := s.revision, s.place
++		s.mu.Unlock()
++
++		fatal, err := s.writeFrame(sink, layer, *frame, place, rev)
++
++		s.mu.Lock()
++		switch {
++		case err == nil:
++			s.current = frame
++			s.sentPlace = place
++		case fatal:
++			s.failed = true
++		case resend:
++			// The frame on screen can no longer be read, so stop trying to
++			// move it; the next frame the child sends takes over.
++			s.current = nil
++		}
++		s.mu.Unlock()
++
++		if err != nil {
++			s.logOnce.Do(func() {
++				log.Warn("herdr: frame not streamed to layer %s: %v", layer, err)
++			})
++			if fatal {
++				s.dropConn()
++				return false
++			}
++		}
++	}
++}
++
++// writeFrame announces one frame and copies its body onto the socket.
++//
++// fatal distinguishes "this frame is no good" -- a source that cannot be read,
++// a geometry no image has -- from "the stream is gone". Only the second gives
++// the image back to the tty path; the first drops a frame the child will
++// replace anyway.
++func (s *herdrStream) writeFrame(sink *herdrSink, layer string, f herdrFrame, place herdrPlace, rev uint64) (fatal bool, err error) {
++	bpp, ok := herdrBytesPerPixel(f.Format)
++	if !ok {
++		return false, fmt.Errorf("herdr: frame format %q is not raw pixels", f.Format)
++	}
++	if f.Width <= 0 || f.Height <= 0 || f.Width > herdrMaxDimension || f.Height > herdrMaxDimension {
++		return false, fmt.Errorf("herdr: frame geometry %dx%d is out of range", f.Width, f.Height)
++	}
++	n := int64(f.Width) * int64(f.Height) * int64(bpp)
++	if n > herdrMaxFrameBytes {
++		return false, fmt.Errorf("herdr: frame of %d bytes exceeds the %d byte ceiling", n, int64(herdrMaxFrameBytes))
++	}
++	if sink.fileDir != "" {
++		return s.writeFileFrame(sink, layer, f, place, rev, n)
++	}
++	return s.writeBodyFrame(sink, layer, f, place, rev, n)
++}
++
++// writeFileFrame stages the frame in one of this layer's files and names it in
++// the header. herdr reads the file itself, so this puts a path on the socket
++// where the body path puts megabytes -- which is the whole reason the pane
++// keeps up with the child.
++func (s *herdrStream) writeFileFrame(sink *herdrSink, layer string, f herdrFrame, place herdrPlace, rev uint64, n int64) (fatal bool, err error) {
++	slot, err := s.takeFileSlot(sink.fileDir)
++	if err != nil {
++		return true, err
++	}
++	// Everything that can fail without the file being on the wire happens before
++	// the slot is claimed, so a dropped frame gives its file straight back.
++	header, err := json.Marshal(herdrFrameHeader{
++		Format:    f.Format,
++		Width:     f.Width,
++		Height:    f.Height,
++		Revision:  rev,
++		File:      &herdrFrameFile{Path: slot.path},
++		Placement: herdrPlacementOf(place),
++	})
++	if err != nil {
++		return false, err
++	}
++	if err := s.stageFrameFile(slot.path, f.Path, n); err != nil {
++		return false, err
++	}
++	// Claimed before the header goes out, so an ack for an older revision
++	// arriving mid-write cannot hand this file to the next frame.
++	s.mu.Lock()
++	slot.rev = rev
++	s.mu.Unlock()
++
++	conn, err := s.stream(sink, layer)
++	if err == nil {
++		_ = conn.SetWriteDeadline(time.Now().Add(herdrFrameTimeout))
++		_, err = conn.Write(append(header, '\n'))
++	}
++	if err != nil {
++		// herdr never got a header naming this file, and close may already have
++		// swept the ring, so nothing else will ever take it away.
++		_ = os.Remove(slot.path)
++		return true, err
++	}
++	return false, nil
++}
++
++// writeBodyFrame announces one frame and copies its body onto the socket. It is
++// what a herdr that advertised no frame directory takes.
++func (s *herdrStream) writeBodyFrame(sink *herdrSink, layer string, f herdrFrame, place herdrPlace, rev uint64, n int64) (fatal bool, err error) {
++	file, err := os.Open(f.Path)
++	if err != nil {
++		return false, err
++	}
++	defer file.Close()
++	info, err := file.Stat()
++	if err != nil {
++		return false, err
++	}
++	if !info.Mode().IsRegular() {
++		return false, fmt.Errorf("herdr: %s is not a regular file", f.Path)
++	}
++	if info.Size() < n {
++		// The header promises exactly n bytes and herdr reads that many
++		// before it looks for another header, so a source too short to
++		// deliver them is refused BEFORE the length is announced.
++		return false, fmt.Errorf("herdr: %s holds %d bytes, the frame needs %d", f.Path, info.Size(), n)
++	}
++
++	header, err := json.Marshal(herdrFrameHeader{
++		Format:     f.Format,
++		Width:      f.Width,
++		Height:     f.Height,
++		Revision:   rev,
++		DataLength: n,
++		Placement:  herdrPlacementOf(place),
++	})
++	if err != nil {
++		return false, err
++	}
++
++	conn, err := s.stream(sink, layer)
++	if err != nil {
++		return true, err
++	}
++	_ = conn.SetWriteDeadline(time.Now().Add(herdrFrameTimeout))
++	if _, err := conn.Write(append(header, '\n')); err != nil {
++		return true, err
++	}
++	// LimitReader rather than the file's own length: the body must be exactly
++	// what the header promised, whatever the file grew to since the stat.
++	written, err := io.CopyBuffer(conn, io.LimitReader(file, n), s.copyBuffer())
++	if err != nil {
++		return true, err
++	}
++	if written != n {
++		// The source shrank between the stat and the copy, so herdr is now
++		// waiting for bytes that will never arrive.
++		return true, fmt.Errorf("herdr: frame body short by %d bytes", n-written)
++	}
++	return false, nil
++}
++
++func herdrPlacementOf(place herdrPlace) herdrPlacement {
++	return herdrPlacement{
++		ViewportCol: place.col,
++		ViewportRow: place.row,
++		GridCols:    place.cols,
++		GridRows:    place.rows,
++	}
++}
++
++func (s *herdrStream) copyBuffer() []byte {
++	if s.copyBuf == nil {
++		s.copyBuf = make([]byte, herdrCopyBufferBytes)
++	}
++	return s.copyBuf
++}
++
++// takeFileSlot picks the file the next frame may be staged in: one whose
++// revision herdr has acked, or a fresh one while the ring has room. When every
++// file still has a reader it waits for an ack rather than overwriting one --
++// herdr's terminal would otherwise read a frame half replaced by its successor.
++//
++// Only the writer goroutine calls it, so the slot it returns cannot be taken
++// twice.
++func (s *herdrStream) takeFileSlot(dir string) (*herdrFileSlot, error) {
++	// Built only if the ring is actually full: the steady state finds a free
++	// file on the first look, and a timer per frame at 60 fps is pure garbage.
++	var deadline *time.Timer
++	for {
++		s.mu.Lock()
++		if s.closed || s.failed {
++			s.mu.Unlock()
++			return nil, errHerdrStreamGone
++		}
++		for _, slot := range s.slots {
++			if slot.rev <= s.ackedRev {
++				s.mu.Unlock()
++				return slot, nil
++			}
++		}
++		if len(s.slots) < herdrFileSlots {
++			// The name is this process's and this layer's alone, so two relays
++			// -- or two aercs in two panes -- never stage into one file.
++			slot := &herdrFileSlot{path: filepath.Join(dir,
++				fmt.Sprintf("aerc-relay-%d-%d-%d.raw", os.Getpid(), s.id, len(s.slots)))}
++			s.slots = append(s.slots, slot)
++			s.mu.Unlock()
++			return slot, nil
++		}
++		s.mu.Unlock()
++
++		if deadline == nil {
++			deadline = time.NewTimer(herdrFrameTimeout)
++			defer deadline.Stop()
++		}
++		select {
++		case <-s.acked:
++		case <-s.quit:
++			return nil, errHerdrStreamGone
++		case <-deadline.C:
++			return nil, fmt.Errorf("herdr: no frame file acked within %s", herdrFrameTimeout)
++		}
++	}
++}
++
++// stageFrameFile copies exactly n bytes of the child's frame into dst.
++//
++// The copy is what satisfies herdr's contract -- a regular file of this
++// process's own uid, mode 0600, a single link, exactly n bytes long -- and none
++// of that is true of the child's file, which the child rewrites for its next
++// frame while herdr's terminal is still reading this one. dst is unlinked
++// first so a reader herdr still has keeps the old inode and the new file starts
++// empty with one link.
++func (s *herdrStream) stageFrameFile(dst, src string, n int64) error {
++	in, err := os.Open(src)
++	if err != nil {
++		return err
++	}
++	defer in.Close()
++	info, err := in.Stat()
++	if err != nil {
++		return err
++	}
++	if !info.Mode().IsRegular() {
++		return fmt.Errorf("herdr: %s is not a regular file", src)
++	}
++	if info.Size() < n {
++		return fmt.Errorf("herdr: %s holds %d bytes, the frame needs %d", src, info.Size(), n)
++	}
++
++	if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
++		return err
++	}
++	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
++	if err != nil {
++		return err
++	}
++	// O_EXCL's mode is masked by the umask, and herdr checks the mode itself.
++	err = out.Chmod(0o600)
++	var written int64
++	if err == nil {
++		// LimitReader for the same reason the body path uses one: the file must
++		// be exactly n bytes however much the child's has grown.
++		written, err = io.CopyBuffer(out, io.LimitReader(in, n), s.copyBuffer())
++	}
++	if cerr := out.Close(); err == nil {
++		err = cerr
++	}
++	if err == nil && written != n {
++		err = fmt.Errorf("herdr: %s gave %d of the frame's %d bytes", src, written, n)
++	}
++	if err != nil {
++		_ = os.Remove(dst)
++		return err
++	}
++	return nil
++}
++
++func herdrBytesPerPixel(format string) (int, bool) {
++	switch format {
++	case "rgba":
++		return 4, true
++	case "rgb":
++		return 3, true
++	default:
++		return 0, false
++	}
++}
++
++// stream returns the open stream connection, opening it on first use. Only the
++// writer goroutine calls it.
++func (s *herdrStream) stream(sink *herdrSink, layer string) (net.Conn, error) {
++	s.mu.Lock()
++	switch {
++	case s.closed, s.failed:
++		s.mu.Unlock()
++		return nil, errHerdrStreamGone
++	case s.conn != nil:
++		conn := s.conn
++		s.mu.Unlock()
++		return conn, nil
++	}
++	s.mu.Unlock()
++
++	conn, reader, err := sink.openStream(layer)
++	if err != nil {
++		return nil, err
++	}
++
++	s.mu.Lock()
++	if s.closed || s.failed {
++		// Closed while the handshake was in flight. close saw no connection, so
++		// the layer this just opened is ours to remove as well as the socket.
++		s.mu.Unlock()
++		conn.Close()
++		sink.clearLayer(layer)
++		return nil, errHerdrStreamGone
++	}
++	s.conn = conn
++	s.mu.Unlock()
++
++	go s.watch(reader)
++	return conn, nil
++}
++
++// watch turns herdr's end of the stream into either a freed frame file or a
++// verdict. A frame acked is herdr saying it has finished reading that
++// revision's file, which is the only thing that lets the file be written again;
++// any other line is a refusal, and EOF is the pane going away. Either of those
++// puts later frames back on the tty path.
++func (s *herdrStream) watch(reader *bufio.Reader) {
++	for {
++		line, err := reader.ReadBytes('\n')
++		if err != nil {
++			s.fail(fmt.Errorf("herdr: stream ended: %w", err))
++			return
++		}
++		var reply herdrReply
++		if err := json.Unmarshal(line, &reply); err != nil {
++			s.fail(fmt.Errorf("herdr: unreadable stream reply %q", bytes.TrimSpace(line)))
++			return
++		}
++		if len(reply.Error) > 0 || reply.Result.Type != herdrFrameAckType {
++			s.fail(fmt.Errorf("herdr: stream refused a frame: %s", bytes.TrimSpace(line)))
++			return
++		}
++		s.recordAck(reply.Result.Revision)
++	}
++}
++
++// recordAck frees every frame file holding a revision herdr is done with. The
++// highest revision is kept rather than the exact one, so an ack herdr coalesces
++// or drops cannot pin a file for the rest of the stream.
++func (s *herdrStream) recordAck(rev uint64) {
++	s.mu.Lock()
++	if rev > s.ackedRev {
++		s.ackedRev = rev
++	}
++	s.mu.Unlock()
++	select {
++	case s.acked <- struct{}{}:
++	default:
++	}
++}
++
++func (s *herdrStream) fail(err error) {
++	s.mu.Lock()
++	if s.closed || s.failed {
++		// A close of our own doing, or a verdict already recorded.
++		s.mu.Unlock()
++		return
++	}
++	s.failed = true
++	s.mu.Unlock()
++	// By relay id, not by layer: a probe that never answered has no layer yet,
++	// and that is one of the ways to get here.
++	s.logOnce.Do(func() { log.Warn("herdr: relay %d back on the tty path: %v", s.id, err) })
++	s.dropConn()
++	s.signal()
++}
++
++// dropConn closes the stream connection. The writer may be blocked in a copy on
++// it; closing is what unblocks that, which is why nothing here waits for the
++// writer to finish.
++func (s *herdrStream) dropConn() {
++	s.mu.Lock()
++	conn := s.conn
++	s.conn = nil
++	s.mu.Unlock()
++	if conn != nil {
++		conn.Close()
++	}
++}
++
++// close removes the layer from the pane and shuts the writer down. It is safe
++// to call more than once, and never blocks on a write in flight.
++func (s *herdrStream) close() {
++	s.closeOnce.Do(func() {
++		s.mu.Lock()
++		s.closed = true
++		// nil while the probe has not answered -- and then no layer was ever
++		// opened and no file ever staged, so there is nothing to undo.
++		sink, layer := s.sink, s.layerID
++		opened := s.conn != nil
++		staged := make([]string, 0, len(s.slots))
++		for _, slot := range s.slots {
++			staged = append(staged, slot.path)
++		}
++		s.slots = nil
++		s.mu.Unlock()
++
++		close(s.quit)
++		s.dropConn()
++		if sink != nil && (opened || len(staged) > 0) {
++			// One short-lived connection of its own, because close runs on
++			// the caller's goroutine -- the parser, or the terminal being
++			// torn down -- and neither may wait on herdr.
++			go func() {
++				if opened {
++					sink.clearLayer(layer)
++				}
++				// Only now: while the layer stood, herdr's terminal could
++				// still be reading the frame it is showing.
++				for _, path := range staged {
++					_ = os.Remove(path)
++				}
++			}()
++		}
++	})
++}
++
++// attachHerdr gives this relay a sink that has already been probed for. A relay
++// with a sink writes nothing for its image to the tty: frames go to the socket,
++// placements are remembered for the next frame, and Destroy clears the herdr
++// layer.
++func (r *KittyRelay) attachHerdr(s *herdrSink) {
++	if s == nil {
++		return
++	}
++	r.attachHerdrSink(herdrSinkAnswered(s))
++}
++
++// attachHerdrSink gives this relay the process's probe, answered or not.
++//
++// It is O(1) and touches no socket: it runs on the embedded terminal's parser
++// goroutine with the widget's lock held, where anything slower holds up every
++// key the child has pending. The waiting is the writer goroutine's job.
++func (r *KittyRelay) attachHerdrSink(p *herdrSinkPromise) {
++	if p == nil || p.refused() {
++		// No pane, or a pane that has already said it will not take frames.
++		// Either way this relay gets no sink at all, which is what makes the
++		// fallback exactly the tty relay rather than a sink that swallows a
++		// frame per image before admitting it is dead.
++		return
++	}
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.herdr == nil && !r.destroyed {
++		r.herdr = newHerdrStream(p, r.id)
++	}
++}
++
++// SetTransmitFile hands the sink a frame the child wrote to a file. It
++// returns false when this relay has no sink, in which case the caller falls
++// back to SetTransmit and the tty path exactly as before.
++func (r *KittyRelay) SetTransmitFile(f herdrFrame) bool {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	if r.herdr == nil || r.destroyed {
++		return false
++	}
++	// Lock order is r.mu then the stream's; the stream never reaches back for
++	// r.mu, and offer only fills a slot and wakes the writer.
++	if !r.herdr.offer(f) {
++		// The stream is gone. The image goes back to the tty relay, which the
++		// caller reaches by transmitting through SetTransmit as before.
++		r.sinkOwned = false
++		return false
++	}
++	r.sinkOwned = true
++	return true
++}
++
++// SetTransmitFrameFile hands the relay a raw pixel frame the child staged in a
++// file, and reports whether the herdr sink took it; false means the caller must
++// fall back to [KittyRelay.SetTransmit] and the tty path.
++//
++// width and height are the frame's PIXEL geometry and format is "rgba" (kitty
++// f=32) or "rgb" (f=24). path is opened and read here, so it must already have
++// passed the caller's own file-media gate.
++func (r *KittyRelay) SetTransmitFrameFile(path string, width, height int, format string) bool {
++	return r.SetTransmitFile(herdrFrame{
++		Path:   path,
++		Width:  width,
++		Height: height,
++		Format: format,
++	})
++}
 diff --git c/image.go w/image.go
-index 07ef057..c576dfc 100644
+index 07ef057..89a4d6a 100644
 --- c/image.go
 +++ w/image.go
 @@ -8,6 +8,8 @@ import (
@@ -121,7 +1231,7 @@ index 07ef057..c576dfc 100644
  	"sync/atomic"
  
  	"go.rockorager.dev/vaxis/log"
-@@ -237,6 +239,281 @@ func (k *KittyImage) Resize(w int, h int) {
+@@ -237,6 +239,348 @@ func (k *KittyImage) Resize(w int, h int) {
  	}()
  }
  
@@ -153,6 +1263,14 @@ index 07ef057..c576dfc 100644
 +	// before it could be written. There is nothing to transmit, so the
 +	// placement writes nothing at all rather than an empty image.
 +	dropped bool
++
++	// herdr is this image's layer on the herdr pane this process runs in, and
++	// sinkOwned says the layer currently HAS the image. While it does, nothing
++	// about the image reaches the tty: no transmit, no placement, no delete.
++	// Ownership begins at the first frame the sink accepts and ends when the
++	// stream dies or a medium arrives that only the tty relay can carry.
++	herdr     *herdrStream
++	sinkOwned bool
 +
 +	// pmu guards payload alone, so the body can be reclaimed by the budget
 +	// below without taking mu. Lock order is kittyPayloads.mu, then mu, then
@@ -233,7 +1351,16 @@ index 07ef057..c576dfc 100644
 +// written to the terminal until the relay is given bytes with
 +// [KittyRelay.SetTransmit] and placed with [KittyRelay.Place].
 +func (vx *Vaxis) NewKittyRelay() *KittyRelay {
-+	return &KittyRelay{vx: vx, id: vx.ReserveGraphicID()}
++	r := &KittyRelay{vx: vx, id: vx.ReserveGraphicID()}
++	// Inside a herdr pane the tty is the wrong road for a child's frames, so
++	// the relay is given a layer on the pane instead. Attaching one changes
++	// nothing on its own: the tty path stays in force until a frame the sink
++	// can actually stream arrives. Whether herdr will take frames at all is
++	// answered on a goroutine of its own, because this runs on the embedded
++	// terminal's parser goroutine with the widget's lock held -- see
++	// herdrSinkForProcess.
++	r.attachHerdrSink(herdrSinkForProcess())
++	return r
 +}
 +
 +// ID is the host-side image id this relay was given.
@@ -252,7 +1379,17 @@ index 07ef057..c576dfc 100644
 +	r.controls = controls
 +	r.rev += 1
 +	r.dropped = false
++	// Bytes arriving this way are bytes the herdr sink could not take -- inline
++	// pixels, a compressed body, a format that is not raw. The image goes back
++	// to the tty relay, so the layer has to go with it or the pane would show
++	// this frame's predecessor underneath the new one forever.
++	yield := r.sinkOwned
++	r.sinkOwned = false
++	hs := r.herdr
 +	r.mu.Unlock()
++	if yield && hs != nil {
++		hs.close()
++	}
 +	r.setPayload(payload)
 +}
 +
@@ -265,6 +1402,14 @@ index 07ef057..c576dfc 100644
 +func (r *KittyRelay) Place(win Window, pid uint32, cols, rows int, placementKeys string) {
 +	col, row := win.Origin()
 +	r.mu.Lock()
++	if r.sinkOwned && r.herdr != nil {
++		// The sink owns this image: the rectangle is what the next frame is
++		// placed at, and no placement is queued for the render -- a kitty
++		// escape here would hand herdr the picture a second time.
++		r.herdr.setPlacement(col, row, cols, rows)
++		r.mu.Unlock()
++		return
++	}
 +	rev := r.rev
 +	r.mu.Unlock()
 +	p := &placement{
@@ -295,8 +1440,21 @@ index 07ef057..c576dfc 100644
 +	}
 +	r.destroyed = true
 +	r.controls = ""
++	hs := r.herdr
++	sinkOwned := r.sinkOwned
++	transmitted := r.sentRev != 0
 +	r.mu.Unlock()
 +	r.setPayload("")
++	if hs != nil {
++		hs.close()
++	}
++	if sinkOwned && !transmitted {
++		// Every frame of this image went to the pane's layer, which close just
++		// removed. Nothing was ever transmitted to the host terminal, so there
++		// is no host image to free -- and a delete for an id the host never
++		// heard of is exactly the escape this path exists to avoid.
++		return
++	}
 +	r.vx.DeleteKittyImage(r.id)
 +}
 +
@@ -305,6 +1463,13 @@ index 07ef057..c576dfc 100644
 +func (r *KittyRelay) writePlacement(w io.Writer, pid uint32, placementKeys string) {
 +	r.mu.Lock()
 +	switch {
++	case r.sinkOwned:
++		// The herdr sink has this image. Its frames already went to herdr over
++		// the graphics socket, and an escape here would make the pane
++		// composite the picture a second time -- the stall this path exists to
++		// avoid.
++		r.mu.Unlock()
++		return
 +	case r.destroyed, r.dropped:
 +		// Either the image is gone or its body was reclaimed under the
 +		// retained-bytes budget; in both cases there is nothing to say.
@@ -365,7 +1530,19 @@ index 07ef057..c576dfc 100644
 +func (r *KittyRelay) writeDelete(w io.Writer, pid uint32) {
 +	r.mu.Lock()
 +	destroyed := r.destroyed
++	// Sink ownership begins at the FIRST frame the sink accepts, which may be
++	// the second frame of the image: an image transmitted to the host before
++	// that (sentRev > 0) has a host copy sitting underneath everything herdr
++	// composites, and only a delete takes it off the screen. Freeing an id the
++	// host still holds is not the escape this path exists to avoid -- the ones
++	// it avoids are the transmit and the placement, which carry the picture.
++	untransmitted := r.sinkOwned && r.sentRev == 0
 +	r.mu.Unlock()
++	if untransmitted {
++		// The host was never told about this image, so there is nothing there
++		// to delete.
++		return
++	}
 +	if destroyed {
 +		// The image itself is gone, so free its data rather than only this
 +		// placement.
@@ -403,7 +1580,7 @@ index 07ef057..c576dfc 100644
  type Sixel struct {
  	vx       *Vaxis
  	img      image.Image
-@@ -398,6 +675,10 @@ type placement struct {
+@@ -398,6 +742,10 @@ type placement struct {
  	id       uint64
  	w        int
  	h        int
@@ -489,6 +1666,482 @@ index 0000000..0534ed2
 +				t.Fatalf("host placement without C=1 for a child that named no C=: %q", got)
 +			}
 +		})
++	}
++}
+diff --git c/kitty_relay_herdr_test.go w/kitty_relay_herdr_test.go
+new file mode 100644
+index 0000000..b3d2837
+--- /dev/null
++++ w/kitty_relay_herdr_test.go
+@@ -0,0 +1,470 @@
++package vaxis
++
++import (
++	"bufio"
++	"bytes"
++	"encoding/json"
++	"io"
++	"net"
++	"os"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"sync"
++	"syscall"
++	"testing"
++	"time"
++)
++
++// Inside a herdr pane the relay must stream the child's frames to herdr's
++// graphics socket and write nothing for that image to the tty. The wire was
++// verified against herdr 0.9.0 on 2026-09-13: newline-delimited JSON on the
++// socket; pane.graphics.info answers once and closes; pane.graphics.stream
++// keeps its connection and takes frames as one header line followed by
++// exactly data_length raw bytes; herdr says nothing per frame;
++// pane.graphics.clear with the layer id removes the layer.
++//
++// RED before the implementation, on these assertions:
++//   TestKittyHerdrSinkDetectsPane:      newHerdrSink returns nil in a herdr env
++//   TestKittyHerdrStreamsFrameNotTty:   no header reaches the fake herdr; the
++//                                       tty writer still gets the a=T escape
++//   TestKittyHerdrSecondFrameBumpsRevision, TestKittyHerdrDestroyClearsLayer
++//   TestKittyHerdrOutsideHerdrIsUnchanged passes before and after (guard).
++
++type fakeHerdr struct {
++	mu         sync.Mutex
++	infos      int
++	streams    []map[string]any // stream open params
++	frames     []fakeHerdrFrame
++	clears     []map[string]any
++	visible    bool
++	fileDir    string // advertised file_frame_directory ("" = no direct transport, raw bodies only)
++	autoAck    bool   // ack every file frame as soon as it is read
++	streamConn net.Conn
++	frameCh    chan fakeHerdrFrame
++	clearCh    chan map[string]any
++	listener   net.Listener
++}
++
++type fakeHerdrFrame struct {
++	header map[string]any
++	body   []byte
++	path   string // the file the header named, if any
++}
++
++// ack answers one file frame the way herdr does once the terminal took it.
++func (f *fakeHerdr) ack(t *testing.T, revision int) {
++	t.Helper()
++	f.mu.Lock()
++	c := f.streamConn
++	f.mu.Unlock()
++	if c == nil {
++		t.Fatalf("no stream connection to ack on")
++	}
++	_, _ = c.Write([]byte(`{"id":"stream:file:0","result":{"type":"pane_graphics_frame_ack","sequence":0,"revision":` + strconv.Itoa(revision) + `}}` + "\n"))
++}
++
++// newFakeHerdrDirect advertises a frame directory the way a direct-graphics-capable herdr does.
++func newFakeHerdrDirect(t *testing.T, autoAck bool) *fakeHerdr {
++	t.Helper()
++	f := newFakeHerdr(t, true)
++	f.fileDir = filepath.Join(t.TempDir(), "source")
++	if err := os.MkdirAll(f.fileDir, 0o700); err != nil {
++		t.Fatal(err)
++	}
++	f.autoAck = autoAck
++	return f
++}
++
++func newFakeHerdr(t *testing.T, visible bool) *fakeHerdr {
++	t.Helper()
++	dir := t.TempDir()
++	sock := filepath.Join(dir, "herdr.sock")
++	l, err := net.Listen("unix", sock)
++	if err != nil {
++		t.Fatalf("listen: %v", err)
++	}
++	f := &fakeHerdr{visible: visible, listener: l, frameCh: make(chan fakeHerdrFrame, 16), clearCh: make(chan map[string]any, 4)}
++	t.Cleanup(func() { _ = l.Close() })
++	go func() {
++		for {
++			c, err := l.Accept()
++			if err != nil {
++				return
++			}
++			go f.serve(c)
++		}
++	}()
++	return f
++}
++
++func (f *fakeHerdr) path() string { return f.listener.Addr().String() }
++
++func (f *fakeHerdr) serve(c net.Conn) {
++	defer c.Close()
++	r := bufio.NewReader(c)
++	line, err := r.ReadBytes('\n')
++	if err != nil {
++		return
++	}
++	var req struct {
++		ID     string         `json:"id"`
++		Method string         `json:"method"`
++		Params map[string]any `json:"params"`
++	}
++	if err := json.Unmarshal(line, &req); err != nil {
++		return
++	}
++	switch req.Method {
++	case "pane.graphics.info":
++		f.mu.Lock()
++		f.infos++
++		f.mu.Unlock()
++		direct := ""
++		if f.fileDir != "" {
++			direct = `,"file_frame_directory":"` + f.fileDir + `","file_frame_formats":["rgba","bgra"],"file_frame_max_bytes":16777216,"file_frame_direct_max_bytes":419430400,"file_frame_transport":"direct-kitty"`
++		}
++		_, _ = c.Write([]byte(`{"id":"` + req.ID + `","result":{"type":"pane_graphics_info","cell_width_px":16,"cell_height_px":36,"pane_visible":` + map[bool]string{true: "true", false: "false"}[f.visible] + `,"file_frame_damage":true,"max_layers_per_pane":16,"pixel_mouse":true` + direct + `}}` + "\n"))
++		return // herdr closes after one request
++	case "pane.graphics.clear":
++		f.mu.Lock()
++		f.clears = append(f.clears, req.Params)
++		f.mu.Unlock()
++		f.clearCh <- req.Params
++		_, _ = c.Write([]byte(`{"id":"` + req.ID + `","result":{"type":"ok"}}` + "\n"))
++		return
++	case "pane.graphics.stream":
++		f.mu.Lock()
++		f.streams = append(f.streams, req.Params)
++		f.streamConn = c
++		f.mu.Unlock()
++		_, _ = c.Write([]byte(`{"id":"` + req.ID + `","result":{"type":"ok"}}` + "\n"))
++		for {
++			hdrLine, err := r.ReadBytes('\n')
++			if err != nil {
++				return
++			}
++			var hdr map[string]any
++			if err := json.Unmarshal(hdrLine, &hdr); err != nil {
++				_, _ = c.Write([]byte(`{"id":"stream","error":{"code":"invalid_frame","message":"bad header"}}` + "\n"))
++				return
++			}
++			fr := fakeHerdrFrame{header: hdr}
++			if file, ok := hdr["file"].(map[string]any); ok {
++				// herdr's contract: a direct child of the advertised directory, same uid, 0600,
++				// one link, exactly width*height*bpp bytes. Anything else is rejected and the
++				// stream closed, so the fake refuses the same way.
++				p, _ := file["path"].(string)
++				fr.path = p
++				st, statErr := os.Lstat(p)
++				if statErr != nil || filepath.Dir(p) != f.fileDir || st.Mode().Perm() != 0o600 || !st.Mode().IsRegular() {
++					_, _ = c.Write([]byte(`{"id":"stream:file:0","error":{"code":"invalid_frame_file","message":"frame must be same-uid regular 0600 single-link exact-length file"}}` + "\n"))
++					return
++				}
++				fr.body, _ = os.ReadFile(p)
++				if f.autoAck {
++					rev, _ := hdr["revision"].(float64)
++					_, _ = c.Write([]byte(`{"id":"stream:file:0","result":{"type":"pane_graphics_frame_ack","sequence":0,"revision":` + strconv.Itoa(int(rev)) + `}}` + "\n"))
++				}
++			} else {
++				n, _ := hdr["data_length"].(float64)
++				fr.body = make([]byte, int(n))
++				if _, err := io.ReadFull(r, fr.body); err != nil {
++					return
++				}
++			}
++			f.mu.Lock()
++			f.frames = append(f.frames, fr)
++			f.mu.Unlock()
++			f.frameCh <- fr
++		}
++	}
++}
++
++func herdrEnv(f *fakeHerdr) func(string) string {
++	return func(k string) string {
++		switch k {
++		case "HERDR_PANE_ID":
++			return "wDE:p7"
++		case "HERDR_SOCKET_PATH":
++			return f.path()
++		}
++		return ""
++	}
++}
++
++func unixDial(path string) (net.Conn, error) { return net.Dial("unix", path) }
++
++func writeFrameFile(t *testing.T, w, h int, fill byte) string {
++	t.Helper()
++	p := filepath.Join(t.TempDir(), "frame.rgba")
++	if err := os.WriteFile(p, bytes.Repeat([]byte{fill, 2, 3, 255}, w*h), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	return p
++}
++
++func waitFrame(t *testing.T, f *fakeHerdr) fakeHerdrFrame {
++	t.Helper()
++	select {
++	case fr := <-f.frameCh:
++		return fr
++	case <-time.After(3 * time.Second):
++		t.Fatalf("no frame reached the fake herdr within 3s")
++		return fakeHerdrFrame{}
++	}
++}
++
++func TestKittyHerdrSinkDetectsPane(t *testing.T) {
++	f := newFakeHerdr(t, true)
++	s, err := newHerdrSink(herdrEnv(f), unixDial)
++	if err != nil {
++		t.Fatalf("newHerdrSink: %v", err)
++	}
++	if s == nil {
++		t.Fatalf("newHerdrSink returned no sink although HERDR_PANE_ID and HERDR_SOCKET_PATH are set and herdr answered pane.graphics.info")
++	}
++	f.mu.Lock()
++	infos := f.infos
++	f.mu.Unlock()
++	if infos != 1 {
++		t.Fatalf("pane.graphics.info requests = %d, want 1", infos)
++	}
++}
++
++func TestKittyHerdrStreamsFrameNotTty(t *testing.T) {
++	f := newFakeHerdr(t, true)
++	s, _ := newHerdrSink(herdrEnv(f), unixDial)
++	r := &KittyRelay{id: 9}
++	r.attachHerdr(s)
++
++	const w, h = 64, 32
++	path := writeFrameFile(t, w, h, 7)
++	if !r.SetTransmitFile(herdrFrame{Path: path, Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("SetTransmitFile returned false: the relay did not take the frame for the herdr sink")
++	}
++	// The widget places the image at column 0, row 2, 40x20 cells; the first frame waits for it.
++	r.Place(Window{Column: 0, Row: 2, Width: 40, Height: 20}, 1, 40, 20, "c=40,r=20")
++	fr := waitFrame(t, f)
++
++	if got := fr.header["format"]; got != "rgba" {
++		t.Fatalf("header format = %v, want rgba", got)
++	}
++	if fr.header["image_width"] != float64(w) || fr.header["image_height"] != float64(h) {
++		t.Fatalf("header geometry = %vx%v, want %dx%d", fr.header["image_width"], fr.header["image_height"], w, h)
++	}
++	if fr.header["data_length"] != float64(w*h*4) || len(fr.body) != w*h*4 {
++		t.Fatalf("data_length = %v, body = %d bytes, want %d", fr.header["data_length"], len(fr.body), w*h*4)
++	}
++	want, _ := os.ReadFile(path)
++	if !bytes.Equal(fr.body, want) {
++		t.Fatalf("body differs from the frame file")
++	}
++	pl, _ := fr.header["placement"].(map[string]any)
++	if pl["viewport_col"] != float64(0) || pl["viewport_row"] != float64(2) || pl["grid_cols"] != float64(40) || pl["grid_rows"] != float64(20) {
++		t.Fatalf("placement = %v, want viewport 0,2 grid 40x20 (the widget's Place)", pl)
++	}
++	if rev, _ := fr.header["revision"].(float64); rev < 1 {
++		t.Fatalf("revision = %v, want >= 1", fr.header["revision"])
++	}
++	f.mu.Lock()
++	layer, _ := f.streams[0]["layer_id"].(string)
++	f.mu.Unlock()
++	if !strings.HasPrefix(layer, "aerc-relay-") {
++		t.Fatalf("stream layer_id = %q, want an aerc-relay-<id> layer", layer)
++	}
++
++	// Nothing for this image reaches the tty: neither a transmit nor a bare re-place.
++	var tty bytes.Buffer
++	r.writePlacement(&tty, 1, "c=40,r=20")
++	if tty.Len() != 0 {
++		t.Fatalf("sink-owned image wrote %q to the tty; herdr would composite it and stall", tty.String())
++	}
++}
++
++func TestKittyHerdrSecondFrameBumpsRevision(t *testing.T) {
++	f := newFakeHerdr(t, true)
++	s, _ := newHerdrSink(herdrEnv(f), unixDial)
++	r := &KittyRelay{id: 10}
++	r.attachHerdr(s)
++	const w, h = 8, 4
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 1), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("first SetTransmitFile refused")
++	}
++	r.Place(Window{Column: 3, Row: 1, Width: 10, Height: 5}, 1, 10, 5, "")
++	first := waitFrame(t, f)
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 2), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("second SetTransmitFile refused")
++	}
++	second := waitFrame(t, f)
++	r1, _ := first.header["revision"].(float64)
++	r2, _ := second.header["revision"].(float64)
++	if r2 <= r1 {
++		t.Fatalf("revision did not increase: %v then %v", r1, r2)
++	}
++	if second.body[0] != 2 {
++		t.Fatalf("second body carries fill %d, want 2 (the newest frame)", second.body[0])
++	}
++	pl, _ := second.header["placement"].(map[string]any)
++	if pl["viewport_col"] != float64(3) || pl["viewport_row"] != float64(1) {
++		t.Fatalf("placement = %v, want viewport 3,1", pl)
++	}
++}
++
++func TestKittyHerdrDestroyClearsLayer(t *testing.T) {
++	f := newFakeHerdr(t, true)
++	s, _ := newHerdrSink(herdrEnv(f), unixDial)
++	r := &KittyRelay{id: 11}
++	r.attachHerdr(s)
++	const w, h = 4, 2
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 9), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("SetTransmitFile refused")
++	}
++	r.Place(Window{Width: 4, Height: 2}, 1, 4, 2, "")
++	waitFrame(t, f)
++	r.Destroy()
++	select {
++	case p := <-f.clearCh:
++		if p["pane_id"] != "wDE:p7" {
++			t.Fatalf("clear pane_id = %v, want wDE:p7", p["pane_id"])
++		}
++		if layer, _ := p["layer_id"].(string); !strings.HasPrefix(layer, "aerc-relay-") {
++			t.Fatalf("clear layer_id = %v, want the relay's layer", p["layer_id"])
++		}
++	case <-time.After(3 * time.Second):
++		t.Fatalf("Destroy did not send pane.graphics.clear to herdr")
++	}
++	r.Destroy() // idempotent
++}
++
++// Outside herdr nothing changes: no sink, SetTransmitFile declines, and the tty path is intact.
++func TestKittyHerdrOutsideHerdrIsUnchanged(t *testing.T) {
++	s, err := newHerdrSink(func(string) string { return "" }, unixDial)
++	if err != nil || s != nil {
++		t.Fatalf("newHerdrSink without env = (%v, %v), want (nil, nil)", s, err)
++	}
++	r := &KittyRelay{id: 12, rev: 1, sentRev: 0, controls: "f=32,s=4,v=4,t=d", payload: "AAAA"}
++	if r.SetTransmitFile(herdrFrame{Path: "/nonexistent", Width: 1, Height: 1, Format: "rgba"}) {
++		t.Fatalf("SetTransmitFile accepted a frame with no sink attached")
++	}
++	var tty bytes.Buffer
++	r.writePlacement(&tty, 1, "c=1,r=1")
++	if !strings.Contains(tty.String(), "a=T") || !strings.Contains(tty.String(), "C=1") {
++		t.Fatalf("tty path changed without a sink: %q", tty.String())
++	}
++}
++
++// Direct file frames are only ever given to a stream's `primary` layer (herdr keeps named layers
++// on the inline path, capped at 16 MiB), so that is the layer the relay must open.
++func TestKittyHerdrStreamsOnPrimaryLayer(t *testing.T) {
++	f := newFakeHerdrDirect(t, true)
++	s, _ := newHerdrSink(herdrEnv(f), unixDial)
++	r := &KittyRelay{id: 20}
++	r.attachHerdr(s)
++	const w, h = 8, 4
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 3), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("SetTransmitFile refused")
++	}
++	r.Place(Window{Column: 0, Row: 1, Width: 8, Height: 4}, 1, 8, 4, "")
++	waitFrame(t, f)
++	f.mu.Lock()
++	layer, _ := f.streams[0]["layer_id"].(string)
++	f.mu.Unlock()
++	if layer != "primary" {
++		t.Fatalf("stream layer_id = %q, want \"primary\" (the only layer herdr passes to the terminal as files)", layer)
++	}
++}
++
++// When herdr advertises a frame directory, the relay hands it a FILE (a same-uid 0600 single-link
++// exact-length copy of the child's frame inside that directory) and no raw body: that is the path
++// herdr's client passes to ghostty as a 182-byte t=f escape instead of 19 MB of pixels.
++func TestKittyHerdrUsesFileFramesWhenAdvertised(t *testing.T) {
++	f := newFakeHerdrDirect(t, true)
++	s, _ := newHerdrSink(herdrEnv(f), unixDial)
++	r := &KittyRelay{id: 21}
++	r.attachHerdr(s)
++	const w, h = 16, 8
++	src := writeFrameFile(t, w, h, 9)
++	if !r.SetTransmitFile(herdrFrame{Path: src, Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("SetTransmitFile refused")
++	}
++	r.Place(Window{Column: 2, Row: 3, Width: 16, Height: 8}, 1, 16, 8, "")
++	fr := waitFrame(t, f)
++	if fr.path == "" {
++		t.Fatalf("header carried no file (got data_length=%v): a directory was advertised, so the frame must be a file", fr.header["data_length"])
++	}
++	if _, has := fr.header["data_length"]; has {
++		t.Fatalf("file frame header must not carry data_length (herdr reads the file), got %v", fr.header)
++	}
++	if filepath.Dir(fr.path) != f.fileDir {
++		t.Fatalf("frame file %s is not a direct child of the advertised directory %s", fr.path, f.fileDir)
++	}
++	st, err := os.Lstat(fr.path)
++	if err != nil {
++		t.Fatalf("frame file: %v", err)
++	}
++	if st.Mode().Perm() != 0o600 || !st.Mode().IsRegular() {
++		t.Fatalf("frame file mode %v, want a regular 0600 file", st.Mode())
++	}
++	if sys, ok := st.Sys().(*syscall.Stat_t); ok && sys.Nlink != 1 {
++		t.Fatalf("frame file has %d links, want 1", sys.Nlink)
++	}
++	if st.Size() != int64(w*h*4) {
++		t.Fatalf("frame file is %d bytes, want exactly %d", st.Size(), w*h*4)
++	}
++	want, _ := os.ReadFile(src)
++	if !bytes.Equal(fr.body, want) {
++		t.Fatalf("frame file bytes differ from the child's frame")
++	}
++	pl, _ := fr.header["placement"].(map[string]any)
++	if pl["viewport_col"] != float64(2) || pl["viewport_row"] != float64(3) {
++		t.Fatalf("placement = %v, want viewport 2,3", pl)
++	}
++}
++
++// herdr reads the file when the terminal takes it and only then acks the revision, so a file that
++// has not been acked must never be rewritten under it: the next frame goes to a different file.
++func TestKittyHerdrNeverRewritesAnUnackedFile(t *testing.T) {
++	f := newFakeHerdrDirect(t, false) // manual acks
++	s, _ := newHerdrSink(herdrEnv(f), unixDial)
++	r := &KittyRelay{id: 22}
++	r.attachHerdr(s)
++	const w, h = 8, 4
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 1), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("frame 1 refused")
++	}
++	r.Place(Window{Width: 8, Height: 4}, 1, 8, 4, "")
++	first := waitFrame(t, f)
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 2), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("frame 2 refused")
++	}
++	second := waitFrame(t, f)
++	if first.path == "" || second.path == "" {
++		t.Fatalf("expected file frames, got paths %q and %q", first.path, second.path)
++	}
++	if first.path == second.path {
++		t.Fatalf("frame 2 rewrote the unacked file of frame 1 (%s)", first.path)
++	}
++	if got, _ := os.ReadFile(first.path); len(got) == 0 || got[0] != 1 {
++		t.Fatalf("frame 1's file changed under herdr before it was acked")
++	}
++	// Once frame 1 is acked its file may be reused; frame 3 must still arrive.
++	rev1, _ := first.header["revision"].(float64)
++	f.ack(t, int(rev1))
++	if !r.SetTransmitFile(herdrFrame{Path: writeFrameFile(t, w, h, 3), Width: w, Height: h, Format: "rgba"}) {
++		t.Fatalf("frame 3 refused")
++	}
++	third := waitFrame(t, f)
++	if len(third.body) == 0 || third.body[0] != 3 {
++		t.Fatalf("frame 3 body carries fill %v, want 3", third.body)
++	}
++}
++
++// A pane herdr reports as not visible gets no sink: the tty path is the safe default.
++func TestKittyHerdrInvisiblePaneGetsNoSink(t *testing.T) {
++	f := newFakeHerdr(t, false)
++	s, err := newHerdrSink(herdrEnv(f), unixDial)
++	if s != nil {
++		t.Fatalf("got a sink for a pane herdr reports as not visible (err=%v)", err)
 +	}
 +}
 diff --git c/relay_rev_test.go w/relay_rev_test.go
@@ -1648,15 +3301,16 @@ index 0000000..39a0b56
 +}
 diff --git c/widgets/term/kitty_passthrough.go w/widgets/term/kitty_passthrough.go
 new file mode 100644
-index 0000000..ab00537
+index 0000000..5c641a3
 --- /dev/null
 +++ w/widgets/term/kitty_passthrough.go
-@@ -0,0 +1,754 @@
+@@ -0,0 +1,835 @@
 +package term
 +
 +import (
 +	"encoding/base64"
 +	"fmt"
++	"path/filepath"
 +	"strings"
 +	"sync/atomic"
 +
@@ -1681,6 +3335,14 @@ index 0000000..ab00537
 +	SetTransmit(controls, payload string)
 +	Place(win vaxis.Window, pid uint32, cols, rows int, placementKeys string)
 +	Destroy()
++}
++
++// kittyFileFrameRelay is the extra a relay may offer: taking a raw pixel frame
++// straight from the file the child staged it in, so the bytes never become an
++// escape code at all. It is deliberately NOT part of kittyRelay -- a relay
++// without it simply keeps the base64 tty path.
++type kittyFileFrameRelay interface {
++	SetTransmitFrameFile(path string, width, height int, format string) bool
 +}
 +
 +// vaxisKittyHost adapts the real *vaxis.Vaxis to the interface above.
@@ -2017,13 +3679,85 @@ index 0000000..ab00537
 +	}
 +
 +	ki := vt.kittyImageFor(cmd, host)
-+	ki.relay.SetTransmit(kittyForwardControls(cmd), payload)
++	if !vt.transmitKittyFrameFile(ki, cmd) {
++		ki.relay.SetTransmit(kittyForwardControls(cmd), payload)
++	}
 +
 +	if cmd.action == 'T' {
 +		err = vt.placeKittyRelay(ki, cmd)
 +	}
 +	vt.replyKitty(cmd, err)
 +}
++
++// transmitKittyFrameFile offers the frame to the relay's own graphics sink
++// instead of the tty, and reports whether the sink took it. A false answer
++// leaves the caller on the base64 path it has always used.
++func (vt *Model) transmitKittyFrameFile(ki *kittyImage, cmd kittyCommand) bool {
++	relay, ok := ki.relay.(kittyFileFrameRelay)
++	if !ok {
++		return false
++	}
++	path, format, ok := vt.kittyFrameFileSource(cmd)
++	if !ok {
++		return false
++	}
++	return relay.SetTransmitFrameFile(path, cmd.width, cmd.height, format)
++}
++
++// kittyFrameFileSource is the file a command's pixels are in, for the one shape
++// a graphics sink can stream: a whole, uncompressed, raw rgba or rgb frame
++// staged in a file or a shared-memory object.
++//
++// The path returned is the one validateKittyMedium RESOLVED, never the child's
++// original, for the same reason the tty path forwards the resolved name: the
++// symlink the child wrote may point somewhere else by the time it is opened.
++// Everything else -- PNG data, inline bytes, a t=t temp file the host is
++// supposed to unlink, a byte window carved out with O= or S= -- is left on the
++// tty path, which handles all of it already.
++func (vt *Model) kittyFrameFileSource(cmd kittyCommand) (path string, format string, ok bool) {
++	if cmd.compressed {
++		return "", "", false
++	}
++	var bpp int
++	switch cmd.format {
++	case 32:
++		format, bpp = "rgba", 4
++	case 24:
++		format, bpp = "rgb", 3
++	default:
++		return "", "", false
++	}
++	// s= and v= come off the child's escape stream, so they are bounded here
++	// rather than multiplied out first.
++	if cmd.width <= 0 || cmd.height <= 0 ||
++		cmd.width > kittyMaxFrameDimension || cmd.height > kittyMaxFrameDimension {
++		return "", "", false
++	}
++	if cmd.offset != 0 || (cmd.size != 0 && cmd.size != cmd.width*cmd.height*bpp) {
++		return "", "", false
++	}
++
++	name, err := vt.kittyMediumResult(cmd)
++	if err != nil {
++		return "", "", false
++	}
++	switch cmd.medium {
++	case 'f':
++		return name, format, true
++	case 's':
++		// A shared-memory name is a flat key in the tmpfs: validateKittyShm has
++		// already refused anything carrying a separator, so joining it cannot
++		// escape the directory.
++		return filepath.Join(kittyShmDir, strings.TrimPrefix(name, "/")), format, true
++	default:
++		return "", "", false
++	}
++}
++
++// kittyMaxFrameDimension bounds the pixel geometry a child may hand the
++// graphics sink. Past it the frame stays on the tty path, where the host
++// terminal applies its own limits.
++const kittyMaxFrameDimension = 1 << 16
 +
 +// kittyImageFor finds or creates the host image a command names. Reusing the
 +// entry is what keeps the HOST image id stable across frames, so the host
