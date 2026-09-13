@@ -94,77 +94,10 @@ let
   };
 
   # The allowlist that decides which embedded terminal may name a file or a
-  # shared-memory object as a kitty source. Written unindented because Nix's
-  # indented-string stripping keys on leading SPACES: a single tab-led line
-  # would leave the whole block indented and the Go source misformatted.
-  kittyFileMediaGate = builtins.toFile "aerc-kitty-file-media.go" ''
-package app
-
-import (
-	"os/exec"
-	"path/filepath"
-	"strings"
-)
-
-// kittyFileMediaFilterMarker appears in the store path of the terminal-browser
-// launcher and filter (modules/linux/aerc-html-terminal-browser.nix) and
-// nowhere else. Renaming that script disables the media rather than
-// misapplying them.
-const kittyFileMediaFilterMarker = "aerc-html-terminal-browser"
-
-// aercKittyFileMediaAllowed reports whether this child may name its pixels by
-// file path or shared-memory name (t=f, t=t, t=s).
-//
-// Those media put a path the CHILD chose into a command the HOST terminal then
-// opens, so a terminal rendering untrusted input -- which is every HTML mail
-// filter -- must not accept them. Only terminal-browser is trusted with them,
-// because it stages its own frames in shared memory. Every other embedded
-// terminal keeps the library default of off.
-//
-// cmd.Path is checked as well as cmd.Args, and through EvalSymlinks: a `:term`
-// binding names the launcher by BARE NAME, so argv[0] is "aerc-mail-term" and
-// the store path carrying the marker is only visible once the PATH lookup and
-// the wrapper symlink have both been resolved.
-func aercKittyFileMediaAllowed(cmd *exec.Cmd) bool {
-	if cmd == nil {
-		return false
-	}
-	for _, arg := range cmd.Args {
-		if strings.Contains(arg, kittyFileMediaFilterMarker) {
-			return true
-		}
-	}
-	if cmd.Path == "" {
-		return false
-	}
-	if strings.Contains(cmd.Path, kittyFileMediaFilterMarker) {
-		return true
-	}
-	resolved, err := filepath.EvalSymlinks(cmd.Path)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(resolved, kittyFileMediaFilterMarker)
-}
-
-// aercKittyKeyboardFor reports whether this child should get kitty KEYBOARD
-// passthrough. Everything keeps the host-derived default except
-// terminal-browser, which must not have it.
-//
-// vaxis enables passthrough whenever the host advertises the protocol, and
-// ghostty does. terminal-browser negotiates it too (it sends CSI >1u), but does
-// not act on keys delivered in that encoding: the page renders and then cannot
-// be scrolled. Measured both ways against a real aerc -- with the host
-// advertising kitty keyboard the rendered frame is byte-identical after arrow
-// keys, space and j; with it withheld the frame changes and the page moves.
-// Legacy keys it handles correctly, so withhold the protocol for this one child.
-func aercKittyKeyboardFor(cmd *exec.Cmd, host bool) bool {
-	if aercKittyFileMediaAllowed(cmd) {
-		return false
-	}
-	return host
-}
-  '';
+  # shared-memory object as a kitty source. A real Go file in
+  # ./aerc-app-gate/ rather than an inline string, so `go test` can exercise it
+  # outside a nix build.
+  kittyFileMediaGate = ./aerc-app-gate/kitty_file_media.go;
 in
 aerc.overrideAttrs (prev: {
   postPatch = (prev.postPatch or "") + ''
@@ -186,9 +119,9 @@ aerc.overrideAttrs (prev: {
     # capability, so a WithKittyKeyboard passed before it would be overwritten.
     substituteInPlace app/terminal.go \
       --replace-fail 'term.New(term.WithVaxis(ui.Vaxis()))' \
-                     'term.New(term.WithVaxis(ui.Vaxis()), term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)), term.WithKittyKeyboard(aercKittyKeyboardFor(cmd, ui.Vaxis() != nil && ui.Vaxis().CanKittyKeyboard())))' \
+                     'term.New(term.WithVaxis(ui.Vaxis()), term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)), term.WithKittyKeyboard(aercKittyKeyboardFor(cmd, ui.Vaxis() != nil && ui.Vaxis().CanKittyKeyboard())), term.WithPaintOnDrain(aercPaintOnDrainFor(cmd)))' \
       --replace-fail 'vterm = term.New()' \
-                     'vterm = term.New(term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)))'
+                     'vterm = term.New(term.WithKittyFileMedia(aercKittyFileMediaAllowed(cmd)), term.WithPaintOnDrain(aercPaintOnDrainFor(cmd)))'
 
     if grep -q 'term.WithKittyFileMedia(true)' app/terminal.go; then
       echo "aerc: WithKittyFileMedia is enabled unconditionally. Every embedded" >&2
@@ -200,6 +133,13 @@ aerc.overrideAttrs (prev: {
       echo "aerc: kitty-keyboard passthrough is not gated per child. The" >&2
       echo "terminal-browser child would render a page that cannot be" >&2
       echo "scrolled, which looks like a hang rather than a bug." >&2
+      exit 1
+    fi
+    if ! grep -q 'aercPaintOnDrainFor' app/terminal.go; then
+      echo "aerc: paint-on-drain is not gated per child. Either no embedded" >&2
+      echo "terminal gets the zero-latency paint -- so terminal-browser scrolls" >&2
+      echo "a frame behind again -- or they all do, including the ones rendering" >&2
+      echo "untrusted mail." >&2
       exit 1
     fi
     if ! grep -q 'EvalSymlinks' app/kitty_file_media.go; then
