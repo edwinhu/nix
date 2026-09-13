@@ -48,7 +48,7 @@ for arg in "$@"; do
       sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
-    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy|herdr|zg) TOOLS+=("$arg") ;;
+    claude|codex|opencode|gemini|agy|qmd|readwise|atuin|cliproxy|herdr|zg|chrome-mcp) TOOLS+=("$arg") ;;
     *)
       echo "${RED}Unknown argument: $arg${NC}" >&2
       exit 1
@@ -56,7 +56,7 @@ for arg in "$@"; do
   esac
 done
 if [ ${#TOOLS[@]} -eq 0 ]; then
-  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy herdr zg)
+  TOOLS=(claude codex opencode agy qmd readwise atuin cliproxy herdr zg chrome-mcp)
   # Per-host opt-out. AI_TOOLS_SKIP is a space-separated tool list, set from
   # `userInfo.aiToolsSkip` in flake.nix, for hosts that don't want part of the
   # default set (e.g. rjds has no use for readwise, and installing it there
@@ -181,6 +181,20 @@ install_zg() {
   if want "zg" zg; then
     echo "${YELLOW}→ Installing zg (bun global)...${NC}"
     "$bun" install -g @zvec/zvec-grep@latest
+  fi
+}
+
+# chrome-devtools-mcp — the MCP server behind both chrome entries in
+# ~/dotfiles/.claude/.mcp.json. Installed once, pinned, and launched by binary:
+# `bunx <pkg>` rewrites its ~/.tmp working dir on EVERY run, so two servers
+# started at the same instant (9222 and 9250) race the copy and one dies with
+# "failed copying files from cache to destination".
+install_chrome_mcp() {
+  local bun
+  bun=$(find_bun) || { echo "${RED}bun not found — run build-switch first.${NC}" >&2; return 1; }
+  if want "chrome-mcp" chrome-devtools-mcp; then
+    echo "${YELLOW}→ Installing chrome-devtools-mcp (bun global, pinned)...${NC}"
+    "$bun" install -g chrome-devtools-mcp@1.7.0
   fi
 }
 
@@ -369,6 +383,7 @@ for t in "${TOOLS[@]}"; do
     cliproxy)     install_cliproxy ;;
     herdr)        install_herdr ;;
     zg)           install_zg ;;
+    chrome-mcp)   install_chrome_mcp ;;
   esac
 done
 
