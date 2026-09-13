@@ -102,8 +102,6 @@ let
       # IMAP SEARCH ~47x slower and lifts test module poison, and mail-bridge
       # is COMPILED with the pinned 1.3.14 (flake.nix). See bun-pinned.nix.
       (pkgs.callPackage ./bun-pinned.nix {})
-      # semantic search
-      semtools  # search "query" files... — no indexing needed
       ast-grep
     ];
 
