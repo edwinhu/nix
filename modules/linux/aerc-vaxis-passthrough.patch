@@ -109,7 +109,7 @@ index 9fb7bc2..2aa9e6f 100644
  			parse.exit = func() {
  				called = true
 diff --git c/image.go w/image.go
-index 07ef057..df26465 100644
+index 07ef057..c576dfc 100644
 --- c/image.go
 +++ w/image.go
 @@ -8,6 +8,8 @@ import (
@@ -121,7 +121,7 @@ index 07ef057..df26465 100644
  	"sync/atomic"
  
  	"go.rockorager.dev/vaxis/log"
-@@ -237,6 +239,276 @@ func (k *KittyImage) Resize(w int, h int) {
+@@ -237,6 +239,281 @@ func (k *KittyImage) Resize(w int, h int) {
  	}()
  }
  
@@ -312,8 +312,9 @@ index 07ef057..df26465 100644
 +		return
 +	case r.sentRev == r.rev:
 +		// Same bytes, so the host still holds the image: ask it to put the
-+		// existing one here again.
-+		_, _ = fmt.Fprintf(w, "\x1B_Ga=p,i=%d,p=%d,q=2\x1B\\", r.id, pid)
++		// existing one here again. C=1 for the same reason as the transmit
++		// below.
++		_, _ = fmt.Fprintf(w, "\x1B_Ga=p,i=%d,p=%d,C=1,q=2\x1B\\", r.id, pid)
 +		r.mu.Unlock()
 +		return
 +	}
@@ -328,11 +329,15 @@ index 07ef057..df26465 100644
 +}
 +
 +func (r *KittyRelay) transmitLocked(w io.Writer, pid uint32, placementKeys string) {
++	// C=1 belongs to the relay's own key group, not the child's: the host
++	// cursor is the embedding application's, so a relayed frame must never move
++	// it however the child asked to be placed. It is written last so it also
++	// overrides a C= a caller passed in through placementKeys.
 +	controls := joinKittyKeys(
 +		"a=T",
 +		r.controls,
 +		placementKeys,
-+		fmt.Sprintf("i=%d,p=%d,q=2", r.id, pid),
++		fmt.Sprintf("i=%d,p=%d,C=1,q=2", r.id, pid),
 +	)
 +	r.pmu.Lock()
 +	body := r.payload
@@ -398,7 +403,7 @@ index 07ef057..df26465 100644
  type Sixel struct {
  	vx       *Vaxis
  	img      image.Image
-@@ -398,6 +670,10 @@ type placement struct {
+@@ -398,6 +675,10 @@ type placement struct {
  	id       uint64
  	w        int
  	h        int
@@ -409,6 +414,83 @@ index 07ef057..df26465 100644
  }
  
  // samePlacement compares two placements for equality. Two placements are
+diff --git c/kitty_relay_cursor_test.go w/kitty_relay_cursor_test.go
+new file mode 100644
+index 0000000..0534ed2
+--- /dev/null
++++ w/kitty_relay_cursor_test.go
+@@ -0,0 +1,71 @@
++package vaxis
++
++import (
++	"bytes"
++	"strings"
++	"testing"
++)
++
++// The host cursor belongs to the application embedding the terminal, never to
++// the child whose frame is being relayed. Every placement the relay writes to
++// the host therefore carries C=1 (kitty cursor-movement policy: leave the
++// cursor where it is), whatever the child asked for. Measured 2026-09-13
++// without it: ghostty moved its cursor past a 2016x1872 px frame on every
++// relayed a=T, scrolled the host screen each time, and stalled key repeat for
++// ~2.5 s -- 7 fps under aerc against 33 fps for the same child standalone.
++//
++// RED before the fix, on these assertions:
++//   TestKittyCursorPolicyOnTransmit:      a=T control string carries no C=1
++//   TestKittyCursorPolicyOnReplace:       bare a=p re-place carries no C=1
++//   TestKittyCursorPolicyIgnoresChildKeys: placement keys without C still
++//                                          reach the host without C=1
++
++// A revision the host has not seen yet is written as a full a=T transmit.
++func TestKittyCursorPolicyOnTransmit(t *testing.T) {
++	r := &KittyRelay{id: 9, rev: 2, sentRev: 1, controls: "f=32,s=4,v=4,t=d", payload: "AAAA"}
++	var out bytes.Buffer
++	r.writePlacement(&out, 5, "c=10,r=5")
++
++	got := out.String()
++	if !strings.Contains(got, "a=T") {
++		t.Fatalf("expected a full a=T transmit for an unsent revision, got %q", got)
++	}
++	if !strings.Contains(got, "C=1") {
++		t.Fatalf("relayed a=T must carry C=1 so the host cursor stays put, got %q", got)
++	}
++}
++
++// A revision the host already holds is re-placed with a bare a=p.
++func TestKittyCursorPolicyOnReplace(t *testing.T) {
++	r := &KittyRelay{id: 9, rev: 3, sentRev: 3}
++	var out bytes.Buffer
++	r.writePlacement(&out, 5, "c=10,r=5")
++
++	got := out.String()
++	if !strings.Contains(got, "a=p") {
++		t.Fatalf("expected a bare a=p re-place for a sent revision, got %q", got)
++	}
++	if !strings.Contains(got, "C=1") {
++		t.Fatalf("relayed a=p must carry C=1 so the host cursor stays put, got %q", got)
++	}
++}
++
++// The policy is the host's, not the child's: placement keys rebuilt from a
++// child frame that never named C= still produce C=1 on the host, on both paths.
++func TestKittyCursorPolicyIgnoresChildKeys(t *testing.T) {
++	for _, tc := range []struct {
++		name string
++		r    *KittyRelay
++	}{
++		{"transmit", &KittyRelay{id: 11, rev: 1, sentRev: 0, controls: "f=32,s=4,v=4,t=f", payload: "L3RtcC9m"}},
++		{"replace", &KittyRelay{id: 11, rev: 1, sentRev: 1}},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			var out bytes.Buffer
++			tc.r.writePlacement(&out, 7, "")
++			if got := out.String(); !strings.Contains(got, "C=1") {
++				t.Fatalf("host placement without C=1 for a child that named no C=: %q", got)
++			}
++		})
++	}
++}
 diff --git c/relay_rev_test.go w/relay_rev_test.go
 new file mode 100644
 index 0000000..9af2d05
