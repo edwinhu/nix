@@ -90,40 +90,21 @@ Content-Type: text/html; charset=utf-8
 --oterm--
 """
 
-PLAIN_MESSAGE_TEMPLATE = """MIME-Version: 1.0
-Date: {date}
-Message-ID: <plain-fixture@example.invalid>
-Subject: PLAIN FIXTURE subject
-From: Fixture <fixture@example.invalid>
-To: Fixture <fixture@example.invalid>
-Content-Type: text/plain; charset=utf-8
 
-plain fixture body
-"""
-
-
-def build_fixture(root, html=True):
+def build_fixture(root):
     """Write a one-message maildir plus the accounts file that points at it.
 
     `maildir://` wants the directory CONTAINING the maildirs, so the message
     lands in <root>/mail/INBOX and the account defaults to INBOX.
-
-    html=True is the multipart/alternative fixture with a text/html part;
-    html=False is text/plain only, for asserting the plain path is untouched.
     """
     root = Path(root)
     inbox = root / "mail/INBOX"
     for sub in ("cur", "new", "tmp"):
         (inbox / sub).mkdir(parents=True, exist_ok=True)
-    if html:
-        message = MESSAGE_TEMPLATE.format(
-            date=email.utils.formatdate(localtime=True),
-            png=base64.b64encode(_red_png()).decode("ascii"),
-        )
-    else:
-        message = PLAIN_MESSAGE_TEMPLATE.format(
-            date=email.utils.formatdate(localtime=True),
-        )
+    message = MESSAGE_TEMPLATE.format(
+        date=email.utils.formatdate(localtime=True),
+        png=base64.b64encode(_red_png()).decode("ascii"),
+    )
     name = f"{int(time.time())}.oterm{os.getpid()}.fixture:2,S"
     (inbox / "cur" / name).write_text(message)
 

@@ -444,90 +444,6 @@ PYEOF
       --preload=${pagerKeys}
   '';
 
-  # WHICH COMMAND SHOULD <Enter> RUN? aerc template-expands the WHOLE command
-  # line before it cuts out the command name (commands/commands.go:164-168), so
-  # `:{{exec "aerc-mail-view-cmd" .Filename}}` lets this script choose: HTML mail
-  # gets `term aerc-mail-term <path>` -- the same browser-in-:term path as `o` --
-  # and everything else gets `redraw`, a GLOBAL no-op that creates no tab and
-  # paints no status line (commands/redraw.go:23-26). The alternative shapes all
-  # enter :term unconditionally, and :term creates and SELECTS its tab before it
-  # forks the child (app/terminal.go:96), so plain-text mail would flash a blank
-  # tab. Deciding before the command is named is the only way to avoid that.
-  #
-  # THREE HARD CONSTRAINTS, all from aerc's side:
-  #  1. ALWAYS EXIT 0. On a non-zero exit aerc's `exec` discards this output and
-  #     substitutes its TEXT argument instead (lib/templates/functions.go:122),
-  #     so a failure here runs `:/path/to/mail` and paints "Unknown command".
-  #  2. NO TRAILING NEWLINE. aerc splices stdout in verbatim -- `cmd` returns
-  #     out.String() untrimmed -- and ExpandAbbreviations only trims the LEFT
-  #     (commands.go:133), so "redraw\n" matches no command at all.
-  #  3. BE FAST. ExpandTemplates runs on aerc's UI goroutine, inside the
-  #     keystroke it is expanding, so this blocks the redraw for its whole
-  #     runtime. Structure only, never a body decode, and a hard `timeout`.
-  viewCmd = writeShellScript "aerc-mail-view-cmd" ''
-    export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
-    set -u
-
-    fallback() { printf '%s' redraw; exit 0; }
-
-    # aerc's `exec` pipes its text argument (.Filename) in on stdin
-    # (functions.go:117); $1 is for running this by hand. Only read stdin when
-    # no argument was given, so a direct invocation never blocks on a tty.
-    MSG="''${1:-}"
-    [ -n "$MSG" ] || MSG="$(head -n 1)"
-    [ -n "$MSG" ] || fallback
-
-    # RECOVER THE RENAMED FILE, exactly as aerc-mail-term does. The `:view` that
-    # runs first in this same binding marks the message Seen, which renames it in
-    # place -- `S` is appended after `:2,` -- while aerc still expands
-    # {{.Filename}} to the path it cached BEFORE the rename. Only the flags after
-    # `:2,` change, so glob the stable base.
-    if [ ! -r "$MSG" ]; then
-      base="''${MSG%:2,*}"
-      if [ "$base" != "$MSG" ]; then
-        for f in "$base":2,*; do
-          if [ -r "$f" ]; then MSG="$f"; break; fi
-        done
-      fi
-    fi
-    [ -r "$MSG" ] || fallback
-
-    # THE PATH GOES INTO AERC'S COMMAND LINE VERBATIM, and aerc splits that line
-    # with its own lexer -- there is no shell quoting layer to hide behind. A
-    # path carrying whitespace, a quote or a backslash would lex into different
-    # arguments than the file it names, so refuse it instead of emitting a
-    # command that means something else. Nothing from the MESSAGE (subject,
-    # headers, part filenames, body) is ever printed; only this path, which aerc
-    # itself chose.
-    case $MSG in
-      *[[:space:]]* | *\'* | *\"* | *\\*) fallback ;;
-    esac
-
-    # STRUCTURE ONLY. get_content_type() reads the parsed Content-Type header; no
-    # get_content()/get_payload(decode=True), so a 20 MB base64 attachment is
-    # never decoded. Any parse failure, hostile nesting or overrun exits non-zero
-    # and lands on `redraw`, which is the pre-existing behaviour. Matching "has a
-    # text/html part" is the same predicate aerc uses to pick the part it shows,
-    # given `alternatives = text/html,text/plain`.
-    if timeout 2 python3 - "$MSG" <<'PYEOF'
-import email, email.policy, sys
-
-try:
-    with open(sys.argv[1], "rb") as handle:
-        message = email.message_from_binary_file(handle, policy=email.policy.default)
-    html = any(part.get_content_type() == "text/html" for part in message.walk())
-except BaseException:
-    sys.exit(1)
-sys.exit(0 if html else 1)
-PYEOF
-    then
-      printf '%s' "term aerc-mail-term $MSG"
-    else
-      printf '%s' redraw
-    fi
-    exit 0
-  '';
-
 in
 symlinkJoin {
   name = "aerc-html-terminal-browser";
@@ -539,7 +455,6 @@ symlinkJoin {
     ln -s ${window} $out/bin/aerc-mail-window
     ln -s ${tty} $out/bin/aerc-mail-tty
     ln -s ${term} $out/bin/aerc-mail-term
-    ln -s ${viewCmd} $out/bin/aerc-mail-view-cmd
     ln -s ${chrome} $out/bin/aerc-mail-chrome
   '';
 }
