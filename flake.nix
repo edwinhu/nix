@@ -892,12 +892,6 @@
                     inherit (final) aerc;
                   };
 
-                # The filter that actually reaches the message view. See its
-                # header: terminal-browser cannot, so a headless browser renders
-                # the mail and this hands it over as one kitty frame.
-                aerc-html-chromium-kitty =
-                  prev.callPackage ./modules/linux/aerc-html-chromium-kitty.nix { };
-
                 # Double Commander Qt6 from official releases (aarch64 only; the
                 # official release tarball below is arm64. On x86_64 use the stock
                 # nixpkgs doublecmd, which builds natively.)
