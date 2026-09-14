@@ -4,8 +4,9 @@
 #   * aerc-mail-serve   -- inlines the message's images and serves it over
 #                          loopback, recording the URL for the others;
 #   * aerc-mail-tty     -- what `o` runs. aerc suspends via :exec-tty and hands
-#                          over its OWN terminal; this serves the message and
-#                          execs terminal-browser onto that tty, no relay;
+#                          over its OWN terminal; this serves the message, runs
+#                          terminal-browser on that tty with no relay, and reaps
+#                          the server when the browser quits;
 #   * aerc-mail-window  -- the browser in a fresh ghostty window;
 #   * aerc-html-terminal-browser-split -- the browser in a split pane beside aerc;
 #   * aerc-mail-chrome  -- the same URL in chromium, for devtools or printing.
@@ -129,6 +130,66 @@ let
   # dir, not /tmp: it is already per-user and cleaned on logout.
   urlFile = "\${XDG_RUNTIME_DIR:-/tmp}/aerc-mail-browser-url";
 
+  # REAP A RECORDED PREVIEW. Takes the url-file path as $1, reads the three-line
+  # record it holds -- url, directory, server pid -- kills that server, removes
+  # its directory and then the record itself, so nothing stale is left behind.
+  #
+  # Two callers: the serve step, before it starts a new preview (the detached
+  # launchers still depend on their server OUTLIVING them), and aerc-mail-tty,
+  # once the browser the user was reading in has quit.
+  #
+  # A truncated or stale record is not authority to kill an arbitrary pid or
+  # remove an arbitrary path, which is what every check below is for: the path
+  # shape, its realpath, its owner, and -- through a pidfd, so the check stays
+  # tied to the process actually signalled -- the argv and cwd of the pid.
+  reap = writeShellScript "aerc-mail-reap" ''
+    export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
+    set -u
+
+    python3 - "$1" "${mailServe}" <<'PYEOF'
+import os, re, shutil, signal, sys, tempfile
+from pathlib import Path
+
+record = Path(sys.argv[1])
+try:
+    previous = os.fsdecode(record.read_bytes()).splitlines()
+except OSError:
+    previous = []
+directory = previous[1] if len(previous) > 1 else ""
+pid = previous[2] if len(previous) > 2 else ""
+root = tempfile.gettempdir().rstrip("/")
+# A truncated or stale record is not authority to remove an arbitrary path.
+if (re.fullmatch(re.escape(root) + r"/aerc-mail-[A-Za-z0-9]{6}", directory)
+        and os.path.realpath(directory) == directory
+        and os.path.isdir(directory)
+        and os.stat(directory).st_uid == os.getuid()):
+    if re.fullmatch(r"[1-9][0-9]*", pid):
+        try:
+            fd = os.pidfd_open(int(pid))
+            try:
+                proc = Path("/proc") / pid
+                argv = (proc / "cmdline").read_bytes().split(b"\0")[:-1]
+                if (len(argv) == 3
+                        and (argv[1] == os.fsencode(sys.argv[2])
+                             or re.fullmatch(rb"/nix/store/[a-z0-9]{32}-mail-serve\.py", argv[1]))
+                        and argv[2] == os.fsencode(directory)
+                        and os.readlink(proc / "cwd") == directory
+                        and proc.stat().st_uid == os.getuid()):
+                    signal.pidfd_send_signal(fd, signal.SIGTERM)
+            finally:
+                os.close(fd)
+        except (OSError, OverflowError):
+            pass
+    shutil.rmtree(directory)
+# The record described a preview that is gone either way now; leaving it would
+# hand the next reaper a pid it must not trust.
+try:
+    record.unlink()
+except OSError:
+    pass
+PYEOF
+  '';
+
   serve = writeShellScript "aerc-mail-serve" ''
     export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
     set -u
@@ -160,43 +221,7 @@ let
 
     # Only one preview is live. Two consecutive opens leave BOTH servers and
     # dirs resident unless the next serve step consumes the previous record.
-    # Check the script AND its document, not just a PID that may have been
-    # reused; a pidfd keeps that check tied to the process we actually signal.
-    python3 - "${urlFile}" "${mailServe}" <<'PYEOF'
-import os, re, shutil, signal, sys, tempfile
-from pathlib import Path
-
-try:
-    previous = os.fsdecode(Path(sys.argv[1]).read_bytes()).splitlines()
-except OSError:
-    previous = []
-directory = previous[1] if len(previous) > 1 else ""
-pid = previous[2] if len(previous) > 2 else ""
-root = tempfile.gettempdir().rstrip("/")
-# A truncated or stale record is not authority to remove an arbitrary path.
-if (re.fullmatch(re.escape(root) + r"/aerc-mail-[A-Za-z0-9]{6}", directory)
-        and os.path.realpath(directory) == directory
-        and os.path.isdir(directory)
-        and os.stat(directory).st_uid == os.getuid()):
-    if re.fullmatch(r"[1-9][0-9]*", pid):
-        try:
-            fd = os.pidfd_open(int(pid))
-            try:
-                proc = Path("/proc") / pid
-                argv = (proc / "cmdline").read_bytes().split(b"\0")[:-1]
-                if (len(argv) == 3
-                        and (argv[1] == os.fsencode(sys.argv[2])
-                             or re.fullmatch(rb"/nix/store/[a-z0-9]{32}-mail-serve\.py", argv[1]))
-                        and argv[2] == os.fsencode(directory)
-                        and os.readlink(proc / "cwd") == directory
-                        and proc.stat().st_uid == os.getuid()):
-                    signal.pidfd_send_signal(fd, signal.SIGTERM)
-            finally:
-                os.close(fd)
-        except (OSError, OverflowError):
-            pass
-    shutil.rmtree(directory)
-PYEOF
+    ${reap} "${urlFile}"
 
     # Three lines: the URL, the document dir, and the SERVER PID.
     printf 'http://127.0.0.1:%s/index.html\n' "$PORT" > "${urlFile}"
@@ -338,8 +363,14 @@ PYEOF
       echo "aerc-mail-tty: no readable message file: ''${1:-<none>}"; sleep 3; exit 1
     fi
 
-    rm -f "${urlFile}"
-    ${serve} < "$MSG" || true
+    # Do NOT clear the url file first. Its record -- url, directory, pid -- is
+    # what the serve step reads to kill the PREVIOUS preview server and delete
+    # its directory; erasing it turns every open into a leaked python server
+    # holding a rendered copy of a mail. Serving overwrites the record itself,
+    # and a failed serve is fatal below, so there is no stale URL to read.
+    ${serve} < "$MSG" || {
+      echo "aerc-mail-tty: could not serve $MSG"; sleep 3; exit 1
+    }
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
     if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
       echo "aerc-mail-tty: serving the message failed, or terminal-browser is not installed"; sleep 3; exit 1
@@ -357,13 +388,28 @@ PYEOF
     # path (measured: laggy scroll). --no-merge is what stops the pane hunt,
     # so the variables can stay.
     #
-    # Keep exec here: :exec-tty's direct child must retain aerc's foreground
-    # process group and paint straight to its terminal, without a relay.
-    exec env TERMINAL_BROWSER_NO_MERGE=1 \
+    # REAP WHEN THE USER QUITS. This was an `exec` until the preview server it
+    # leaves behind became the problem: with cleanup only in the serve step, one
+    # python server and one temp dir holding a rendered copy of the mail stayed
+    # resident from quitting the browser until the NEXT open. Dropping the exec
+    # is what buys a process to come back to, so the reaper can run on the way
+    # out. The EXIT trap covers a browser killed by a signal too, and its
+    # failure must never become the status the user sees.
+    #
+    # The browser is still the terminal's foreground process: a plain foreground
+    # child inherits this script's process group, and under :exec-tty that group
+    # IS the terminal's foreground group, so the keyboard reaches the browser
+    # exactly as it did under exec. Backgrounding it, putting it in a new
+    # session, or wrapping it in a subshell would each break that.
+    trap '${reap} "${urlFile}" >/dev/null 2>&1 || true' EXIT
+
+    env TERMINAL_BROWSER_NO_MERGE=1 \
       "${terminalBrowser}" open "$URL" --no-merge \
       --app-mode --app-name=aerc-mail-tty \
       --no-toolbar --no-frame --no-overlays --no-context-menu \
       --preload=${pagerKeys}
+    status=$?
+    exit "$status"
   '';
 
 in
