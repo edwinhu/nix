@@ -311,86 +311,54 @@ PYEOF
     export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
     set -u
 
-    # NO HANDOFF WHEN AERC CAN NAME THE MESSAGE. `o` used to be two commands --
-    # `:pipe -m -b aerc-mail-serve` then `:exec-tty aerc-mail-tty` -- passing a
-    # URL through a shared file. `-b` is not optional (without it aerc opens a
-    # terminal tab for the output), so the serve ran CONCURRENTLY with this
-    # launcher and the read could beat the write: that is the "opens whatever
-    # was open last" bug. Waiting here does not fix it -- measured, the
-    # backgrounded pipe does not progress while :exec-tty holds the screen, so
-    # the wait times out and then reads the stale record anyway.
+    # TAKE THE MESSAGE DIRECTLY, AND ONLY THE MESSAGE. aerc expands
+    # {{.Filename}} to the message file and this serves it SYNCHRONOUSLY before
+    # opening. An earlier version fell back to the URL a previous serve left in
+    # the shared file when $1 was unreadable -- which is how `o` on an unread
+    # mail opened whatever was served last, up to and including a test fixture.
+    # There is no fallback now: no readable message means a visible error.
     #
-    # So take the message directly: aerc expands {{.Filename}} to the message
-    # file (notmuch included) and this serves it SYNCHRONOUSLY before opening.
-    # One command, one process, nothing to race.
-    #
-    # If the template is not expanded, $1 is the literal "{{.Filename}}", which
-    # is not readable -- so this degrades to the old shared-file path rather
-    # than breaking.
-    if [ "$#" -ge 1 ] && [ -r "$1" ]; then
-      ${serve} < "$1" || true
+    # RECOVER THE RENAMED FILE. Opening an unread message marks it Seen, which
+    # renames it in place -- `S` is appended to the maildir info part, so
+    # `…,U=<uid>:2,` becomes `…,U=<uid>:2,S` -- while aerc still expands
+    # {{.Filename}} to the path it cached BEFORE the rename. Only the flags
+    # after `:2,` change, so glob the stable base. Same block as aerc-mail-term.
+    MSG="''${1:-}"
+    if [ -n "$MSG" ] && [ ! -r "$MSG" ]; then
+      base="''${MSG%:2,*}"
+      if [ "$base" != "$MSG" ]; then
+        for f in "$base":2,*; do
+          if [ -r "$f" ]; then MSG="$f"; break; fi
+        done
+      fi
+    fi
+    if [ -z "$MSG" ] || [ ! -r "$MSG" ]; then
+      echo "aerc-mail-tty: no readable message file: ''${1:-<none>}"; sleep 3; exit 1
     fi
 
+    rm -f "${urlFile}"
+    ${serve} < "$MSG" || true
     URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
     if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
-      echo "no served mail, or terminal-browser is not installed"; sleep 3; exit 1
+      echo "aerc-mail-tty: serving the message failed, or terminal-browser is not installed"; sleep 3; exit 1
     fi
 
-    # Bare --app-mode labels every tab "app". Give o its own name so it cannot
-    # take B's "mail" tab, which has a different renderer and preload. Use only
-    # --app-name: combining it with --app-id makes terminal-browser report app=null.
-    # `open` adds a tab, even with --tab; eval navigates the selected one in place.
-    timeout -k 1 9 python3 - "${terminalBrowser}" "$URL" <<'PYEOF'
-import json, os, subprocess, sys, time
-
-browser, url = sys.argv[1:]
-
-def call(args, budget):
-    return subprocess.run([browser, *args], capture_output=True, text=True,
-                          timeout=budget, check=False)
-
-try:
-    listing = call(["ls", "--all", "--json"], 2)
-    if listing.returncode:
-        raise RuntimeError("cannot list browser tabs")
-    # Outside a multiplexer inCurrentTab is false; match our own tty instead.
-    tty = os.ttyname(1) if os.isatty(1) else None
-    existing = next(((b["key"], t["id"])
-                     for b in json.loads(listing.stdout).get("browsers", [])
-                     if b.get("inCurrentTab") or (tty and b.get("tty") == tty)
-                     for t in b.get("tabs", [])
-                     if (t.get("app") or {}).get("id") == "aerc-mail-tty"), None)
-    if existing is None:
-        sys.exit(10)
-    key, tab = existing
-    target = ["action", "--browser", key, "--tab", str(tab)]
-    nav = call([*target, "--follow", "--", "eval",
-                "location.href=" + json.dumps(url)], 2)
-    if nav.returncode:
-        raise RuntimeError("cannot navigate preview tab")
-    # Assignment returns before the document loads. Wait for this URL AND
-    # complete (images/styles included), not a successful navigation request.
-    deadline = time.monotonic() + 4
-    while (remaining := deadline - time.monotonic()) > 0:
-        probe = call([*target, "--", "eval",
-                      "location.href + ' ' + document.readyState"], remaining)
-        if probe.returncode == 0 and json.loads(probe.stdout) == url + " complete":
-            sys.exit(0)
-        time.sleep(0.05)
-    raise RuntimeError("preview did not finish loading within 4s")
-except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, RuntimeError) as error:
-    print(f"aerc-mail-tty: {error}", file=sys.stderr)
-    sys.exit(1)
-PYEOF
-    status=$?
-    [ "$status" -eq 0 ] && exit 0
-    # A failed/ambiguous request may already have navigated. Do not add another
-    # hidden tab on error; only a successful listing with no match creates one.
-    [ "$status" -eq 10 ] || exit "$status"
-
+    # TAKE THE TERMINAL, NEVER A NEIGHBOUR. Without --no-merge, `open` first
+    # adopts a browser already registered in the current multiplexer tab, or
+    # any running instance as a host, and the page appears there (or nowhere)
+    # while this tty sits blank -- the "opens a stale page" bug. With
+    # --no-merge and an interactive tty it takes the terminal it was given.
+    #
+    # KEEP THE HERDR ENVIRONMENT. The engine streams frames straight into the
+    # pane over HERDR_SOCKET_PATH/HERDR_PANE_ID; stripped, it falls back to
+    # inline kitty frames over the pty, which under a multiplexer is the slow
+    # path (measured: laggy scroll). --no-merge is what stops the pane hunt,
+    # so the variables can stay.
+    #
     # Keep exec here: :exec-tty's direct child must retain aerc's foreground
     # process group and paint straight to its terminal, without a relay.
-    exec "${terminalBrowser}" open "$URL" \
+    exec env TERMINAL_BROWSER_NO_MERGE=1 \
+      "${terminalBrowser}" open "$URL" --no-merge \
       --app-mode --app-name=aerc-mail-tty \
       --no-toolbar --no-frame --no-overlays --no-context-menu \
       --preload=${pagerKeys}

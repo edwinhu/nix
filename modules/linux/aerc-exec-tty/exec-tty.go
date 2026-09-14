@@ -63,6 +63,12 @@ func (e ExecTty) Execute(args []string) error {
 	// suspended would strand the user in a terminal with no visible program.
 	defer ui.ResumeScreen()
 
+	// Suspending restores the terminal's primary screen, so until the child
+	// paints, the user is looking at the shell that launched aerc. Enter a
+	// blank alternate screen now instead; the child enters its own on top,
+	// and ResumeScreen re-enters it on the way back.
+	_, _ = os.Stdout.WriteString("\x1b[?1049h\x1b[H\x1b[2J")
+
 	cmd := exec.Command(e.Cmd[0], e.Cmd[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
