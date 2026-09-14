@@ -21,36 +21,47 @@
 # tinymist is a runtime input because the script compiles a .typ argument itself
 # before reading the PDF back.
 #
-# TWO NAMES, ONE SCRIPT. The checker detects RUNTS -- a paragraph's last line
-# holding a word or two -- which is not what a widow is; `check-widows` is the
-# name it shipped under and callers still use it, so both names resolve here and
-# both take --prose. `check-runts` is the one to reach for. The widow and orphan
-# checkers proper (check-widows-pagebreak.py, check-orphans.py) are page-break
-# checks, near-vacuous on slides, and are not wrapped: nothing calls them yet.
+# THREE NAMES, THREE SCRIPTS, one set of runtime inputs.
+#
+#   check-runts    a paragraph's last line holding a word or two, anywhere (a LINE
+#                  break). The only one of the three that is real on slides.
+#   check-widows   a paragraph's LAST line stranded at a page top (a PAGE break).
+#   check-orphans  a paragraph's FIRST line stranded at a page bottom.
+#
+# `check-widows` now means widows. It meant runts for months, so the two page-break
+# checkers REFUSE a slide deck -- exit 2 with a message naming check-runts -- rather
+# than return the vacuous 0 a stale caller would read as clean.
 #
 # The script is referenced at its repo path rather than vendored into this repo:
 # a copy here would be a second home for a file `vendor-parity.sh` does not track,
 # which is the drift this suite already has elsewhere.
 
 let
-  app = writeShellApplication {
-    name = "check-runts";
-    runtimeInputs = [
-      (python3.withPackages (ps: [ ps.pymupdf ]))
-      tinymist
-    ];
-    text = ''
-      script="$HOME/projects/typst/scripts/check-runts.py"
-      if [ ! -f "$script" ]; then
-        echo "check-runts: $script not found (is ~/projects/typst checked out?)" >&2
-        exit 2
-      fi
-      exec python3 "$script" "$@"
-    '';
-  };
+  # One derivation per name. A shared script dispatching on $0 would put the three
+  # definitions back in one file, which is the arrangement this whole split undid.
+  checker =
+    name:
+    writeShellApplication {
+      inherit name;
+      runtimeInputs = [
+        (python3.withPackages (ps: [ ps.pymupdf ]))
+        tinymist
+      ];
+      text = ''
+        script="$HOME/projects/typst/scripts/${name}.py"
+        if [ ! -f "$script" ]; then
+          echo "${name}: $script not found (is ~/projects/typst checked out?)" >&2
+          exit 2
+        fi
+        exec python3 "$script" "$@"
+      '';
+    };
 in
 symlinkJoin {
-  name = "check-runts";
-  paths = [ app ];
-  postBuild = "ln -s $out/bin/check-runts $out/bin/check-widows";
+  name = "typst-line-checkers";
+  paths = map checker [
+    "check-runts"
+    "check-widows"
+    "check-orphans"
+  ];
 }
