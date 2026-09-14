@@ -1920,6 +1920,8 @@ in
     enableChromeCdp = true;
     enableReadwise = true;
     enablePaperpile = true;
+    # Only this host has an everyday chromium on CDP :9222 to borrow from.
+    enableCrumbRefresh = true;
   };
 
   # Basic home-manager configuration

@@ -4,6 +4,7 @@
 #   crumb state pinpoint                    verified page state as JSON
 #   crumb cookies https://host/path         RFC 6265-scoped Cookie header
 #   crumb sync --port 9250                  chrome-cdp profile -> the owned jar
+#   crumb refresh pinpoint                  everyday browser (:9222) -> the owned jar, scoped
 #
 # Prebuilt `bun build --compile` binary from the GitHub release. A source build
 # is not an option: bun install needs network, which the Nix sandbox denies, and
@@ -30,6 +31,8 @@
 #
 # Update flow: bump `version`, cross-compile both targets from one machine
 #   bun build --compile --target=bun-linux-x64    src/index.ts --outfile crumb-linux-x64
+#     (with an OFFICIAL bun, not the nix one: the nix bun runtime carries a /nix/store glibc
+#     interpreter, which the fixed-output scan rejects once that glibc is in the local store)
 #   bun build --compile --target=bun-darwin-arm64 src/index.ts --outfile crumb-darwin-arm64
 # then `gh release create v<version> <both files>`, grab the per-platform asset id
 #   gh api repos/edwinhu/crumb/releases/tags/v<version> --jq '.assets[] | "\(.id) \(.name)"'
@@ -38,18 +41,18 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.2.0";
+  version = "0.5.0";
 
   # Per-platform release asset ids + hashes, all attached to the v${version}
-  # release and built from 8ae704b.
+  # release and built from ff9297e.
   platforms = {
     x86_64-linux = {
-      assetId = "530927198"; # crumb-linux-x64
-      hash = "sha256-VPoHgMrvwH/kpXSEstB/g+fwjyNgabXc2lI2DtNAZsg=";
+      assetId = "562964951"; # crumb-linux-x64
+      hash = "sha256-5QNq9NxnYK/LRDMIQSmFryLy8qmafHVYwgZeZo6fVck=";
     };
     aarch64-darwin = {
-      assetId = "530927201"; # crumb-darwin-arm64
-      hash = "sha256-6ZctLwaSfe0mYOzmQVBFI78B9Ms8EZdZY9/zbUMDKBY=";
+      assetId = "562959497"; # crumb-darwin-arm64
+      hash = "sha256-75Y3/ci263tDnXFkEnuLSNBDAoTfrvZZs+IO64fpWyQ=";
     };
   };
 

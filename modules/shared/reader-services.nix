@@ -1,5 +1,6 @@
 # Cross-platform reader services: chrome-cdp + readwise-reader-tools (+ its
-# cloudflared tunnel).
+# cloudflared tunnel) + the paperpile→readwise sync + the crumb session refresh
+# timer (Linux only — it borrows from the everyday browser on CDP :9222).
 #
 # ONE module, TWO backends. On Linux (home-manager on omarchy/alarm) it emits
 # systemd *user* services + a timer (and, where readwise is enabled, the
@@ -99,6 +100,32 @@ let
     exit 0
   '';
 
+  # crumb session refresh (Linux). Google rotates __Secure-*PSIDTS only for a real
+  # browser session, so the jar goes stale on its own; `crumb refresh` copies the
+  # app-scoped cookies out of the everyday chromium on CDP :9222. Exit 77 means
+  # that browser is itself signed out — no retry can fix it, so notify and let the
+  # unit fail. `crumb`, `systemctl` and `notify-send` all resolve from the unit's
+  # PATH (linuxPath + libnotify).
+  crumbRefreshScript = pkgs.writeShellScript "crumb-refresh" ''
+    set -u
+    # No desktop session -> no everyday browser on :9222 to borrow from.
+    systemctl --user is-active --quiet graphical-session.target || exit 0
+
+    worst=0
+    for app in pinpoint notebooklm scholar; do
+      # stdout is the state JSON, which carries cookie names; only the exit code
+      # is wanted here, and nothing cookie-shaped may reach the log.
+      crumb refresh "$app" >/dev/null
+      code=$?
+      if [ "$code" -eq 77 ]; then
+        notify-send -u critical "crumb: $app signed out" \
+          "crumb refresh could not borrow a live session from the browser on :9222 — run 'crumb login $app'"
+      fi
+      if [ "$code" -gt "$worst" ]; then worst=$code; fi
+    done
+    exit "$worst"
+  '';
+
   # pixi (nix-profile) + user local bin + system dirs. curl/python3 live in /usr/bin.
   linuxPath = "${home}/.nix-profile/bin:${home}/.local/bin:/usr/local/bin:/usr/bin:/bin";
   darwinPath = "${home}/.nix-profile/bin:${home}/.local/bin:${home}/.pixi/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
@@ -190,6 +217,8 @@ in
       "the readwise-reader-tools webhook + sweep (enable on exactly ONE always-on host — a second sweep double-saves)";
     enablePaperpile = lib.mkEnableOption
       "the Paperpile → Readwise highlight sync (enable on exactly ONE always-on host — both machines syncing is redundant)";
+    enableCrumbRefresh = lib.mkEnableOption
+      "the 6-hourly crumb session refresh (Linux only — it borrows from the everyday browser on CDP :9222, which the Mac does not run)";
   };
 
   config = lib.mkMerge [
@@ -255,6 +284,36 @@ in
         # every 2min thereafter.
         OnStartupSec = "2min";
         OnUnitActiveSec = "2min";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+
+    # Keeps the crumb jar's Google session alive; see crumbRefreshScript above.
+    systemd.user.services.crumb-refresh = lib.mkIf cfg.enableCrumbRefresh {
+      Unit = {
+        Description = "crumb refresh — borrow the everyday browser's Google session (CDP :9222) into the crumb jar";
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        # libnotify on PATH for notify-send; the script calls it by name.
+        Environment = [ "PATH=${linuxPath}:${pkgs.libnotify}/bin" "HOME=${home}" ];
+        ExecStart = "${crumbRefreshScript}";
+        Nice = 10;
+        StandardOutput = "append:${logDir}/crumb-refresh.log";
+        StandardError = "append:${logDir}/crumb-refresh.log";
+      };
+    };
+
+    systemd.user.timers.crumb-refresh = lib.mkIf cfg.enableCrumbRefresh {
+      Unit.Description = "crumb refresh timer (re-borrow the browser's Google session every 6h)";
+      Timer = {
+        # PSIDTS rotates on the order of hours; 6h keeps the jar ahead of it
+        # without hammering the browser. Persistent=false — a refresh missed
+        # while the machine was off is worthless, the next one supersedes it.
+        OnStartupSec = "5min";
+        OnUnitActiveSec = "6h";
         Persistent = false;
       };
       Install.WantedBy = [ "timers.target" ];
