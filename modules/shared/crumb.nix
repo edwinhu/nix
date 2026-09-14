@@ -5,6 +5,7 @@
 #   crumb cookies https://host/path         RFC 6265-scoped Cookie header
 #   crumb sync --port 9250                  chrome-cdp profile -> the owned jar
 #   crumb refresh pinpoint                  everyday browser (:9222) -> the owned jar, scoped
+#   crumb login pinpoint                    opens the sign-in page in YOUR browser, waits, seeds
 #
 # Prebuilt `bun build --compile` binary from the GitHub release. A source build
 # is not an option: bun install needs network, which the Nix sandbox denies, and
@@ -41,18 +42,18 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.5.0";
+  version = "0.5.1";
 
   # Per-platform release asset ids + hashes, all attached to the v${version}
-  # release and built from ff9297e.
+  # release and built from 07dba1d.
   platforms = {
     x86_64-linux = {
-      assetId = "562964951"; # crumb-linux-x64
-      hash = "sha256-5QNq9NxnYK/LRDMIQSmFryLy8qmafHVYwgZeZo6fVck=";
+      assetId = "563495085"; # crumb-linux-x64
+      hash = "sha256-FlNpjxFc/T1/3M6XZSBbQSb6EcwegesIyELV1SwIDis=";
     };
     aarch64-darwin = {
-      assetId = "562959497"; # crumb-darwin-arm64
-      hash = "sha256-75Y3/ci263tDnXFkEnuLSNBDAoTfrvZZs+IO64fpWyQ=";
+      assetId = "563495082"; # crumb-darwin-arm64
+      hash = "sha256-mkToGAEU5pYJuDmwRhNJumu9WOI9KKlUUrJL9MSYSBg=";
     };
   };
 
