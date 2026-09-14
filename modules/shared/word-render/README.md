@@ -34,14 +34,46 @@ reproduce.
 - `~/.local/share/word-render/render_docx.ps1` — guest-side COM renderer.
 - `~/.local/share/word-render/word_render_remote.sh` — host transport.
 - `~/.local/bin/word-render` — `word-render <docx> [out.pdf]`.
+- `~/.local/share/word-render/compare_docx.ps1` — guest-side COM redline.
+- `~/.local/share/word-render/word_compare_remote.sh` — host transport.
+- `~/.local/bin/word-compare` —
+  `word-compare <base.docx> <rev.docx> <out.docx> [stats.txt]`.
 - `~/.local/share/word-render/vm/` — the provisioning kit: `provision.sh`,
   `start-winvm.sh`, `start-tpm.sh`, `typer.sh`, `guest-setup.ps1`,
   `autounattend.xml`.
 - `~/.local/bin/word-render-provision` — one-time host setup for the guest.
-- `WINVM_SSH` / `WINVM_DIR` / `WINVM_SCRIPT` shell defaults.
+- `WINVM_SSH` / `WINVM_DIR` / `WINVM_SCRIPT` / `WINVM_COMPARE_SCRIPT` shell
+  defaults.
 
 Options (set per host): `sshTarget` (default `word@winvm`), `guestDir`,
-`guestScript`.
+`guestScript`, `compareScript`.
+
+## Compare — redlines that include footnotes
+
+`word-compare` drives `Application.CompareDocuments` in the guest and writes one
+redline `.docx` plus a stats file of Word's own revision counts:
+
+    word-compare base.docx revised.docx redline.docx
+
+Word diffs **footnote-internal text**; LibreOffice's compare does not, and on a
+footnote-heavy manuscript it silently carries the baseline's footnotes through,
+so every footnote edit reads as unchanged. That is the whole reason this path
+exists.
+
+`compare_docx.ps1` sets `CompareFootnotes` on, and `CompareFormatting`,
+`CompareWhitespace` and `CompareFields` off. The last three matter when the two
+sides were produced by different toolchains (a Word draft against a
+pandoc-from-Typst rebuild): formatting deltas are pipeline artifacts, and
+NOTEREF/TOC fields carry cached display text, so `supra note N` renumbering
+would otherwise dominate the redline. The cost is that a cross-reference
+*retargeted* to a different footnote does not show.
+
+Like render, compare runs through a scheduled task created with `/IT`: Word COM
+does not fully initialize in OpenSSH's non-interactive window station, where
+`Word.Application` is created but `.Documents` is null.
+
+The guest path lives in `WINVM_COMPARE_SCRIPT`, not `WINVM_SCRIPT` — the latter
+names the renderer and is exported session-wide.
 
 ## Fonts (both guests)
 
@@ -184,5 +216,7 @@ not here.
 ## Downstream integration (separate repo)
 
 `~/projects/workflows/scripts/doc_render.py` can grow a `renderer="word-remote"`
-backend shelling out to `word_render_remote.sh`. That lives in the workflows
+backend shelling out to `word_render_remote.sh`, and
+`~/projects/workflows/skills/docx-typst/scripts/make_redline.py --engine
+word-remote` shells out to `word_compare_remote.sh`. Those live in the workflows
 repo, not here — this module only provisions the VM + scripts.
