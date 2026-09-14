@@ -1,5 +1,6 @@
 {
   writeShellApplication,
+  symlinkJoin,
   python3,
   tinymist,
 }:
@@ -20,22 +21,36 @@
 # tinymist is a runtime input because the script compiles a .typ argument itself
 # before reading the PDF back.
 #
+# TWO NAMES, ONE SCRIPT. The checker detects RUNTS -- a paragraph's last line
+# holding a word or two -- which is not what a widow is; `check-widows` is the
+# name it shipped under and callers still use it, so both names resolve here and
+# both take --prose. `check-runts` is the one to reach for. The widow and orphan
+# checkers proper (check-widows-pagebreak.py, check-orphans.py) are page-break
+# checks, near-vacuous on slides, and are not wrapped: nothing calls them yet.
+#
 # The script is referenced at its repo path rather than vendored into this repo:
 # a copy here would be a second home for a file `vendor-parity.sh` does not track,
 # which is the drift this suite already has elsewhere.
 
-writeShellApplication {
-  name = "check-widows";
-  runtimeInputs = [
-    (python3.withPackages (ps: [ ps.pymupdf ]))
-    tinymist
-  ];
-  text = ''
-    script="$HOME/projects/typst/scripts/check-widows.py"
-    if [ ! -f "$script" ]; then
-      echo "check-widows: $script not found (is ~/projects/typst checked out?)" >&2
-      exit 2
-    fi
-    exec python3 "$script" "$@"
-  '';
+let
+  app = writeShellApplication {
+    name = "check-runts";
+    runtimeInputs = [
+      (python3.withPackages (ps: [ ps.pymupdf ]))
+      tinymist
+    ];
+    text = ''
+      script="$HOME/projects/typst/scripts/check-runts.py"
+      if [ ! -f "$script" ]; then
+        echo "check-runts: $script not found (is ~/projects/typst checked out?)" >&2
+        exit 2
+      fi
+      exec python3 "$script" "$@"
+    '';
+  };
+in
+symlinkJoin {
+  name = "check-runts";
+  paths = [ app ];
+  postBuild = "ln -s $out/bin/check-runts $out/bin/check-widows";
 }
