@@ -3246,8 +3246,8 @@ in
       # chawan renders the mail's own CSS. `!` runs it in a terminal, which
       # it needs -- and which is NOT what garbled the view: an interactive
       # renderer repainting is. The PICTURE is on `o`
-      # (:term aerc-mail-term), which runs terminal-browser in aerc's own
-      # :term over the vaxis kitty passthrough.
+      # (:exec-tty aerc-mail-tty), where aerc suspends and terminal-browser
+      # paints straight to aerc's own terminal.
       text/html=${aercHtmlChawan}
       application/pdf=!${aercPdfPreview}
       .headers=colorize

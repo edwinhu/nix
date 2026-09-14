@@ -851,42 +851,30 @@
                 # `aerc = prev.aerc` explicitly: callPackage's auto-args resolve
                 # against the FINAL package set, so letting it fill `aerc` in
                 # would point this override at itself (infinite recursion).
-                # Then the vaxis kitty-graphics PASSTHROUGH on top: v0.17.1's
-                # embedded terminal turns a child's kitty image into an
-                # EventAPC nobody consumes and never answers its a=q probe, so
-                # terminal-browser -- which emits kitty and no sixel -- shows
-                # text and loses every picture. The layer relays the child's
-                # commands to the host terminal instead of decoding them to
-                # pixels, which is what makes `o` render the mail inside aerc's
-                # own :term. Its predecessor DECODED the frames and was retired
-                # for lag; the decoder is gone, the relay replaces it. See
-                # modules/linux/aerc-vaxis-passthrough.nix.
-                # ...and :exec-tty on top, which runs a program on aerc's OWN
-                # terminal instead of relaying it through a second pty. See
-                # modules/linux/aerc-exec-tty.nix.
-                # aerc-pty-pixels stays underneath both -- it is what tells the
-                # embedded terminal how big a pixel is, which the relay's cell
-                # geometry and chawan's inline SIXEL images both depend on.
+                # Then :exec-tty on top, which runs a program on aerc's OWN
+                # terminal: aerc suspends, hands the tty over, and the child
+                # paints straight to it. That is how `o` shows the mail --
+                # terminal-browser takes aerc's terminal, with no second pty in
+                # between. See modules/linux/aerc-exec-tty.nix.
+                # aerc-pty-pixels stays underneath -- it is what tells aerc's
+                # embedded terminal how big a pixel is, which chawan's inline
+                # SIXEL images in the message view depend on.
                 aerc = prev.callPackage ./modules/linux/aerc-exec-tty.nix {
-                  aerc = prev.callPackage ./modules/linux/aerc-vaxis-passthrough.nix {
-                    aerc = prev.callPackage ./modules/linux/aerc-pty-pixels.nix {
-                      aerc = (import inputs.nixpkgs-aerc {
-                        system = prev.stdenv.hostPlatform.system;
-                        config.allowUnfree = true;
-                      }).aerc;
-                    };
+                  aerc = prev.callPackage ./modules/linux/aerc-pty-pixels.nix {
+                    aerc = (import inputs.nixpkgs-aerc {
+                      system = prev.stdenv.hostPlatform.system;
+                      config.allowUnfree = true;
+                    }).aerc;
                   };
                 };
 
-                # The consumer of that relay: terminal-browser, which emits
-                # kitty graphics and no sixel. Its store path carries the
-                # "aerc-html-terminal-browser" marker that
-                # aerc-vaxis-passthrough.nix's allowlist matches on, so this is
-                # the only child permitted the kitty file/shm media.
-                # `aerc` comes from FINAL, not prev: the aerc-with-browser
-                # wrapper execs it by store path, and prev's aerc is the
-                # unpatched one — running that would silently lose the kitty
-                # relay the embedded `O` path depends on.
+                # The launchers `o` and its siblings run: terminal-browser on
+                # the served mail, plus the serve step itself. The derivation
+                # name is only a naming convention now -- nothing matches on
+                # the store path.
+                # `aerc` comes from FINAL, not prev: anything here that execs
+                # aerc by store path must get the patched one, not prev's
+                # unpatched nixpkgs build.
                 aerc-html-terminal-browser =
                   prev.callPackage ./modules/linux/aerc-html-terminal-browser.nix {
                     inherit (final) aerc;

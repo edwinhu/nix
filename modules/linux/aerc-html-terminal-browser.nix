@@ -1,14 +1,14 @@
 # terminal-browser as aerc's HTML mail renderer, on aerc's OWN terminal.
 #
-# THE :term PATH IS BACK, on a cheaper mechanism. The earlier embedded attempt
-# DECODED the child's kitty frames to pixels and re-encoded them for the host --
-# two full-frame copies per frame, which is what flashed and lagged. The patched
-# vaxis (modules/linux/aerc-vaxis-passthrough.nix) now RELAYS the child's kitty
-# commands instead: it remaps image ids, re-places at the widget's origin and
-# answers the capability probe locally, never touching a pixel. So `o` runs
-# aerc-mail-term inside aerc's own :term, where terminal-browser has a real pty
-# and takes its openHere path. :exec-tty and the split/window/chrome launchers
-# remain for the cases that want to leave aerc.
+# FIVE LAUNCHERS, one serve step and four ways to show what it served:
+#   * aerc-mail-serve   -- inlines the message's images and serves it over
+#                          loopback, recording the URL for the others;
+#   * aerc-mail-tty     -- what `o` runs. aerc suspends via :exec-tty and hands
+#                          over its OWN terminal; this serves the message and
+#                          execs terminal-browser onto that tty, no relay;
+#   * aerc-mail-window  -- the browser in a fresh ghostty window;
+#   * aerc-html-terminal-browser-split -- the browser in a split pane beside aerc;
+#   * aerc-mail-chrome  -- the same URL in chromium, for devtools or printing.
 #
 # The document is served over loopback and its images pulled same-origin by the
 # same helpers the chawan filter uses: a browser will not load an https image
@@ -30,11 +30,12 @@
 , aerc
 }:
 
-# TWO SCRIPTS, because :term cannot be handed the message. aerc runs a :term
-# command with a pty but no stdin from the mail, so the message reaches the
-# browser in two steps: `:pipe -m -b` gives the mail to the server, which
-# records a URL, and `:term` then launches the browser on it. The keybinding in
-# ~/dotfiles/.config/aerc/binds.conf chains the two.
+# The detached launchers (window, split, chrome) take the mail in TWO STEPS,
+# because nothing hands them the message: `:pipe -m -b aerc-mail-serve` gives
+# the mail to the server, which records a URL, and a second `:pipe` then
+# launches the browser on it. The keybinding in
+# ~/dotfiles/.config/aerc/binds.conf chains the two. aerc-mail-tty needs no
+# chain -- :exec-tty expands {{.Filename}}, so it serves and opens in one go.
 let
   # PAGER KEYS. A browser binds arrows, space and PageDown to scrolling and
   # nothing else -- j and k are a pager convention it has never heard of.
@@ -261,11 +262,11 @@ PYEOF
   # A new window needs neither, and works the same on plain ghostty as under a
   # multiplexer.
   #
-  # WHY NOT AERC'S :term. That path exists (see `launch`) and is where $EDITOR
-  # runs when you reply -- fine for nvim, which emits CELLS that vaxis diffs in
-  # a few hundred bytes. terminal-browser emits IMAGES: a full-pane bitmap per
-  # frame, which vaxis must stage and re-transmit and the terminal re-upload to
-  # the GPU. That is the flashing and the lag.
+  # WHY NOT AERC'S :term. That is where $EDITOR runs when you reply -- fine for
+  # nvim, which emits CELLS that vaxis diffs in a few hundred bytes.
+  # terminal-browser emits IMAGES: a full-pane bitmap per frame, which vaxis
+  # must stage and re-transmit and the terminal re-upload to the GPU. That is
+  # the flashing and the lag, and it is why `o` takes the tty instead (`tty`).
   window = writeShellScript "aerc-mail-window" ''
     export PATH=${lib.makeBinPath [ coreutils ]}:$PATH
     set -u
@@ -321,8 +322,9 @@ PYEOF
     # RECOVER THE RENAMED FILE. Opening an unread message marks it Seen, which
     # renames it in place -- `S` is appended to the maildir info part, so
     # `…,U=<uid>:2,` becomes `…,U=<uid>:2,S` -- while aerc still expands
-    # {{.Filename}} to the path it cached BEFORE the rename. Only the flags
-    # after `:2,` change, so glob the stable base. Same block as aerc-mail-term.
+    # {{.Filename}} to the path it cached BEFORE the rename. Read messages
+    # already carry the flag and never move, which is why only unread ones
+    # failed. Only the flags after `:2,` change, so glob the stable base.
     MSG="''${1:-}"
     if [ -n "$MSG" ] && [ ! -r "$MSG" ]; then
       base="''${MSG%:2,*}"
@@ -364,54 +366,6 @@ PYEOF
       --preload=${pagerKeys}
   '';
 
-  # IN AERC'S OWN :term. aerc expands {{.Filename}} to the message file, so this
-  # serves the mail SYNCHRONOUSLY and then becomes the browser -- one process,
-  # no shared-file race with a backgrounded :pipe.
-  term = writeShellScript "aerc-mail-term" ''
-    export PATH=${lib.makeBinPath [ python3 coreutils ]}:$PATH
-    set -u
-
-    # RECOVER THE RENAMED FILE. Opening an unread message marks it Seen, which
-    # renames it in place -- `S` is appended to the maildir info part, so
-    # `…,U=<uid>:2,` becomes `…,U=<uid>:2,S` -- while aerc still expands
-    # {{.Filename}} to the path it cached BEFORE the rename. Read messages
-    # already carry the flag and never move, which is why only unread ones
-    # failed. Only the flags after `:2,` change, so glob the stable base.
-    MSG="''${1:-}"
-    if [ -n "$MSG" ] && [ ! -r "$MSG" ]; then
-      base="''${MSG%:2,*}"
-      if [ "$base" != "$MSG" ]; then
-        for f in "$base":2,*; do
-          if [ -r "$f" ]; then MSG="$f"; break; fi
-        done
-      fi
-    fi
-
-    if [ -z "$MSG" ] || [ ! -r "$MSG" ]; then
-      echo "aerc-mail-term: no readable message file"; sleep 3; exit 1
-    fi
-
-    ${serve} < "$MSG" || true
-
-    URL=$(sed -n 1p "${urlFile}" 2>/dev/null || true)
-    if [ -z "$URL" ] || [ ! -x "${terminalBrowser}" ]; then
-      echo "no served mail, or terminal-browser is not installed"; sleep 3; exit 1
-    fi
-
-    # The multiplexer env makes terminal-browser hunt for a pane to split; under
-    # :term it has a real pty and must take its openHere path instead. Name every
-    # variable explicitly: enumerating the environment relies on a bash builtin
-    # the nix-built bash does not carry, so such a loop silently strips nothing.
-    exec env -u HERDR_PANE_ID -u HERDR_SOCKET_PATH -u HERDR_TAB_ID -u HERDR_ENV \
-             -u HERDR_WORKSPACE_ID -u HERDR_BIN_PATH -u HERDR_CONFIG_PATH \
-             -u HERDR_SESSION -u CMUX_SURFACE_ID -u CMUX_WORKSPACE_ID \
-             -u TMUX -u ZELLIJ -u WEZTERM_PANE -u KITTY_WINDOW_ID \
-      "${terminalBrowser}" open "$URL" \
-      --app-mode --app-name=aerc-mail-term \
-      --no-toolbar --no-frame --no-overlays --no-context-menu \
-      --preload=${pagerKeys}
-  '';
-
 in
 symlinkJoin {
   name = "aerc-html-terminal-browser";
@@ -422,7 +376,6 @@ symlinkJoin {
     ln -s ${launchSplit} $out/bin/aerc-html-terminal-browser-split
     ln -s ${window} $out/bin/aerc-mail-window
     ln -s ${tty} $out/bin/aerc-mail-tty
-    ln -s ${term} $out/bin/aerc-mail-term
     ln -s ${chrome} $out/bin/aerc-mail-chrome
   '';
 }

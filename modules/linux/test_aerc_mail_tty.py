@@ -1,9 +1,11 @@
-"""Exercise the Nix-defined `aerc-mail-term` launcher without building a profile.
+"""Exercise the Nix-defined `aerc-mail-tty` launcher without building a profile.
 
-Run: python3 -m pytest -q modules/linux/test_aerc_mail_term.py
+Run: python3 -m pytest -q modules/linux/test_aerc_mail_tty.py
 The Nix packaging primitives are stubs; the evaluated shell and mail helpers are
-real. The launcher is what aerc's `o` runs inside its embedded terminal: it must
-serve the message it was handed and exec terminal-browser on the served URL.
+real. The launcher is what aerc's `o` runs via :exec-tty, on aerc's OWN
+terminal: it must serve the message it was handed and exec terminal-browser on
+the served URL, with --no-merge so the browser takes that tty instead of
+adopting a neighbour, and with no fallback to a stale URL.
 """
 
 import ctypes
@@ -100,8 +102,8 @@ def script():
     # started rather than depending on the host's PID 1.
     if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
         raise OSError(ctypes.get_errno(), "PR_SET_CHILD_SUBREAPER")
-    text = capture("aerc-mail-term")
-    print(f"\ncaptured aerc-mail-term script: {len(text)} bytes", flush=True)
+    text = capture("aerc-mail-tty")
+    print(f"\ncaptured aerc-mail-tty script: {len(text)} bytes", flush=True)
     return text
 
 
@@ -112,7 +114,7 @@ def serve_text():
 
 @pytest.fixture
 def sandbox():
-    with tempfile.TemporaryDirectory(prefix="aerc-term-test-") as name:
+    with tempfile.TemporaryDirectory(prefix="aerc-tty-test-") as name:
         root = Path(name)
         home = root / "home"
         runtime = root / "runtime"
@@ -177,15 +179,15 @@ def _reap(urlfile):
 
 
 def test_module_defines_aerc_mail_term(script):
-    assert script, "module defines no aerc-mail-term script"
+    assert script, "module defines no aerc-mail-tty script"
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
-    print("bash -n accepted aerc-mail-term", flush=True)
+    print("bash -n accepted aerc-mail-tty", flush=True)
 
 
 def test_launcher_serves_and_execs_terminal_browser(script, serve_text, sandbox):
-    assert script, "module defines no aerc-mail-term script"
+    assert script, "module defines no aerc-mail-tty script"
     result = subprocess.run(
-        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-tty",
          str(sandbox["message"])],
         env=sandbox["env"],
         capture_output=True,
@@ -209,13 +211,23 @@ def test_launcher_serves_and_execs_terminal_browser(script, serve_text, sandbox)
         if a.startswith("--preload=") and a.endswith("aerc-pager-keys.js")
     ]
     assert preload, argv
+    # --no-merge is what makes the browser take the tty aerc handed over
+    # instead of adopting an instance already registered in the tab.
+    assert "--no-merge" in argv, argv
 
-    leaked = [
-        line
+    # The HERDR environment is KEPT on purpose: the engine streams frames into
+    # the pane over HERDR_SOCKET_PATH/HERDR_PANE_ID, and --no-merge already
+    # stops the pane hunt. Stripping it would drop the browser onto the slow
+    # inline-kitty path.
+    env_seen = dict(
+        line.split("=", 1)
         for line in sandbox["envfile"].read_text().splitlines()
-        if line.startswith("HERDR_")
-    ]
-    assert not leaked, f"multiplexer environment reached the browser: {leaked}"
+        if "=" in line
+    )
+    for name, value in HERDR_ENV.items():
+        assert env_seen.get(name) == value, (name, env_seen.get(name))
+    assert env_seen.get("TERMINAL_BROWSER_NO_MERGE") == "1", env_seen.get(
+        "TERMINAL_BROWSER_NO_MERGE")
 
     with urlopen(urls[0], timeout=5) as response:
         body = response.read()
@@ -233,41 +245,25 @@ def test_launcher_serves_and_execs_terminal_browser(script, serve_text, sandbox)
     print(f"server pid={pid} terminated", flush=True)
 
 
-MULTIPLEXER_VARS = (
-    "HERDR_PANE_ID",
-    "HERDR_SOCKET_PATH",
-    "HERDR_TAB_ID",
-    "HERDR_ENV",
-    "HERDR_WORKSPACE_ID",
-    "HERDR_BIN_PATH",
-    "HERDR_CONFIG_PATH",
-    "HERDR_SESSION",
-    "CMUX_SURFACE_ID",
-    "CMUX_WORKSPACE_ID",
-    "TMUX",
-    "ZELLIJ",
-    "WEZTERM_PANE",
-    "KITTY_WINDOW_ID",
-)
+KEPT_VARS = ("HERDR_PANE_ID", "HERDR_SOCKET_PATH", "HERDR_TAB_ID", "HERDR_ENV")
 
 
-def test_launcher_strips_multiplexer_env_without_compgen(script):
-    """The strip must name every variable, not enumerate the environment.
+def test_launcher_keeps_the_herdr_environment(script):
+    """:exec-tty hands over the terminal, so there is no pane to hunt for.
 
-    `compgen` is a bash builtin the nix-built bash does not carry, so a
-    compgen-driven loop expands to nothing and leaves HERDR_* set: the strip
-    silently no-ops. The sibling aerc-mail-window script names each variable in
-    an `env -u` clause; the launcher must do the same (or `unset` them).
+    The browser streams frames into the pane over HERDR_SOCKET_PATH/
+    HERDR_PANE_ID; --no-merge, not an `env -u` strip, is what stops it adopting
+    a neighbour. A strip here would silently downgrade it to inline kitty.
     """
-    assert script, "module defines no aerc-mail-term script"
-    assert "compgen" not in script, "launcher strips the environment with compgen"
-    missing = [
+    assert script, "module defines no aerc-mail-tty script"
+    stripped = [
         name
-        for name in MULTIPLEXER_VARS
-        if not re.search(rf"-u\s+{name}\b", script)
-        and not re.search(rf"\bunset\b[^\n]*\b{name}\b", script)
+        for name in KEPT_VARS
+        if re.search(rf"-u\s+{name}\b", script)
+        or re.search(rf"\bunset\b[^\n]*\b{name}\b", script)
     ]
-    assert not missing, f"launcher never removes: {missing}"
+    assert not stripped, f"launcher removes variables it must keep: {stripped}"
+    assert "--no-merge" in script, "launcher never passes --no-merge"
 
 
 SEEN_MESSAGE = MESSAGE.replace(b"O-TERM FIXTURE", b"SEEN-RENAME FIXTURE")
@@ -280,7 +276,7 @@ def test_launcher_recovers_seen_renamed_maildir_file(script, serve_text, sandbox
     aerc's cached {{.Filename}} names a path that no longer exists. Only the
     flags after `:2,` change, so the launcher must recover by globbing the base.
     """
-    assert script, "module defines no aerc-mail-term script"
+    assert script, "module defines no aerc-mail-tty script"
     maildir = sandbox["root"] / "maildir-cur"
     maildir.mkdir()
     base = maildir / "1700000000.1_1.host,U=42"
@@ -289,7 +285,7 @@ def test_launcher_recovers_seen_renamed_maildir_file(script, serve_text, sandbox
     assert not Path(stale).exists(), stale
 
     result = subprocess.run(
-        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-tty",
          stale],
         env=sandbox["env"],
         capture_output=True,
@@ -315,11 +311,11 @@ def test_launcher_recovers_seen_renamed_maildir_file(script, serve_text, sandbox
 
 def test_launcher_refuses_when_no_flag_variant_exists(script, serve_text, sandbox):
     """The glob fallback must not rescue a message that is genuinely gone."""
-    assert script, "module defines no aerc-mail-term script"
+    assert script, "module defines no aerc-mail-tty script"
     maildir = sandbox["root"] / "maildir-empty"
     maildir.mkdir()
     result = subprocess.run(
-        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-tty",
          str(maildir / "1700000000.9_9.host,U=99:2,")],
         env=sandbox["env"],
         capture_output=True,
@@ -335,10 +331,10 @@ def test_launcher_refuses_when_no_flag_variant_exists(script, serve_text, sandbo
 
 
 def test_launcher_refuses_without_message(script, serve_text, sandbox):
-    assert script, "module defines no aerc-mail-term script"
+    assert script, "module defines no aerc-mail-tty script"
     missing = sandbox["root"] / "no-such-message.eml"
     result = subprocess.run(
-        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-term",
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-tty",
          str(missing)],
         env=sandbox["env"],
         capture_output=True,
@@ -349,3 +345,58 @@ def test_launcher_refuses_without_message(script, serve_text, sandbox):
     print(result.stderr.decode(errors="replace"), flush=True)
     assert result.returncode != 0, "launcher accepted a message file that is not there"
     assert not sandbox["argv"].exists(), "browser ran without a message"
+
+
+STALE_URL = "http://127.0.0.1:65000/index.html"
+
+
+def test_launcher_never_opens_a_stale_url(script, serve_text, sandbox):
+    """An unreadable message must be a visible error, not the previous mail.
+
+    An earlier version fell back to whatever URL the shared file held, so `o`
+    on a message aerc had already renamed opened the last thing served -- up to
+    and including a test fixture. The launcher must remove that record before
+    serving and refuse when it has nothing to serve.
+    """
+    assert script, "module defines no aerc-mail-tty script"
+    sandbox["urlfile"].write_text(f"{STALE_URL}\n/nonexistent-dir\n1\n")
+
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-tty",
+         str(sandbox["root"] / "gone.eml")],
+        env=sandbox["env"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    output = result.stdout.decode(errors="replace") + result.stderr.decode(
+        errors="replace")
+    print(f"exit={result.returncode}", flush=True)
+    print(output, flush=True)
+    assert result.returncode != 0, "launcher accepted an unreadable message"
+    assert "no readable message file" in output, output
+    assert not sandbox["argv"].exists(), "browser ran on the stale URL"
+
+
+def test_launcher_removes_the_url_file_before_serving(script, serve_text, sandbox):
+    """The stale record is dropped, not overwritten in place, before serving."""
+    assert script, "module defines no aerc-mail-tty script"
+    sandbox["urlfile"].write_text(f"{STALE_URL}\n/nonexistent-dir\n1\n")
+
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, serve_text, sandbox), "aerc-mail-tty",
+         str(sandbox["message"])],
+        env=sandbox["env"],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    print(result.stdout.decode(errors="replace"), flush=True)
+    print(result.stderr.decode(errors="replace"), flush=True)
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+
+    argv = sandbox["argv"].read_text().splitlines()
+    print(f"ARGV: {argv}", flush=True)
+    assert STALE_URL not in argv, argv
+    urls = [a for a in argv if re.fullmatch(r"http://127\.0\.0\.1:\d+/index\.html", a)]
+    assert urls and urls[0] != STALE_URL, argv

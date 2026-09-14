@@ -4,9 +4,14 @@ Run through hosts/linux/omarchy/files/test-aerc-o-term.sh, which builds aerc and
 the launcher package and exports AERC_BIN and LAUNCHER_BIN. The aerc under test
 is a fixture instance: -I, its own accounts file, its own maildir.
 
-The claim being gated is that `o` runs terminal-browser INSIDE aerc's embedded
-terminal -- so the proof is a descendant of the aerc process, not a screenshot
-and not a config grep, followed by kitty frames relayed back to the host.
+The claim being gated is that `o` runs terminal-browser on aerc's OWN terminal
+via :exec-tty -- aerc suspends, hands the tty over, and the browser paints
+straight to it. So the proof is a descendant of the aerc process, not a
+screenshot and not a config grep, followed by graphics arriving on that same
+pty.
+
+The bind comes from the real ~/.config/aerc/binds.conf the harness passes with
+-B, so this exercises whatever `o` is actually bound to.
 """
 
 import os
@@ -35,7 +40,7 @@ def _binary(name, expect_dir=False):
     return path
 
 
-def test_o_opens_terminal_browser_inside_term(tmp_path):
+def test_o_opens_terminal_browser_on_aercs_tty(tmp_path):
     aerc = _binary("AERC_BIN")
     launcher = _binary("LAUNCHER_BIN", expect_dir=True)
 
@@ -71,19 +76,34 @@ def test_o_opens_terminal_browser_inside_term(tmp_path):
             f"last output:\n{session.text()[-1500:]}")
         print(f"terminal-browser descendant: {spawned}", flush=True)
 
+        # :exec-tty's chain is aerc -> aerc-mail-tty -> terminal-browser, and
+        # the launcher exec's the browser, so the launcher name survives only in
+        # --app-name. Either shape proves it came from the `o` bind rather than
+        # some other browser the host had running.
+        assert ("aerc-mail-tty" in spawned[1]
+                or any("aerc-mail-tty" in cmd
+                       for _, cmd in session.descendants())), (
+            "terminal-browser did not come from the aerc-mail-tty launcher:\n"
+            f"{session.descendants()}")
+
+        # The browser has aerc's OWN terminal now, so its graphics arrive on
+        # this pty directly -- kitty when it falls back to inline frames, sixel
+        # when the terminal reports only that.
         deadline = time.monotonic() + 20
         frame = None
         while time.monotonic() < deadline and frame is None:
             frame = next((c for c in session.kitty_commands(mark)
                           if b"a=T" in c), None)
+            if frame is None and b"\x1bP" in session.raw()[mark:]:
+                frame = b"<sixel/DCS payload>"
             if frame is None:
                 time.sleep(0.25)
         assert frame is not None, (
-            "no kitty transmit-and-display command reached the host after `o`.\n"
+            "no graphics reached the terminal after `o`.\n"
             f"kitty commands seen: "
             f"{[c[:60] for c in session.kitty_commands(mark)]}\n"
             f"last output:\n{session.text()[-1500:]}")
-        print(f"kitty frame: {frame[:80]!r}", flush=True)
+        print(f"frame: {frame[:80]!r}", flush=True)
 
         session.send("q")
         time.sleep(2)
