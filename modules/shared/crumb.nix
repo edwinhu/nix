@@ -42,18 +42,18 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.5.2";
+  version = "0.5.3";
 
   # Per-platform release asset ids + hashes, all attached to the v${version}
-  # release and built from 1e23f38.
+  # release and built from 5a84fe4.
   platforms = {
     x86_64-linux = {
-      assetId = "563842134"; # crumb-linux-x64
-      hash = "sha256-NQ/guMDYKaSXy78ZDHdwOUaBbciEljy2+bzxRTwan7Y=";
+      assetId = "577557326"; # crumb-linux-x64
+      hash = "sha256-GD1Id6BqepsJEoacE9Y0/J4CWdMNAGo1t4gnIx53TwA=";
     };
     aarch64-darwin = {
-      assetId = "563842131"; # crumb-darwin-arm64
-      hash = "sha256-jdQhqxv/iO4eauWB0Ygz2f/OIeBEgtuYAOSWC0059t4=";
+      assetId = "577557325"; # crumb-darwin-arm64
+      hash = "sha256-2wR8Qamfxy2C9Gu86BdBlstPOst1FIvczxkGVS8onso=";
     };
   };
 
