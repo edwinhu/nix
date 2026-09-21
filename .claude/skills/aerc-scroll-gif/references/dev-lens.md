@@ -32,7 +32,7 @@ What it needs, and why each is load-bearing:
 
 ## Optional advisory lens
 
-For the passthrough, paint-on-drain or aerc-mail-term work, a lens that reads the report the
+For o-viewer or aerc-mail-tty work, a lens that reads the report the
 mechanical check already produced (so no second recording):
 
 ```json

@@ -1,6 +1,6 @@
 ---
 name: aerc-scroll-gif
-description: "ALWAYS use when the question is whether aerc's `o` viewer (terminal-browser inside aerc's :term via the vaxis kitty passthrough) scrolls smoothly — 'record a gif of the scroll', 'show me the scroll', 'is it smooth now', 'does o still lag', 'send me a gif of aerc', 'screen-record aerc', 'check scroll latency after the rebuild', or any /dev run touching the passthrough, the paint-on-drain flag, or aerc-mail-term. Records the herdr window, GIFs it, and has Gemini grade the video. NOT for still screenshots of a rendered mail (check-o-term-shot.sh) or the pytest e2e gate (test-aerc-o-term.sh)."
+description: "ALWAYS use when the question is whether aerc's `o` viewer (terminal-browser on aerc's own terminal via :exec-tty) scrolls smoothly — 'record a gif of the scroll', 'show me the scroll', 'is it smooth now', 'does o still lag', 'send me a gif of aerc', 'screen-record aerc', 'check scroll latency after the rebuild', or any /dev run touching the o viewer, its frame transport, or aerc-mail-tty. Records the herdr window, GIFs it, and has Gemini grade the video. NOT for still screenshots of a rendered mail (check-o-term-shot.sh) or the pytest e2e gate (test-aerc-o-term.sh)."
 ---
 
 # aerc-scroll-gif
@@ -24,20 +24,28 @@ reached the page — not a choppy verdict). Gemini's read of the mp4 follows as 
 `--keep-tab` leaves the aerc tab open; `--no-review` skips Gemini; `--verdict-json` writes
 `verdict.json` with the numbers. `--input keys` (j/space/k) can only ever grade choppy.
 
-**Which medium do the frames reach ghostty in? `--input egress`** runs aerc under `script(1)`,
-holds ↓ 3 s and parses every kitty `a=T` command aerc wrote: exit 0 iff all are `t=f`/`t=s` and
-< 1 KB per frame, 2 if inline pixels, 3 if none captured. Measured 2026-09-12: **`t=d,o=z`, ~5 MB
-per frame, 61–74 MB per 5 s hold** — the file-media gate (`aercKittyFileMediaAllowed`) did not
-match the real `o` child because `filepath.EvalSymlinks` resolves *past* the marker-bearing
-symlinkJoin hop to the inner store path. That, not the relay's scheduling, is the lag.
-`scripts/check-egress-built.sh` runs it against the flake's freshly built aerc.
+**Which medium do the frames reach the terminal in? `--input egress`** runs aerc under `script(1)`,
+holds ↓ 3 s and parses every kitty `a=T` command written: exit 0 iff all are `t=f`/`t=s` and
+< 1 KB per frame, 2 if inline pixels, 3 if none captured. The medium is terminal-browser's choice
+now, not aerc's: it probes the terminal and picks File, Shared or Inline, and herdr advertises file
+frames so `t=f` wins locally. `TERMINAL_BROWSER_FRAMES=inline` forces pixels into the escape stream
+— required over `herdr --remote`, where a file path into this machine's `~/.tmp` is unreadable and
+the pane stays blank. The transport is fixed when the SHARED daemon starts, so `terminal-browser
+shutdown` before switching. `scripts/check-egress-built.sh` runs it against the freshly built aerc.
 
 **Lag, not frame rate, is what the user feels — measure it with `--input tap-latency`**: eight
-single ↓ taps 1.5 s apart, latency = first changed frame after each tap, median; exit 0 iff
-≤ `LAT_MAX` (200 ms), 1 sluggish, 2 laggy, 3 unmeasured. `--surface plain` runs the same taps on
-terminal-browser straight into the pane — the reference. Measured 2026-09-12: plain **135 ms**,
-aerc `o` **533 ms** at the same ~12 frames/s cadence; the cadence metric above cannot see that
-difference, so use tap-latency as the gate for anything in the aerc→host path.
+single ↓ taps 1.5 s apart under a 60 fps recording, latency = first CHANGED PIXEL after each tap
+(`judge-pixels.py`), median; exit 0 iff ≤ `LAT_MAX` (200 ms), 1 sluggish, 2 laggy, 3 unmeasured.
+`--surface plain` runs the same taps on terminal-browser straight into the pane — the reference.
+Measured 2026-09-21: plain **236 ms**, aerc `o` **293 ms**, so aerc's own overhead is ~57 ms and
+the rest is terminal-browser's.
+
+**Pixels are the verdict; `a=T` counting is not.** `judge-taps.py` still reports an announcement
+median beside it (`announceMedianMs` in `verdict.json`) and it is advisory only: on one run it said
+137 ms "fast" with three taps it could not see while pixels said 293 ms "sluggish". terminal-browser
+renders into mmap'd ring files and a repaint emits NO syscall, so anything counting writes is timing
+handoffs rather than paint. The harness shuts the shared terminal-browser daemon down first — a
+stale one makes the pixel writer invisible.
 
 Deliver: `SendUserFile` the GIF **only once the verdict is `smooth`** — a GIF sent before the
 verdict is a claim of smoothness nobody checked. Otherwise send the report's problem timestamps.
@@ -60,15 +68,16 @@ verdict is a claim of smoothness nobody checked. Otherwise send the report's pro
   launcher's preload (`aerc-html-terminal-browser.nix`) swallows each 120 px detent and animates
   it over rAF frames; `j`/`k`/`d`/`u`/space/arrows are `scrollBy({behavior:"instant"})` by
   design. Measured 2026-09-12: a keys recording graded "choppy — exact 224 px single-frame jumps,
-  zero lag, zero tearing" — that is the pager keys working as written, not a passthrough defect.
+  zero lag, zero tearing" — that is the pager keys working as written, not a renderer defect.
   The script's `--input wheel` is a REAL wheel (ydotool over uinput, pointer parked in the viewer
   by `hyprctl dispatch movecursor`); SGR mouse reports written into aerc's tty measured nothing
   usable (6.8 s of no motion, then coalesced jumps).
-- Measured 2026-09-12, real wheel, deployed paint-on-drain build: changed frames arrive in 1–2
+- Measured 2026-09-12 against the RETIRED in-aerc kitty relay (removed in 8332f3f), kept because
+  the per-frame cost it isolates still applies: changed frames arrived in 1–2
   frame clusters every ~320 ms whatever the detent cadence — **~3 frames/s** under continuous
   scrolling, 27 changed frames for 28 detents. Each frame is clean (no tearing, no lag); there is
   simply no next frame for a third of a second. The 8 ms debounce removal was ~3 % of that; the
-  per-frame pipeline cost (child render → kitty frame → relay → ghostty upload) is the lever.
+  per-frame pipeline cost (child render → kitty frame → terminal upload) is the lever.
 - Gemini (agy) left to itself writes frame-analysis scripts and runs past look-at's print timeout
   without a verdict; the prompt now forbids scripting and the verdict never depends on it.
 - Omarchy ships `omarchy-capture-screenshot` (grim+slurp) and `omarchy-capture-screenrecording`
@@ -88,4 +97,4 @@ verdict is a claim of smoothness nobody checked. Otherwise send the report's pro
 ## In a /dev run
 
 `references/dev-lens.md` — the `mechanicalChecks` entry (decidable: exit code) and the optional
-advisory lens prompt for the passthrough / paint-on-drain work.
+advisory lens prompt for o-viewer work.
