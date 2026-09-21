@@ -410,15 +410,19 @@ PYEOF
     # omarchy's filesystem, so the pane stays blank while the pixels sit in a file nobody opens.
     # Inline puts the (zlib-compressed) pixels in the escape stream instead, so they travel.
     #
-    # SSH_CONNECTION is the heuristic, and it is read at LAUNCH: a pane started from an ssh session
-    # gets inline. Attaching remotely to a pane that was started on the desktop keeps file frames
-    # and will still be blank -- restart aerc from the remote session for the override to apply.
+    # OPT IN EXPLICITLY -- do not infer this. SSH_CONNECTION was tried and is WRONG: panes inherit
+    # the herdr SERVER's environment, and the server is itself usually started over ssh, so that
+    # test is true on the desktop too. It forced inline everywhere, which costs the zero-copy file
+    # handoff and with it the eased wheel scrolling (reported 2026-09-21, same day it shipped).
+    #
+    # There is no environment variable that answers the real question, because the real question is
+    # where the VIEWING CLIENT is, which can change after the pane starts. So the operator says so:
+    #     AERC_MAIL_FRAMES=inline aerc      (or export it in the remote session)
     #
     # The transport is chosen when the terminal-browser DAEMON starts and the daemon is shared, so a
     # daemon already running under the other transport keeps it. `terminal-browser shutdown` first
     # when switching, or this variable has no effect.
-    FRAMES=""
-    [ -n "''${SSH_CONNECTION:-}" ] && FRAMES=inline
+    FRAMES="''${AERC_MAIL_FRAMES:-}"
 
     env TERMINAL_BROWSER_NO_MERGE=1 ''${FRAMES:+TERMINAL_BROWSER_FRAMES=$FRAMES} \
       "${terminalBrowser}" open "$URL" --no-merge \

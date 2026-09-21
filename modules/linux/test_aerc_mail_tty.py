@@ -590,28 +590,28 @@ def _run_launcher(script, sandbox, env):
     )
 
 
-def test_launcher_forces_inline_frames_over_ssh(script, sandbox):
-    """A pane started over ssh gets pixels in the escape stream, not a local file path.
+def test_launcher_forwards_an_explicit_frame_transport(script, sandbox):
+    """AERC_MAIL_FRAMES is passed through, so a remote session can ask for inline pixels.
 
     terminal-browser picks File/Shared/Inline by probing the terminal, and herdr advertises file
     frames -- so by default the browser writes RGBA into mmap'd ring files under ~/.tmp and hands
     herdr the PATH. Over `herdr --remote` the client cannot read that path, so the pane stays blank
     while the pixels sit in a file nobody opens. Inline is the only transport that survives the hop.
     """
-    env = dict(sandbox["env"], SSH_CONNECTION="10.0.0.1 51000 10.0.0.2 22")
+    env = dict(sandbox["env"], AERC_MAIL_FRAMES="inline")
     env_seen = _run_launcher(script, sandbox, env)
     assert env_seen.get("TERMINAL_BROWSER_FRAMES") == "inline", env_seen.get(
         "TERMINAL_BROWSER_FRAMES")
 
 
-def test_launcher_keeps_the_fast_transport_without_ssh(script, sandbox):
-    """On the desktop the variable is absent, so the probe picks the zero-copy file path.
+def test_launcher_never_infers_the_transport_from_ssh(script, sandbox):
+    """SSH_CONNECTION must NOT force inline: panes inherit the herdr server's env.
 
-    Forcing inline everywhere would push compressed pixels through the escape stream on the one
-    machine where the browser and the terminal share a filesystem. The environment is read at
-    LAUNCH, so this is a heuristic about where the pane was started, not where it is being watched.
+    The server is itself started over ssh, so that test is true on the desktop too -- it forced
+    inline everywhere, costing the zero-copy file handoff and the eased wheel scrolling with it.
+    Only an explicit AERC_MAIL_FRAMES may change the transport.
     """
-    env = dict(sandbox["env"])
-    env.pop("SSH_CONNECTION", None)
+    env = dict(sandbox["env"], SSH_CONNECTION="10.0.0.1 51000 10.0.0.2 22")
+    env.pop("AERC_MAIL_FRAMES", None)
     env_seen = _run_launcher(script, sandbox, env)
     assert "TERMINAL_BROWSER_FRAMES" not in env_seen, env_seen.get("TERMINAL_BROWSER_FRAMES")
