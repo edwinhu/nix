@@ -403,7 +403,24 @@ PYEOF
     # session, or wrapping it in a subshell would each break that.
     trap '${reap} "${urlFile}" >/dev/null 2>&1 || true' EXIT
 
-    env TERMINAL_BROWSER_NO_MERGE=1 \
+    # FRAME TRANSPORT. terminal-browser probes the terminal and picks File, Shared or Inline.
+    # herdr advertises file_frame_transport, so the fast local path wins: the browser writes RGBA
+    # into a ring of mmap'd files under ~/.tmp and hands herdr the PATH. Zero-copy on this machine,
+    # and unreadable from anywhere else -- over `herdr --remote` the client is handed a path into
+    # omarchy's filesystem, so the pane stays blank while the pixels sit in a file nobody opens.
+    # Inline puts the (zlib-compressed) pixels in the escape stream instead, so they travel.
+    #
+    # SSH_CONNECTION is the heuristic, and it is read at LAUNCH: a pane started from an ssh session
+    # gets inline. Attaching remotely to a pane that was started on the desktop keeps file frames
+    # and will still be blank -- restart aerc from the remote session for the override to apply.
+    #
+    # The transport is chosen when the terminal-browser DAEMON starts and the daemon is shared, so a
+    # daemon already running under the other transport keeps it. `terminal-browser shutdown` first
+    # when switching, or this variable has no effect.
+    FRAMES=""
+    [ -n "''${SSH_CONNECTION:-}" ] && FRAMES=inline
+
+    env TERMINAL_BROWSER_NO_MERGE=1 ''${FRAMES:+TERMINAL_BROWSER_FRAMES=$FRAMES} \
       "${terminalBrowser}" open "$URL" --no-merge \
       --app-mode --app-name=aerc-mail-tty \
       --no-toolbar --no-frame --no-overlays --no-context-menu \

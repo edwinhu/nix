@@ -570,3 +570,48 @@ def test_serve_alone_leaves_its_server_running(sandbox):
         body = response.read()
     print(f"HTTP {response.status} from {lines[0]}", flush=True)
     assert b"O-TERM FIXTURE" in body, body[:400]
+
+
+def _run_launcher(script, sandbox, env):
+    """Run the launcher to completion and return the environment the browser was given."""
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, sandbox), "aerc-mail-tty", str(sandbox["message"])],
+        env=env,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert sandbox["argv"].exists(), "terminal-browser was never executed"
+    return dict(
+        line.split("=", 1)
+        for line in sandbox["envfile"].read_text().splitlines()
+        if "=" in line
+    )
+
+
+def test_launcher_forces_inline_frames_over_ssh(script, sandbox):
+    """A pane started over ssh gets pixels in the escape stream, not a local file path.
+
+    terminal-browser picks File/Shared/Inline by probing the terminal, and herdr advertises file
+    frames -- so by default the browser writes RGBA into mmap'd ring files under ~/.tmp and hands
+    herdr the PATH. Over `herdr --remote` the client cannot read that path, so the pane stays blank
+    while the pixels sit in a file nobody opens. Inline is the only transport that survives the hop.
+    """
+    env = dict(sandbox["env"], SSH_CONNECTION="10.0.0.1 51000 10.0.0.2 22")
+    env_seen = _run_launcher(script, sandbox, env)
+    assert env_seen.get("TERMINAL_BROWSER_FRAMES") == "inline", env_seen.get(
+        "TERMINAL_BROWSER_FRAMES")
+
+
+def test_launcher_keeps_the_fast_transport_without_ssh(script, sandbox):
+    """On the desktop the variable is absent, so the probe picks the zero-copy file path.
+
+    Forcing inline everywhere would push compressed pixels through the escape stream on the one
+    machine where the browser and the terminal share a filesystem. The environment is read at
+    LAUNCH, so this is a heuristic about where the pane was started, not where it is being watched.
+    """
+    env = dict(sandbox["env"])
+    env.pop("SSH_CONNECTION", None)
+    env_seen = _run_launcher(script, sandbox, env)
+    assert "TERMINAL_BROWSER_FRAMES" not in env_seen, env_seen.get("TERMINAL_BROWSER_FRAMES")
