@@ -755,6 +755,7 @@ exit 0
   # the way headless chromium's never-exiting --screenshot CLI forced.
   # BUN_WEBVIEW_LIB is how the script finds that helper in the store.
   checkWidows = pkgs.callPackage ../../../modules/shared/check-widows.nix { };
+  checkTitleOverflow = pkgs.callPackage ../../../modules/shared/check-title-overflow.nix { };
   bunPinned = pkgs.callPackage ../../../modules/shared/bun-pinned.nix { };
   bunWebview = pkgs.callPackage ../../../modules/shared/bun-webview.nix { bun = bunPinned; };
   mailPreview = pkgs.writeShellApplication {
@@ -849,6 +850,31 @@ exit 0
   # reflows to the pane. Measured on a real message at -cols 126: w3m wraps at
   # 125, `cha -d` at 80 (it ignores COLUMNS entirely), and both are clean --
   # the garbling is the interactive mode alone.
+
+  # The UVA transport rule prepends an external-sender banner to the message
+  # BODY -- there is no header to filter on -- and Outlook adds its own
+  # first-contact tip. Both come out at render time or not at all.
+  #
+  # The color rule is NOT redundant with the text rules below: chawan
+  # word-wraps the banner sentence, so a text match deletes the first line and
+  # leaves "unless you recognize ... content is safe." behind. #fff4cf is the
+  # box background and is painted on every line of it, wrap and padding row
+  # included, so it is the only handle that survives the wrap.
+  aercExternalBannerSed = pkgs.writeText "aerc-external-banner.sed" ''
+    /\x1b\[48;2;255;244;207m/d
+    /This message was sent from outside your organization/d
+    /^Please do not click links or open attachments unless you recognize/d
+    /know the content is safe\./d
+    /^EXTERNAL EMAIL: Do not click links or open attachments/d
+    /You don.t often get email from/d
+    /^Learn why this is important/d
+    /aka\.ms\/LearnAboutSenderIdentification/d
+  '';
+
+  aercStripExternalBanner = pkgs.writeShellScript "aerc-strip-external-banner" ''
+    exec ${pkgs.gnused}/bin/sed -f ${aercExternalBannerSed}
+  '';
+
   aercHtmlW3m = pkgs.writeShellScript "aerc-html-w3m" ''
     export PATH=${lib.makeBinPath [ pkgs.w3m pkgs.coreutils ]}:$PATH
     set -u
@@ -1540,6 +1566,27 @@ exit 0
     # also goes to stderr. Merged with 2>&1 that banner prefixes the payload, jq
     # rejects the whole thing, and a spawn that actually SUCCEEDED is reported as
     # a failure and torn down by the tab close below.
+    # RECLAIM OUR OWN NAME FIRST. `agent_name_taken` is PERSISTENT -- the retry loop below is
+    # built for not-ready errors and cannot clear it, so a finished agent squatting the name
+    # burns 15 tries and exits 1. Nothing else releases it: claude-assistant-shutdown closes
+    # only `assistant` and `nightly-wrapup`, so vault-compile's own Done pane from the previous
+    # night blocked every subsequent run (failed 2026-09-20 and -21, same cause).
+    #
+    # Only a NOT-WORKING agent is reclaimed. Killing a run still in progress to start another
+    # would be worse than the collision: a nightly that overruns into the next night's slot
+    # should be left alone, and the exit below reports the collision honestly.
+    if STALE=$(herdr agent list 2>/dev/null) && printf '%s' "$STALE" | jq -e . >/dev/null 2>&1; then
+      STALE_TAB=$(printf '%s' "$STALE" | jq -r --arg n "$AGENT_NAME" '
+        .result.agents[]
+        | select(.name == $n and (.agent_status == "idle" or .agent_status == "done"))
+        | .tab_id' | head -1)
+      if [ -n "''${STALE_TAB:-}" ] && [ "$STALE_TAB" != null ]; then
+        echo "reclaiming the name $AGENT_NAME from a finished agent in tab $STALE_TAB" >&2
+        herdr tab close "$STALE_TAB" >/dev/null 2>&1 || \
+          echo "could not close $STALE_TAB; agent start will report the collision" >&2
+      fi
+    fi
+
     STARTED=""
     START_ERR=""
     ERR_FILE=$(mktemp "''${TMPDIR:-/tmp}/claude-herdr-spawn.XXXXXX")
@@ -1737,11 +1784,22 @@ exit 0
         # Herdr-hosted routines (the normal case since the --bg -> herdr move):
         # closing the tab ends the foreground `claude --rc` that owns the pane.
         if command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1; then
-          tabs=$(herdr agent list 2>/dev/null | jq -r '
-            .result.agents[]
-            | select(.terminal_title_stripped
-                     | test("🦞 assistant|morning-briefing|nightly-wrapup"))
-            | .tab_id')
+          # Match on .name -- the field `herdr agent start` checks for collisions --
+          # NOT the terminal title. A herdr restart rewrites every title to
+          # "omarchy:herdr-restart", so the old title regex matched nothing, this
+          # reported "nothing to stop", and the 07:00 briefing then died on
+          # `agent_name_taken` (2026-09-14). Names come from claudeHerdrSpawn above.
+          agents_list=$(herdr agent list 2>/dev/null)
+          if printf '%s' "$agents_list" | jq -e . >/dev/null 2>&1; then
+            tabs=$(printf '%s' "$agents_list" | jq -r '
+              .result.agents[]
+              | select(.name == "assistant" or .name == "nightly-wrapup")
+              | .tab_id')
+          else
+            tabs=""
+            echo "could not read 'herdr agent list' -- not closing herdr tabs" >&2
+            failed=$((failed + 1))
+          fi
           for t in ''${tabs:-}; do
             if herdr tab close "$t" >/dev/null 2>&1; then
               echo "closed herdr tab $t"; stopped=$((stopped + 1))
@@ -1977,7 +2035,7 @@ in
       # a headless aarch64 box with nothing to stream.
       ++ [
         brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal aercInvite telGvoice
-        checkWidows
+        checkWidows checkTitleOverflow
         arcKick
         mailHtmlToMd mailMdToHtml
       # zapp: flashes the ZSA keyboard from an Oryx layout URL. Host-only — the
@@ -3218,7 +3276,7 @@ in
       text/html=mail-md2html
 
       [filters]
-      text/plain=colorize
+      text/plain=${aercStripExternalBanner} | colorize
       text/calendar=calendar
       message/delivery-status=colorize
       message/rfc822=colorize
@@ -3250,7 +3308,7 @@ in
       # renderer repainting is. The PICTURE is on `o`
       # (:exec-tty aerc-mail-tty), where aerc suspends and terminal-browser
       # paints straight to aerc's own terminal.
-      text/html=${aercHtmlChawan}
+      text/html=${aercHtmlChawan} | ${aercStripExternalBanner}
       application/pdf=!${aercPdfPreview}
       .headers=colorize
 
