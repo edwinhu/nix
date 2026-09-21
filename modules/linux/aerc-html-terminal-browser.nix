@@ -126,6 +126,71 @@ let
     }, true);
   '';
 
+  # AN FPS COUNTER YOU CAN WATCH, because measuring this from outside took a 3-minute recording per
+  # sample and still answered the wrong question twice (held arrows are discrete BY DESIGN, so their
+  # frame count says nothing about wheel smoothness).
+  #
+  # It reports two different numbers, and the difference between them is the whole point:
+  #   RAF   -- animation frames the PAGE ran. The preload's wheel easing lives here.
+  #   PAINT -- how many of those actually reached the screen. The page cannot measure this, so the
+  #            counter draws a digit that changes every rAF; what you SEE is the delivered rate.
+  # A high RAF with a visibly stuttering SWEEP bar means the page is easing and the terminal is not
+  # keeping up; a low RAF means the easing itself is not running.
+  #
+  # Opt in with AERC_MAIL_FPS=1 -- never on by default: it repaints a corner of every mail, which is
+  # itself frame traffic, and an instrument that changes what it measures is worse than none.
+  fpsOverlay = ''
+
+    // ---- FPS overlay (AERC_MAIL_FPS=1) ----------------------------------------------------
+    (() => {
+      const mk = () => {
+        const box = document.createElement("div");
+        box.setAttribute("data-aerc-fps", "1");
+        box.style.cssText = [
+          "position:fixed", "top:0", "right:0", "z-index:2147483647",
+          "font:14px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace",
+          "background:rgba(0,0,0,.82)", "color:#8f8", "padding:4px 6px",
+          "white-space:pre", "pointer-events:none", "text-align:right",
+        ].join(";");
+        (document.body || document.documentElement).appendChild(box);
+        return box;
+      };
+
+      let box = null;
+      let frames = 0;
+      let last = performance.now();
+      let raf = 0;
+      // SWEEP advances one column per animation frame. Painted at the terminal's rate, a smooth
+      // sweep means frames are arriving; a sweep that jumps means they are not.
+      const cells = 12;
+      let sweep = 0;
+
+      const tick = (now) => {
+        frames++;
+        sweep = (sweep + 1) % cells;
+        if (now - last >= 500) {
+          raf = Math.round((frames * 1000) / (now - last));
+          frames = 0;
+          last = now;
+        }
+        if (!box) box = mk();
+        const bar = "-".repeat(sweep) + "#" + "-".repeat(cells - sweep - 1);
+        box.textContent = "RAF " + String(raf).padStart(3) + " fps\n" + bar + "\ny " + Math.round(window.scrollY);
+        requestAnimationFrame(tick);
+      };
+
+      const start = () => requestAnimationFrame(tick);
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+      } else {
+        start();
+      }
+    })();
+  '';
+
+  pagerKeysFps = writeText "aerc-pager-keys-fps.js"
+    (builtins.readFile pagerKeys + fpsOverlay);
+
   # Where the serve step leaves the URL for the launch step. Per-user runtime
   # dir, not /tmp: it is already per-user and cleaned on logout.
   urlFile = "\${XDG_RUNTIME_DIR:-/tmp}/aerc-mail-browser-url";
@@ -424,11 +489,16 @@ PYEOF
     # when switching, or this variable has no effect.
     FRAMES="''${AERC_MAIL_FRAMES:-}"
 
+    # AERC_MAIL_FPS=1 swaps in the preload that also draws the counter. One --preload is passed
+    # either way, so this cannot depend on whether the browser honours two of them.
+    PRELOAD="${pagerKeys}"
+    [ -n "''${AERC_MAIL_FPS:-}" ] && PRELOAD="${pagerKeysFps}"
+
     env TERMINAL_BROWSER_NO_MERGE=1 ''${FRAMES:+TERMINAL_BROWSER_FRAMES=$FRAMES} \
       "${terminalBrowser}" open "$URL" --no-merge \
       --app-mode --app-name=aerc-mail-tty \
       --no-toolbar --no-frame --no-overlays --no-context-menu \
-      --preload=${pagerKeys}
+      --preload="$PRELOAD"
     status=$?
     exit "$status"
   '';

@@ -74,7 +74,10 @@ if [ "$SURFACE" = plain ]; then
   MSGFILE=$(notmuch search --output=files "$QUERY" | head -1); [ -r "$MSGFILE" ] || fail "no message for query '$QUERY'"
   aerc-mail-serve < "$MSGFILE" >/dev/null 2>&1 9>&-
   URL=$(sed -n 1p "${XDG_RUNTIME_DIR:-/tmp}/aerc-mail-browser-url"); [ -n "$URL" ] || fail "aerc-mail-serve gave no URL"
-  h pane run "$PANE" "$HOME/.local/share/terminal-browser/app/bin/terminal-browser open '$URL'"; sleep 8
+  # PLAIN_EXTRA lets the reference surface be run with the launcher's own flags, which is how you
+  # tell a cost that belongs to aerc from one that belongs to the flags aerc passes (--app-mode,
+  # the pager-keys preload, --no-overlays...). Empty by default: the reference stays the reference.
+  h pane run "$PANE" "$HOME/.local/share/terminal-browser/app/bin/terminal-browser open '$URL' ''${PLAIN_EXTRA:-}"; sleep 8
 else
   if [ "$INPUT" = egress ]; then
     rm -f "$OUT/egress.txt"; h pane run "$PANE" "script -f -q -O '$OUT/egress.txt' -c '$AERC_BIN'"
