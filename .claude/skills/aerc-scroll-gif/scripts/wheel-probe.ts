@@ -17,6 +17,9 @@ const flag = (name: string, dflt: number) => {
 };
 const TICKS = flag("ticks", 6);
 const MIN_STEPS = flag("min-steps", 4);
+// Gap between ticks. 350ms lets each ease finish in isolation, which is how you measure the ease
+// itself; 50ms is a real flick, which is how you measure the SUSTAINED rate a user feels.
+const GAP = flag("gap", 350);
 let PORT = flag("port", 0);
 
 async function targetWs(port: number): Promise<string> {
@@ -82,7 +85,7 @@ for (let i = 0; i < TICKS; i++) {
   await send("Input.dispatchMouseEvent", {
     type: "mouseWheel", x, y, deltaX: 0, deltaY: 120, pointerType: "mouse",
   });
-  await Bun.sleep(350);          // long enough for an ease to finish before the next tick
+  await Bun.sleep(GAP);
 }
 await evaluate(`window.__wheelProbe.stop = true`);
 const samples: Array<[number, number]> = await evaluate(`window.__wheelProbe.samples`);
