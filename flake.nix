@@ -346,6 +346,28 @@
               python3 -m pytest -q test_preview_reap.py
               touch $out
             '';
+
+          # The aerc-scroll-gif latency judges. Wired in because this instrument decides whether
+          # the o viewer is fast, and it silently measured the wrong event for nine days while
+          # nothing ran its tests -- it had none, and .gitignore hid it from review entirely.
+          # ffmpeg is a real dependency, not a convenience: test_judge_pixels.py builds videos with
+          # known cuts and measures them, because a mocked decoder would pass against a judge that
+          # measured nothing. test_record_scroll.sh is deliberately NOT here -- it compares the
+          # harness against its git baseline, and the sandbox has no repo.
+          aerc-scroll-gif = pkgs.runCommand "aerc-scroll-gif-tests"
+            {
+              nativeBuildInputs = [
+                (pkgs.python3.withPackages (ps: [ ps.pytest ]))
+                pkgs.ffmpeg
+              ];
+            }
+            ''
+              cp -r ${./.claude/skills/aerc-scroll-gif} instrument
+              chmod -R u+w instrument
+              cd instrument
+              python3 -m pytest -q tests/test_judge_pixels.py tests/test_judge_taps.py
+              touch $out
+            '';
         });
       apps = nixpkgs.lib.genAttrs linuxSystems mkLinuxApps // nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
