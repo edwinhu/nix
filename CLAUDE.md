@@ -16,7 +16,10 @@ nix run .#build-switch
 nix run .#build
 
 # Validate flake syntax and evaluate all outputs
-nix flake check
+nix flake check        # NOT --no-build: stylix's gtk module imports from a derivation, and
+                       # --no-build refuses to realise it, then reports the un-built path as
+                       # "path '...-base16-schemes-...drv' is not valid" — which reads exactly
+                       # like store corruption and is not.
 
 # Update flake inputs
 nix flake update              # Update all inputs
