@@ -141,7 +141,26 @@ cleanup() {
   done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
   for z in $(ps -ww -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'); do kill -CONT "$z" 2>/dev/null; kill "$z" 2>/dev/null; done
-  rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
+  # NEVER DELETE A SOCKET A SERVER STILL HOLDS. Removing the session dir while the server was still
+  # shutting down orphaned it for good: ppid 1, socket unlinked, so neither `server stop` nor the
+  # next run's start_session could ever reach it again (found 2026-09-22, a 17:45 run's server
+  # still up at 19:30). Wait for it; if it outlives the wait, keep the dir so the next run retires it.
+  __held=""
+  for _ in $(seq 1 15); do
+    __held=$(for e in /proc/[0-9]*/environ; do
+      grep -qz "^HERDR_SESSION=$SESSION\$" "$e" 2>/dev/null || continue
+      __p=${e#/proc/}; __p=${__p%/environ}
+      tr '\0' ' ' < /proc/"$__p"/cmdline 2>/dev/null | grep -q ' server' && echo "$__p"
+    done)
+    [ -z "$__held" ] && break
+    sleep 1
+  done
+  rm -rf "$WORK" 2>/dev/null
+  if [ -n "$__held" ]; then
+    echo "  note: server $__held still holds session $SESSION; left its socket for the next run to stop" >&2
+  else
+    rm -rf "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
+  fi
 }
 trap cleanup EXIT
 
