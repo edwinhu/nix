@@ -39,7 +39,31 @@ fi
 [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || { echo "no compositor environment to borrow" >&2; exit 3; }
 
 WORK=$(mktemp -d)
+
+# A PRIVATE BROWSER DAEMON. The terminal-browser daemon socket is
+# $XDG_RUNTIME_DIR/terminal-browser*/daemon.sock, so relocating that one variable gives this gate a
+# daemon nobody else can serve -- and, more to the point, one it can own without touching anyone
+# else's. This gate runs every half hour; the previous version called `shutdown` and then killed
+# every --daemon process on the machine, which closes whatever the user has open in the o viewer.
+# A monitor must not damage the thing it monitors. The rest of the real runtime dir is symlinked
+# through so the wayland socket and the pane-graphics directory stay reachable.
+PRIV="$WORK/xdg"
+mkdir -p "$PRIV"
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
+  for e in "$XDG_RUNTIME_DIR"/*; do
+    [ -e "$e" ] || continue
+    case "${e##*/}" in terminal-browser*) continue ;; esac
+    ln -sfn "$e" "$PRIV/${e##*/}" 2>/dev/null
+  done
+fi
 cleanup() {
+  # Our own daemon only, found by the private runtime dir it carries -- never `shutdown`, which
+  # reaches the user's browser through the shared data dir.
+  for c in /proc/[0-9]*/environ; do
+    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$c" 2>/dev/null || continue
+    __p=${c#/proc/}; __p=${__p%/environ}
+    grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
+  done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
   [ -n "${GPID:-}" ] && kill "$GPID" 2>/dev/null
   rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" 2>/dev/null
@@ -89,27 +113,35 @@ PANE=$(h pane split --pane "$SHELL_PANE" --direction down --ratio 0.6 \
 # does not always win, so wait it out and then kill by explicit pid -- never pkill -f, which matches
 # this script own command line and takes the shell down with it.
 T0=$(date +%s)
-timeout 20 "$TB" shutdown >/dev/null 2>&1
-for _ in $(seq 1 15); do
-  pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 || break
-  sleep 1
-done
-for dp in $(pgrep -f "[t]erminal-browser/app/electron.*--daemon" 2>/dev/null); do kill "$dp" 2>/dev/null; done
-sleep 2
-pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 \
-  && { echo "a browser daemon will not die; it would serve this measurement" >&2; exit 3; }
-printf '#!/usr/bin/env bash\nexec %s open file://%s\n' "$TB" "$WORK/page.html" > "$WORK/run.sh"
+# Own the daemon by ISOLATION, not by killing. Nothing outside this gate is touched.
+# NO `terminal-browser shutdown` HERE, deliberately. The daemon socket lives under
+# XDG_RUNTIME_DIR, so the private dir above already gives this gate its own daemon -- but the
+# shutdown COMMAND resolves its target through the shared XDG_DATA_HOME app dir, so calling it
+# killed the user's browser even with the runtime dir relocated. Verified: a decoy daemon died
+# across a gate run that contained no kill at all. Nothing global is touched now.
+printf '#!/usr/bin/env bash\nexport XDG_RUNTIME_DIR=%s\nexec %s open file://%s\n' "$PRIV" "$TB" "$WORK/page.html" > "$WORK/run.sh"
 chmod +x "$WORK/run.sh"
 h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
 
 # Wait for the DAEMON, not for any electron: bin/terminal-browser is itself
 # `electron cli/dist/main.js`, so a bare app/electron match is satisfied by the CLI and proves
 # nothing. The daemon is the process that paints.
+# Wait for OUR daemon, identified by the private runtime dir rather than by a global pattern: a
+# match on any --daemon would be satisfied by the user's own browser and prove nothing about ours.
+own_daemon() {
+  for c in /proc/[0-9]*/environ; do
+    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$c" 2>/dev/null || continue
+    pid=${c#/proc/}; pid=${pid%/environ}
+    grep -qa "electron" /proc/"$pid"/cmdline 2>/dev/null || continue
+    return 0
+  done
+  return 1
+}
 for _ in $(seq 1 40); do
-  pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 && break
+  own_daemon && break
   sleep 1
 done
-pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 \
+own_daemon \
   || { echo "the browser DAEMON never started. Run it by hand to see why -- the CLI spawns it with" >&2
        echo "stdio ignored, so its crash is invisible. Without DISPLAY it picks the x11 ozone" >&2
        echo "backend and dies with 'Missing X server or \$DISPLAY' (terminal-browser #38)." >&2
@@ -126,8 +158,14 @@ pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 \
 # `message.env ?? {}` and hands it to the engine as sessionEnv. An earlier version of this gate
 # asserted the variable in /proc/<daemon>/environ and so failed could-not-run on every run,
 # measuring a thing that is false by construction.
-DPID=$(pgrep -f "[t]erminal-browser/app/electron.*--daemon" | head -1)
-[ -n "${DPID:-}" ] || { echo "no browser daemon" >&2; exit 3; }
+DPID=""
+for c in /proc/[0-9]*/environ; do
+  grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$c" 2>/dev/null || continue
+  pid=${c#/proc/}; pid=${pid%/environ}
+  grep -qa "electron" /proc/"$pid"/cmdline 2>/dev/null || continue
+  DPID=$pid; break
+done
+[ -n "${DPID:-}" ] || { echo "no browser daemon of our own" >&2; exit 3; }
 AGE=$(ps -o etimes= -p "$DPID" 2>/dev/null | tr -d ' ')
 SINCE=$(( $(date +%s) - T0 ))
 if [ -z "${AGE:-}" ] || [ "$AGE" -gt "$SINCE" ]; then
