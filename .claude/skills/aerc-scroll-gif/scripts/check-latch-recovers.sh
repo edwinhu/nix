@@ -38,6 +38,12 @@ RECOVER_SECONDS=${LATCH_RECOVER_SECONDS:-100}
 # reading as a pass. Only the cooldown can legitimately restore it, so a recovery sooner than this
 # is not the fix working and the run measured nothing.
 MIN_RECOVER_SECONDS=${LATCH_MIN_RECOVER_SECONDS:-30}
+# A SINGLE ABSENT READING IS NOT AN EXPIRY. pane.graphics.info answers ABSENT while the client is
+# still catching up from the stall, so a blip reads as a loss and the recovery two seconds later
+# reads as the fix working -- on a binary that has no restore path at all. Measured 2026-09-22: a
+# 5s stall gave "lost, back at T+2s" three times out of three on the installed 0.9.1. Require the
+# loss to HOLD before asking whether it recovers.
+LOSS_CONFIRM_SECONDS=${LATCH_LOSS_CONFIRM_SECONDS:-10}
 
 [ -x "$HERDR_BIN" ] || { echo "no herdr at $HERDR_BIN" >&2; exit 3; }
 [ -x "$TB" ] || { echo "terminal-browser is not installed" >&2; exit 3; }
@@ -188,7 +194,17 @@ done
   echo "  raise LATCH_STALL_SECONDS above the outer timeout, or the deadline was not armed" >&2
   exit 3
 }
-echo "lost: transport went to $LOST after the stall"
+
+# CONFIRM the loss is an expiry and not the client catching up.
+for i in $(seq 1 "$LOSS_CONFIRM_SECONDS"); do
+  if [ "$(transport "$PANE")" = "direct-kitty" ]; then
+    echo "the transport returned after ${i}s of ABSENT -- a blip while the client caught up, not an" >&2
+    echo "  expiry. Nothing was lost, so there is nothing to recover; this run measured nothing." >&2
+    exit 3
+  fi
+  sleep 1
+done
+echo "lost: transport went to $LOST and stayed absent ${LOSS_CONFIRM_SECONDS}s -- an expiry"
 
 for i in $(seq 1 "$RECOVER_SECONDS"); do
   T=$(transport "$PANE")
