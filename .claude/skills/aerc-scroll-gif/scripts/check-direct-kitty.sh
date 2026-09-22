@@ -26,10 +26,15 @@ SOCK="$HOME/.config/herdr/sessions/$SESSION/herdr.sock"
 
 # The compositor environment: an ssh shell and a Stop hook both have none.
 if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
-  __g=$(pgrep -f "ghostty.*herdr" 2>/dev/null | head -1)
-  [ -n "${__g:-}" ] && eval "$(tr '\0' '\n' < /proc/"$__g"/environ \
-    | grep -E "^(WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|DISPLAY|XDG_SESSION_TYPE|GDK_BACKEND)=" \
-    | sed 's/^/export /')"
+  # [g]hostty, and iterate: a bare "ghostty.*herdr" pattern matches THIS SCRIPT own command line
+  # (CLAUDE.md rule 7), and head -1 then borrows from a shell that has no compositor env at all.
+  for __g in $(pgrep -f "[g]hostty.*herdr" 2>/dev/null); do
+    grep -qz "HYPRLAND_INSTANCE_SIGNATURE" /proc/"$__g"/environ 2>/dev/null || continue
+    eval "$(tr '\0' '\n' < /proc/"$__g"/environ \
+      | grep -E "^(WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|DISPLAY|XDG_SESSION_TYPE|GDK_BACKEND)=" \
+      | sed 's/^/export /')"
+    break
+  done
 fi
 [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || { echo "no compositor environment to borrow" >&2; exit 3; }
 
@@ -56,7 +61,12 @@ PY
 
 rm -rf "$HOME/.config/herdr/sessions/$SESSION" 2>/dev/null
 # shellcheck disable=SC2086
-setsid env $UNSET "$GH" --class=dev.dkgate -e bash -c "env $UNSET $HERDR_BIN --session $SESSION" \
+# --gtk-single-instance=false: the desktop ghostty runs with single-instance TRUE, so a second
+# invocation delegates to that process instead of owning its own window, and the delegating
+# instance has been seen to SIGSEGV. A crashed test ghostty kills its herdr client, which removes
+# the only direct-graphics-capable client, which makes herdr stop advertising the transport -- an
+# UNMET that looks like the bug under test and is not.
+setsid env $UNSET "$GH" --gtk-single-instance=false --class=dev.dkgate -e bash -c "env $UNSET $HERDR_BIN --session $SESSION" \
   > "$WORK/ghostty.log" 2>&1 &
 GPID=$!
 for _ in $(seq 1 30); do [ -S "$SOCK" ] && break; sleep 1; done
@@ -78,6 +88,7 @@ PANE=$(h pane split --pane "$SHELL_PANE" --direction down --ratio 0.6 \
 # from another pane serves our page against someone else's pane id. `shutdown` is asynchronous and
 # does not always win, so wait it out and then kill by explicit pid -- never pkill -f, which matches
 # this script own command line and takes the shell down with it.
+T0=$(date +%s)
 timeout 20 "$TB" shutdown >/dev/null 2>&1
 for _ in $(seq 1 15); do
   pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 || break
@@ -109,25 +120,22 @@ pgrep -f "[t]erminal-browser/app/electron.*--daemon" >/dev/null 2>&1 \
 # silently serves the page with another pane id and writes frames nowhere near our directory. That
 # reads as "the browser refused the fast path" when the truth is "we measured the wrong browser".
 # Exit 3 rather than report a false UNMET.
-# Electron spawns helper processes (gpu, renderer, zygote) whose command line also carries
-# --daemon while their environ is scrubbed, so `head -1` can pick a child and report our own
-# daemon as foreign. Scan every candidate and accept if ANY carries our pane id.
-DPID=""
-CANDIDATES=$(pgrep -f "[t]erminal-browser/app/electron.*--daemon" 2>/dev/null)
-[ -n "${CANDIDATES:-}" ] || { echo "no browser daemon to verify" >&2; exit 3; }
-for c in $CANDIDATES; do
-  cenv=$(tr '\0' '\n' < /proc/"$c"/environ 2>/dev/null)
-  cpane=$(printf '%s' "$cenv" | sed -n 's/^HERDR_PANE_ID=//p' | head -1)
-  csock=$(printf '%s' "$cenv" | sed -n 's/^HERDR_SOCKET_PATH=//p' | head -1)
-  echo "  candidate $c: pane=${cpane:-<unset>}"
-  if [ "${cpane:-}" = "$PANE" ] && [ "${csock:-}" = "$SOCK" ]; then DPID=$c; fi
-done
-if [ -z "${DPID:-}" ]; then
-  echo "no daemon carries our pane id ($PANE) and socket; a foreign daemon is serving this" >&2
-  echo "measurement, or the browser was launched outside the pane" >&2
+# OWN-DAEMON CHECK, BY AGE NOT BY ENV. The daemon never carries HERDR_PANE_ID in its process
+# environment and never will: the CLI forwards the pane env inside the open REQUEST
+# ({cmd:"open", tty, argv, env: process.env, cwd, build}), the daemon reads it as
+# `message.env ?? {}` and hands it to the engine as sessionEnv. An earlier version of this gate
+# asserted the variable in /proc/<daemon>/environ and so failed could-not-run on every run,
+# measuring a thing that is false by construction.
+DPID=$(pgrep -f "[t]erminal-browser/app/electron.*--daemon" | head -1)
+[ -n "${DPID:-}" ] || { echo "no browser daemon" >&2; exit 3; }
+AGE=$(ps -o etimes= -p "$DPID" 2>/dev/null | tr -d ' ')
+SINCE=$(( $(date +%s) - T0 ))
+if [ -z "${AGE:-}" ] || [ "$AGE" -gt "$SINCE" ]; then
+  echo "the daemon (pid $DPID, age ${AGE:-?}s) predates this run (${SINCE}s): it was not spawned" >&2
+  echo "by our pane, so its sessionEnv points at someone elses pane" >&2
   exit 3
 fi
-echo "daemon $DPID verified: pane=$DPANE"
+echo "daemon $DPID is ours (age ${AGE}s of ${SINCE}s)"
 sleep 12                                          # frames take several seconds to begin
 
 python3 - "$SOCK" "$PANE" <<'PY'
