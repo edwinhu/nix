@@ -639,3 +639,17 @@ def test_launcher_leaves_the_render_scale_alone_by_default(script, sandbox):
     env_seen = _run_launcher(script, sandbox, env)
     assert "TERMINAL_BROWSER_RENDER_SCALE" not in env_seen, env_seen.get(
         "TERMINAL_BROWSER_RENDER_SCALE")
+
+
+def test_launcher_sets_a_display_scale_so_mail_is_not_a_narrow_column(script):
+    """The browser runs on the x11 ozone backend, which reports scaleFactor 1 on a 2x output, so
+    the page lays out at device resolution with dpr 1 and a 600px mail covers a third of the pane.
+    Measured: inner=1967x442 dpr=1 without it, 983x221 dpr=2 with it."""
+    assert "TERMINAL_BROWSER_DISPLAY_SCALE=$DISPLAY_SCALE" in script
+    assert 'DISPLAY_SCALE="${AERC_MAIL_DISPLAY_SCALE:-2}"' in script
+
+
+def test_launcher_lets_the_display_scale_be_turned_off(script):
+    """0 must mean "leave the browser to its own detection" rather than passing 0 through, which
+    the browser would read as a falsy scale."""
+    assert '[ "$DISPLAY_SCALE" = "0" ] && DISPLAY_SCALE=""' in script

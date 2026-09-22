@@ -505,6 +505,21 @@ PYEOF
     # Opt in: AERC_MAIL_RENDER_SCALE=0.5 aerc
     SCALE="''${AERC_MAIL_RENDER_SCALE:-}"
 
+    # DISPLAY SCALE -- this is why mail renders as a narrow column on a HiDPI screen.
+    #
+    # hostDisplayScale() takes electron's screen.getDisplayNearestPoint().scaleFactor, and the
+    # browser runs on the x11/XWayland ozone backend, which reports 1 on a 2x Wayland output. The
+    # page then lays out at DEVICE resolution with devicePixelRatio 1: measured here, the viewport
+    # came back inner=1967x442 dpr=1 where it should be 983x221 dpr=2. A marketing mail built for a
+    # 600px table then covers 600/1967 -- about a third of the pane -- and every glyph is half
+    # size. With TERMINAL_BROWSER_DISPLAY_SCALE=2 the same page reports 983x221 dpr=2 and the mail
+    # fills the width it was designed for.
+    #
+    # Default 2 because the host this launcher ships to is the 2x machine; AERC_MAIL_DISPLAY_SCALE
+    # overrides it, and 0 or empty leaves the browser to its own detection.
+    DISPLAY_SCALE="''${AERC_MAIL_DISPLAY_SCALE:-2}"
+    [ "$DISPLAY_SCALE" = "0" ] && DISPLAY_SCALE=""
+
     # AERC_MAIL_FPS=1 swaps in the preload that also draws the counter. One --preload is passed
     # either way, so this cannot depend on whether the browser honours two of them.
     PRELOAD="${pagerKeys}"
@@ -512,6 +527,7 @@ PYEOF
 
     env TERMINAL_BROWSER_NO_MERGE=1 ''${FRAMES:+TERMINAL_BROWSER_FRAMES=$FRAMES} \
       ''${SCALE:+TERMINAL_BROWSER_RENDER_SCALE=$SCALE} \
+      ''${DISPLAY_SCALE:+TERMINAL_BROWSER_DISPLAY_SCALE=$DISPLAY_SCALE} \
       "${terminalBrowser}" open "$URL" --no-merge \
       --app-mode --app-name=aerc-mail-tty \
       --no-toolbar --no-frame --no-overlays --no-context-menu \
