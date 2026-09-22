@@ -23,12 +23,20 @@
 # (herdr.rs:137) before returning. Those two run in series per frame, so the path is capped at
 # 1/(write+composite+ack) however fast the page paints.
 #
+# WHAT THIS MEASURES IS DELIVERY, NOT PAINT. It counts frames handed over. Whether herdr composites
+# and ghostty draws them all is a different question and needs a different instrument.
+#
 # Exit 0 at or above the floor, 1 below it, 3 could-not-run.
 set -uo pipefail
 
 MIN_FPS=${SCROLL_MIN_FPS:-55}
-TICKS=${TICKS:-60}
-GAP=${GAP:-16}                       # ms between wheel ticks; 16 keeps the page asking for 60/s
+# SATURATE, never pace. The browser emits ~1.2 frames per wheel tick, so a gap-paced driver makes
+# the VERDICT a function of the gap: measured 2026-09-22, the same pipeline read 37 fps at gap 16,
+# 24.5 at gap 33 and 60.2 at gap 8. Those numbers describe this script, not the product. Driven
+# flat out the rate plateaus -- 61.0 / 60.7 / 60.8 fps at gaps 4, 1 and 0 -- and the plateau is the
+# only figure that is the pipeline's own.
+TICKS=${TICKS:-400}
+GAP=${GAP:-0}
 TB="$HOME/.local/share/terminal-browser/app/bin/terminal-browser"
 SCRIPTS=/home/eh/nix/.claude/skills/aerc-scroll-gif/scripts
 HERDR=$(command -v herdr || echo /home/eh/.local/share/mise/installs/herdr/latest/herdr)
@@ -123,6 +131,7 @@ PY
 cat > "$WORK/run.sh" <<EOF
 #!/usr/bin/env bash
 export XDG_RUNTIME_DIR=$PRIV
+${SCROLL_ENV:+export $SCROLL_ENV}
 cd $WORK
 exec $S -f -o $WORK/trace.txt -e trace=write -s 120 "$TB" open file://$WORK/tall.html
 EOF
@@ -139,7 +148,19 @@ for _ in $(seq 1 30); do
   [ -n "${PORT:-}" ] && break
   sleep 1
 done
-[ -n "${PORT:-}" ] || { echo "the browser never registered a cdp port" >&2; exit 3; }
+# `tb ls` asks the daemon, and in a dedicated test session the browser does not always register
+# there -- but it always ANNOUNCES the port on stderr, which the strace log captured. The port is
+# what the wheel driver needs; where the daemon filed it is not this gate's problem.
+if [ -z "${PORT:-}" ]; then
+  for _ in $(seq 1 20); do
+    PORT=$(grep -oE 'DevTools listening on ws://127\.0\.0\.1:[0-9]+' "$WORK/trace.txt" 2>/dev/null \
+      | grep -oE '[0-9]+$' | tail -1)
+    [ -n "${PORT:-}" ] && break
+    sleep 1
+  done
+  [ -n "${PORT:-}" ] && echo "note: cdp port $PORT read from the browser's own announcement, not the daemon" >&2
+fi
+[ -n "${PORT:-}" ] || { echo "the browser never registered or announced a cdp port" >&2; exit 3; }
 
 # Which transport is this pane on? A rate measured on the pty fallback answers a different question,
 # so say which path was timed rather than reporting a bare number.
@@ -159,6 +180,25 @@ except Exception:
     print("")
 PYX
 )
+
+if [ -n "${SCROLL_ENV:-}" ]; then
+  DPID=""
+  for c in /proc/[0-9]*/environ; do
+    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$c" 2>/dev/null || continue
+    pid=${c#/proc/}; pid=${pid%/environ}
+    grep -qa "electron" /proc/"$pid"/cmdline 2>/dev/null || continue
+    DPID=$pid; break
+  done
+  [ -n "${DPID:-}" ] || { echo "no daemon of our own to verify the environment on" >&2; exit 3; }
+  for kv in $SCROLL_ENV; do
+    if ! tr '\0' '\n' < /proc/"$DPID"/environ 2>/dev/null | grep -qx "$kv"; then
+      echo "SCROLL_ENV asked for $kv but the daemon (pid $DPID) does not carry it" >&2
+      echo "  a stale daemon is serving this measurement; it would report the DEFAULT" >&2
+      exit 3
+    fi
+  done
+  echo "verified in daemon $DPID: $SCROLL_ENV" >&2
+fi
 
 sleep 2
 # Frames already handed over before the wheel (the first paint) are not the scroll's, so count a
