@@ -615,3 +615,27 @@ def test_launcher_never_infers_the_transport_from_ssh(script, sandbox):
     env.pop("AERC_MAIL_FRAMES", None)
     env_seen = _run_launcher(script, sandbox, env)
     assert "TERMINAL_BROWSER_FRAMES" not in env_seen, env_seen.get("TERMINAL_BROWSER_FRAMES")
+
+
+def test_launcher_forwards_a_render_scale(script, sandbox):
+    """AERC_MAIL_RENDER_SCALE reaches the browser as TERMINAL_BROWSER_RENDER_SCALE.
+
+    Every frame the browser announces is a FULL SURFACE -- measured 2026-09-21, a 2400px scroll
+    announced 216 MB across 24 transmits of a 1984x1188 RGBA surface, 7.95x a damage rect's
+    minimum. browserRenderScale() clamps the variable to [0.5, layout.scale], so at scale 2 a value
+    of 0.5 cuts pixel bytes 16x. It is read by the browser DAEMON, which inherits the CLI's env, so
+    it only bites on a daemon that started fresh.
+    """
+    env = dict(sandbox["env"], AERC_MAIL_RENDER_SCALE="0.5")
+    env_seen = _run_launcher(script, sandbox, env)
+    assert env_seen.get("TERMINAL_BROWSER_RENDER_SCALE") == "0.5", env_seen.get(
+        "TERMINAL_BROWSER_RENDER_SCALE")
+
+
+def test_launcher_leaves_the_render_scale_alone_by_default(script, sandbox):
+    """Unset by default: 0.5 trades sharpness for bytes, which is the operator's call, not ours."""
+    env = dict(sandbox["env"])
+    env.pop("AERC_MAIL_RENDER_SCALE", None)
+    env_seen = _run_launcher(script, sandbox, env)
+    assert "TERMINAL_BROWSER_RENDER_SCALE" not in env_seen, env_seen.get(
+        "TERMINAL_BROWSER_RENDER_SCALE")

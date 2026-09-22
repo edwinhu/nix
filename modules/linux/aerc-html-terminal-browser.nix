@@ -489,12 +489,29 @@ PYEOF
     # when switching, or this variable has no effect.
     FRAMES="''${AERC_MAIL_FRAMES:-}"
 
+    # RENDER SCALE. browserRenderScale() in the browser bundle reads TERMINAL_BROWSER_RENDER_SCALE
+    # and clamps it to [0.5, layout.scale]; at scale 2 a value of 0.5 is a 16x cut in pixel bytes,
+    # which matters because every frame is a FULL SURFACE: measured 2026-09-21, a 2400px scroll
+    # announced 216 MB across 24 transmits of a 1984x1188 RGBA surface, 7.95x what a damage rect
+    # would have needed. The browser computes a damage rect and then does not use it on the wire.
+    #
+    # The variable is read by the browser DAEMON, which the CLI spawns with its own process.env --
+    # so it only takes effect on a daemon that actually started fresh. `terminal-browser shutdown`
+    # is not instantaneous, and a leftover daemon serves the request with its OLD environment while
+    # reporting the default, which cost this session three identical measurements and a nearly-false
+    # conclusion that the knob was inert. Verify with /proc/<daemon-pid>/environ before believing a
+    # measurement, and expect sharper text to cost sharpness at 0.5.
+    #
+    # Opt in: AERC_MAIL_RENDER_SCALE=0.5 aerc
+    SCALE="''${AERC_MAIL_RENDER_SCALE:-}"
+
     # AERC_MAIL_FPS=1 swaps in the preload that also draws the counter. One --preload is passed
     # either way, so this cannot depend on whether the browser honours two of them.
     PRELOAD="${pagerKeys}"
     [ -n "''${AERC_MAIL_FPS:-}" ] && PRELOAD="${pagerKeysFps}"
 
     env TERMINAL_BROWSER_NO_MERGE=1 ''${FRAMES:+TERMINAL_BROWSER_FRAMES=$FRAMES} \
+      ''${SCALE:+TERMINAL_BROWSER_RENDER_SCALE=$SCALE} \
       "${terminalBrowser}" open "$URL" --no-merge \
       --app-mode --app-name=aerc-mail-tty \
       --no-toolbar --no-frame --no-overlays --no-context-menu \
