@@ -323,6 +323,8 @@
         "create-keys" = mkApp "create-keys" system;
         "check-keys" = mkApp "check-keys" system;
         "rollback" = mkApp "rollback" system;
+        # The suites `nix flake check` cannot sandbox; see apps/<system>/test-host.
+        "test-host" = mkApp "test-host" system;
       };
     in
     {

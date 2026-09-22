@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# The host-side test suites, for the ones `nix flake check` structurally cannot run.
+#
+# test_aerc_mail_tty.py evaluates the launcher with `nix eval --impure`, which needs a real nix
+# and absolute repo paths -- neither exists inside a check sandbox. So it lived as a runner nobody
+# called: 16 passing tests, zero gates, including the two that forbid inferring the frame transport
+# from SSH_CONNECTION. That inference shipped as a user-visible regression on 2026-09-21.
+#
+# Run from the repo root: nix run .#test-host
+set -uo pipefail
+
+if [ ! -f flake.nix ] || [ ! -f modules/linux/test_aerc_mail_tty.py ]; then
+  echo "run this from the repo root: nix run .#test-host" >&2
+  exit 2
+fi
+
+rc=0
+run() {
+  echo "=== $1"
+  shift
+  "$@" || { rc=1; echo "FAILED: $*" >&2; }
+}
+
+run "aerc-mail-tty launcher (16 tests)" python3 -m pytest -q modules/linux/test_aerc_mail_tty.py
+run "aerc-scroll-gif harness baseline" bash .claude/skills/aerc-scroll-gif/tests/test_record_scroll.sh
+
+echo
+if [ "$rc" -eq 0 ]; then echo "host suites: all passed"; else echo "host suites: FAILURES above" >&2; fi
+exit "$rc"
