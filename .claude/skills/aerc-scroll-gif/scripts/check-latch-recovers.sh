@@ -32,6 +32,19 @@
 # Exit 0 it recovered, 1 it never did (the latch), 3 could-not-run.
 set -uo pipefail
 
+# AN AUDIT TRAIL, because the only caller that matters reports an exit code and nothing else.
+# The Stop hook runs this gate in its own environment and reported exit 3 while nine consecutive
+# interactive runs exited 0 -- so the discrepancy is the environment, and a bare code cannot say
+# which exit-3 branch was taken. Everything this script prints is teed here. Tempdir, not the
+# project: session-scoped and written on every run.
+AUDIT=${LATCH_AUDIT:-${TMPDIR:-/tmp}/aerc-latch-gate.log}
+if : >> "$AUDIT" 2>/dev/null; then
+  printf '\n=== %s pid=%s tty=%s term=%s hypr=%s ===\n' \
+    "$(date -Is)" "$$" "$([ -t 1 ] && echo yes || echo no)" "${TERM:-unset}" \
+    "${HYPRLAND_INSTANCE_SIGNATURE:+set}" >> "$AUDIT"
+  exec > >(tee -a "$AUDIT") 2>&1
+fi
+
 HERDR_BIN=${HERDR_LATCH_BIN:-/home/eh/.local/share/mise/installs/herdr/latest/herdr}
 TB="$HOME/.local/share/terminal-browser/app/bin/terminal-browser"
 GH="$HOME/.nix-profile/bin/ghostty"
@@ -162,14 +175,37 @@ PY
 fi
 
 UNSET=$(for v in $(env | grep -oE '^(HERDR|SSH|TMUX|STY)[A-Z_]*' | sort -u); do printf -- "-u %s " "$v"; done)
+# READY MEANS ANSWERING, NOT PRESENT. This used to return the moment a socket FILE existed, which
+# is true of a socket left by the previous run's server while it is still shutting down, and true
+# of a stale file no one holds. The run then went on to `pane list`, got nothing, and exited 3 with
+# "no pane in the test session" -- a could-not-run that looks like a flaky gate. Back-to-back runs
+# are the normal case here (the Stop hook fires one right after an interactive one), so the race is
+# the common path rather than an edge.
+session_answers() {
+  for __s in "$SOCK_REL" "$SOCK_DEV"; do
+    [ -S "$__s" ] || continue
+    env HERDR_SOCKET_PATH="$__s" timeout 10 "$HERDR_BIN" pane list 2>/dev/null \
+      | grep -v "^mise " \
+      | python3 -c "import sys,json;sys.exit(0 if json.load(sys.stdin)['result']['panes'] else 1)" 2>/dev/null \
+      && { SOCK="$__s"; return 0; }
+  done
+  return 1
+}
 start_session() {
+  # Retire any server still holding this session's socket before claiming the name.
+  for __s in "$SOCK_REL" "$SOCK_DEV"; do
+    [ -S "$__s" ] && env HERDR_SOCKET_PATH="$__s" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
+  done
+  for _ in $(seq 1 15); do
+    [ -S "$SOCK_REL" ] || [ -S "$SOCK_DEV" ] || break
+    sleep 1
+  done
   rm -rf "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
   # shellcheck disable=SC2086
   setsid env $UNSET "$GH" --gtk-single-instance=false --class=dev.latchgate \
     -e bash -c "env $UNSET $HERDR_BIN --session $SESSION" > "$WORK/ghostty.log" 2>&1 &
   for _ in $(seq 1 45); do
-    [ -S "$SOCK_REL" ] && { SOCK="$SOCK_REL"; return 0; }
-    [ -S "$SOCK_DEV" ] && { SOCK="$SOCK_DEV"; return 0; }
+    session_answers && return 0
     sleep 1
   done
   return 1
