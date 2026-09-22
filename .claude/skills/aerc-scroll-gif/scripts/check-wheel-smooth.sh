@@ -19,7 +19,13 @@
 set -uo pipefail
 
 MIN_STEPS=${MIN_STEPS:-4}
-MIN_EMIT_FPS=${MIN_EMIT_FPS:-45}
+# A RATIO, not a rate. An absolute frames/s here measured wheel-probe.ts, not the product: the
+# driver paces ticks at a fixed rate and each yields MIN_STEPS-odd scroll positions, so the emit
+# rate sat at 29/s whether 8, 24 or 48 ticks were sent (89/265/529 positions -> 91/268/538 frames,
+# measured 2026-09-22) and the old target of 45 frames/s was unreachable by construction -- a gate
+# that could not pass however good the pipeline was. What it was reaching for is that NO scroll
+# position goes unpainted, and that is the ratio below.
+MIN_EMIT_RATIO=${MIN_EMIT_RATIO:-0.95}
 TICKS=${TICKS:-8}
 SCRIPTS=/home/eh/nix/.claude/skills/aerc-scroll-gif/scripts
 TB="$HOME/.local/share/terminal-browser/app/bin/terminal-browser"
@@ -90,12 +96,15 @@ STEPS=$(printf '%s' "$OUT" | grep -oE "median positions per tick: [0-9]+" | grep
 [ -n "${STEPS:-}" ] || { echo "the wheel probe reported no median" >&2; exit 3; }
 
 EMIT=$((AFTER - BEFORE))
+POSITIONS=$(printf '%s' "$OUT" | grep -oE "over [0-9]+ distinct positions" | grep -oE "[0-9]+")
+[ -n "${POSITIONS:-}" ] && [ "$POSITIONS" -gt 0 ] || { echo "the wheel probe reported no distinct positions" >&2; exit 3; }
+RATIO=$(awk -v e="$EMIT" -v p="$POSITIONS" 'BEGIN{printf "%.3f", e/p}')
 FPS=$(awk -v e="$EMIT" -v a="$T0" -v b="$T1" 'BEGIN{d=b-a; printf "%.1f", (d>0)? e/d : 0}')
-echo "emitted $EMIT a=T frames in $(awk -v a="$T0" -v b="$T1" 'BEGIN{printf "%.2f", b-a}')s = $FPS frames/s (target >= $MIN_EMIT_FPS)"
+echo "emitted $EMIT a=T frames for $POSITIONS scroll positions = $RATIO frames/position (target >= $MIN_EMIT_RATIO); $FPS frames/s is the DRIVER's pace, not a verdict"
 
 FAIL=0
 [ "$STEPS" -ge "$MIN_STEPS" ] || { echo "EASING unmet: $STEPS positions per tick, want >= $MIN_STEPS" >&2; FAIL=1; }
-awk -v f="$FPS" -v m="$MIN_EMIT_FPS" 'BEGIN{exit !(f+0 >= m+0)}' \
-  || { echo "EMIT unmet: $FPS frames/s, want >= $MIN_EMIT_FPS" >&2; FAIL=1; }
-[ "$FAIL" -eq 0 ] && { echo "wheel smoothness: EASING $STEPS positions/tick, EMIT $FPS frames/s -- both met"; exit 0; }
+awk -v r="$RATIO" -v m="$MIN_EMIT_RATIO" 'BEGIN{exit !(r+0 >= m+0)}' \
+  || { echo "EMIT unmet: $RATIO frames per scroll position, want >= $MIN_EMIT_RATIO -- positions are going unpainted" >&2; FAIL=1; }
+[ "$FAIL" -eq 0 ] && { echo "wheel smoothness: EASING $STEPS positions/tick, EMIT $RATIO frames/position -- both met"; exit 0; }
 exit 1
