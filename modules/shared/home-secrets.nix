@@ -25,6 +25,12 @@ in
       file = "${nix-secrets}/claude-api-key.age";
       mode = "400";
     };
+    # OpenRouter: one key, every model behind one OpenAI-compatible endpoint. Used by the hound
+    # Stop hook's goal judge, which asks a small model for a structured verdict.
+    openrouter-api-key = {
+      file = "${nix-secrets}/openrouter-api-key.age";
+      mode = "400";
+    };
     readwise-token = {
       file = "${nix-secrets}/readwise-token.age";
       mode = "400";
