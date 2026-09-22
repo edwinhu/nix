@@ -110,6 +110,21 @@ done
 echo "session socket: $SOCK"
 sleep 4
 
+# THE TEST GHOSTTY IS ALLOWED TO CRASH, AND IT MUST NOT BE SCORED AS A PRODUCT FAILURE.
+# It has SIGSEGV'd on this host repeatedly (seen again 2026-09-22, "Segmentation fault (core
+# dumped)" right after launch). When it dies it takes its herdr client with it, the server then has
+# no direct-graphics-capable client, and the transport stops being advertised -- which this gate
+# would otherwise report as UNMET, blaming the product for the harness. A dead window is
+# could-not-run, and could-not-run is exit 3.
+session_alive() { kill -0 "$GPID" 2>/dev/null && [ -S "$SOCK" ]; }
+session_alive || {
+  echo "the test ghostty died before the measurement started (it SIGSEGVs on this host)." >&2
+  echo "That removes the only direct-graphics-capable client, so an UNMET here would be the" >&2
+  echo "harness, not the transport. Reporting could-not-run instead." >&2
+  sed -n '$p' "$WORK/ghostty.log" >&2
+  exit 3
+}
+
 h() { env HERDR_SOCKET_PATH="$SOCK" timeout 25 "$HERDR_BIN" "$@" 2>/dev/null | grep -v "^mise "; }
 SHELL_PANE=$(h pane list | python3 -c "import sys,json; p=json.load(sys.stdin)['result']['panes']; print(p[0]['pane_id'] if p else '')" 2>/dev/null)
 [ -n "${SHELL_PANE:-}" ] || { echo "no pane in the test session" >&2; exit 3; }
@@ -187,6 +202,12 @@ if [ -z "${AGE:-}" ] || [ "$AGE" -gt "$SINCE" ]; then
 fi
 echo "daemon $DPID is ours (age ${AGE}s of ${SINCE}s)"
 sleep 12                                          # frames take several seconds to begin
+
+session_alive || {
+  echo "the test ghostty died DURING the run, so the transport reading below would describe a" >&2
+  echo "session with no client rather than the browser's behaviour. Could-not-run." >&2
+  exit 3
+}
 
 python3 - "$SOCK" "$PANE" <<'PY'
 import socket, json, sys, os, glob
