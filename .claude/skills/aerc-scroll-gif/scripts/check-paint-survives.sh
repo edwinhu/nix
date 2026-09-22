@@ -143,6 +143,12 @@ printf '#!/usr/bin/env bash\nexport XDG_RUNTIME_DIR=%s\nexec %s open file://%s\n
 chmod +x "$WORK/run.sh"
 h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
 
+# file_frame_transport is the CLIENT's state: it answers ABSENT both when the server has genuinely
+# suspended direct graphics and when the client is simply not answering yet. So a reading alone is
+# not a loss. Where the herdr under test logs the suspension (992172b9), the server's own account
+# decides; where it does not, an ABSENT reading is reported as unattributed rather than explained.
+SUSPENDS_BEFORE=$(cat "$HOME/.config/herdr/herdr-server.log" "$HOME/.config/herdr-dev/herdr-server.log" 2>/dev/null | grep -c "direct graphics suspended")
+
 LOST=""
 for i in $(seq 1 "$HOLD_SECONDS"); do
   T=$(transport "$PANE")
@@ -151,10 +157,19 @@ for i in $(seq 1 "$HOLD_SECONDS"); do
 done
 
 if [ -n "$LOST" ]; then
-  echo "UNMET: the transport was LOST while painting -- $LOST"
-  echo "  The first frame transfer misses DIRECT_RESPONSE_TIMEOUT (3s) and the expiry path at"
-  echo "  server/headless/pane_graphics.rs:402 clears client.direct_graphics, which only the"
-  echo "  handshake ever restores. Every frame after this goes down the pty as a full surface."
+  SUSPENDS_AFTER=$(cat "$HOME/.config/herdr/herdr-server.log" "$HOME/.config/herdr-dev/herdr-server.log" 2>/dev/null | grep -c "direct graphics suspended")
+  echo "UNMET: the transport read $LOST while painting"
+  if [ "${SUSPENDS_AFTER:-0}" -gt "${SUSPENDS_BEFORE:-0}" ]; then
+    echo "  The server logged a direct-graphics suspension, so this is the expiry path in"
+    echo "  server/headless/pane_graphics.rs: a transfer missed its deadline."
+  else
+    echo "  The server logged NO suspension, so do NOT attribute this to the expiry latch. Measured"
+    echo "  2026-09-22: the latch was never once observed firing, and every ABSENT reading taken"
+    echo "  from this field was consistent with a client that had not answered yet. The other way"
+    echo "  the transport goes absent is the FOREGROUND-CLIENT rule -- a remote or ssh-marked client"
+    echo "  being foreground disables direct graphics by design -- which is what the live session"
+    echo "  turned out to be. Establish which before building on this verdict."
+  fi
   exit 1
 fi
 echo "MET: direct-kitty survived ${HOLD_SECONDS}s of painting"
