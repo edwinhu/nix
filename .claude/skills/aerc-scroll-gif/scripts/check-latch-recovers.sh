@@ -31,6 +31,13 @@ SESSION=${LATCH_SESSION:-latchgate}
 STALL_SECONDS=${LATCH_STALL_SECONDS:-12}      # > DIRECT_OUTER_TIMEOUT (9s)
 # DIRECT_GRAPHICS_COOLDOWN is 60s, so a fixed binary needs a minute plus slack before it restores.
 RECOVER_SECONDS=${LATCH_RECOVER_SECONDS:-100}
+# A RECONNECT ALSO RESTORES THE TRANSPORT, and counting it as recovery inverts this gate: the
+# handshake is the other place direct_graphics is set true, and reconnecting is exactly the manual
+# workaround users perform. Measured 2026-09-22 on the INSTALLED 0.9.1, which has no restore path
+# at all: the transport came back at T+6s, far inside the 60s cooldown -- that was a reconnect
+# reading as a pass. Only the cooldown can legitimately restore it, so a recovery sooner than this
+# is not the fix working and the run measured nothing.
+MIN_RECOVER_SECONDS=${LATCH_MIN_RECOVER_SECONDS:-30}
 
 [ -x "$HERDR_BIN" ] || { echo "no herdr at $HERDR_BIN" >&2; exit 3; }
 [ -x "$TB" ] || { echo "terminal-browser is not installed" >&2; exit 3; }
@@ -71,11 +78,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 - "$WORK/page.html" <<'PY'
+# THE FIXTURE IS THE REAL EMAIL. The rest of this suite drives aerc with --query from:arcteryx,
+# and fixture weight is what decides whether the FIRST transfer blows a 3s deadline: the Arc'teryx
+# mail is 88 KB over 62 images where the synthetic page this gate used to build was a few hundred
+# lines of text. Regenerate with:
+#   notmuch show --format=raw 'from:arcteryx' | (extract the text/html part)
+PAGE=${LATCH_PAGE:-/home/eh/nix/.craft/fixtures/arcteryx.html}
+if [ -r "$PAGE" ]; then
+  cp "$PAGE" "$WORK/page.html"
+else
+  echo "no fixture at $PAGE; falling back to a synthetic page, which transfers too fast to be faithful" >&2
+  python3 - "$WORK/page.html" <<'PY'
 import sys
 rows = "".join(f'<p style="font-size:22px">paint survival line {i}</p>' for i in range(600))
 open(sys.argv[1], "w").write('<html><body style="background:#fff">' + rows + "</body></html>")
 PY
+fi
 
 UNSET=$(for v in $(env | grep -oE '^(HERDR|SSH|TMUX|STY)[A-Z_]*' | sort -u); do printf -- "-u %s " "$v"; done)
 start_session() {
@@ -144,11 +162,18 @@ PIDS=$(client_pids)
 # finished painting and the transport never dropped. Stop the client FIRST, then start the browser:
 # its opening transfer is then in flight against a client that cannot answer, which is exactly the
 # documented cause (a busy host, or electron booting cold).
-for p in $PIDS; do kill -STOP "$p" 2>/dev/null; done
-h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
-sleep "$STALL_SECONDS"
-for p in $PIDS; do kill -CONT "$p" 2>/dev/null; done
-echo "stalled the client ${STALL_SECONDS}s across the browser's first transfer, then resumed it"
+if [ "$STALL_SECONDS" -gt 0 ]; then
+  for p in $PIDS; do kill -STOP "$p" 2>/dev/null; done
+  h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
+  sleep "$STALL_SECONDS"
+  for p in $PIDS; do kill -CONT "$p" 2>/dev/null; done
+  echo "stalled the client ${STALL_SECONDS}s across the browser's first transfer, then resumed it"
+else
+  # LATCH_STALL_SECONDS=0: no stall at all. The question is whether the real fixture's own first
+  # transfer misses the deadline, which is what a user actually hits.
+  h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
+  echo "no stall; letting the fixture's own first transfer run against the deadline"
+fi
 
 # Did the stall actually cost us the transport? If not, this run measured nothing -- say so rather
 # than reporting a recovery that was never a loss.
@@ -168,7 +193,13 @@ echo "lost: transport went to $LOST after the stall"
 for i in $(seq 1 "$RECOVER_SECONDS"); do
   T=$(transport "$PANE")
   if [ "$T" = "direct-kitty" ]; then
-    echo "MET: the transport came back at T+${i}s after the stall -- a suspension, not a latch"
+    if [ "$i" -lt "$MIN_RECOVER_SECONDS" ]; then
+      echo "the transport came back at T+${i}s, inside the ${MIN_RECOVER_SECONDS}s floor -- too fast to be" >&2
+      echo "  the ${MIN_RECOVER_SECONDS}s+ cooldown, so a client RECONNECT restored it, not the cooldown." >&2
+      echo "  A reconnect is the manual workaround, not the fix; this run measured nothing." >&2
+      exit 3
+    fi
+    echo "MET: the transport came back at T+${i}s after the stall -- the cooldown restored it"
     exit 0
   fi
   sleep 1

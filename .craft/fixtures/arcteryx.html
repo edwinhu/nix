@@ -1,0 +1,1366 @@
+<!--==AMPscript==-->
+
+<table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+</td></tr></table>
+<!--//AMPscript//-->  
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Arc'teryx</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0 " />
+<meta name="format-detection" content="telephone=no"/>
+<meta name="color-scheme" content="light dark"/>
+<meta name="supported-color-schemes" content="light dark"/>
+  
+<style type="text/css">
+@font-face {
+    /* Light */
+    font-family: "helvetica-now-display";
+    font-style: normal;
+    font-stretch: normal;
+    font-display: swap;
+    font-weight: 300;
+    src: url("https://images.arcteryx.com/fonts/HelveticaNowDisplayLight_normal_normal.woff2") format("woff2"), url("https://images.arcteryx.com/fonts/HelveticaNowDisplayLight_normal_normal.woff") format("woff");
+}
+@font-face {
+    /* Italic */
+    font-family: "helvetica-now-display";
+    font-style: italic;
+    font-stretch: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("https://images.arcteryx.com/fonts/HelveticaNowDisplayItalic_italic_normal.woff2") format("woff2"), url("https://images.arcteryx.com/fonts/HelveticaNowDisplayItalic_italic_normal.woff") format("woff");
+}
+@font-face {
+    /* Regular */
+    font-family: "helvetica-now-display";
+    font-style: normal;
+    font-stretch: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url("https://images.arcteryx.com/fonts/HelveticaNowDisplayRegular_normal_normal.woff2") format("woff2"), url("https://images.arcteryx.com/fonts/HelveticaNowDisplayRegular_normal_normal.woff") format("woff");
+}
+@font-face {
+    /* Bold */
+    font-family: "helvetica-now-display";
+    font-style: normal;
+    font-stretch: normal;
+    font-display: swap;
+    font-weight: 700;
+    src: url("https://images.arcteryx.com/fonts/HelveticaNowDisplayBold_normal_normal.woff2") format("woff2"), url("https://images.arcteryx.com/fonts/HelveticaNowDisplayBold_normal_normal.woff") format("woff");
+}
+@font-face {
+    font-family: "urw-din";
+    src: url("https://use.typekit.net/af/f1d51b/00000000000000007735a83d/30/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n4&v=3") format("woff2"), url("https://use.typekit.net/af/f1d51b/00000000000000007735a83d/30/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n4&v=3") format("woff"), url("https://use.typekit.net/af/f1d51b/00000000000000007735a83d/30/a?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n4&v=3") format("opentype");
+    font-display: auto;
+    font-style: normal;
+    font-weight: 400;
+    mso-font-alt: 'Arial';
+}
+@font-face {
+    font-family: "urw-din";
+    src: url("https://use.typekit.net/af/b8eeae/00000000000000007735a849/30/l?subset_id=2&fvd=n6&v=3") format("woff2"), url("https://use.typekit.net/af/b8eeae/00000000000000007735a849/30/d?subset_id=2&fvd=n6&v=3") format("woff"), url("https://use.typekit.net/af/b8eeae/00000000000000007735a849/30/a?subset_id=2&fvd=n6&v=3") format("opentype");
+    font-display: auto;
+    font-style: normal;
+    font-weight: 600;
+    mso-font-alt: 'Arial';
+}
+@font-face {
+    font-family: "urw-din-condensed";
+    src: url("https://use.typekit.net/af/be96d8/00000000000000007735a84d/30/l?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("woff2"), url("https://use.typekit.net/af/be96d8/00000000000000007735a84d/30/d?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("woff"), url("https://use.typekit.net/af/be96d8/00000000000000007735a84d/30/a?primer=7cdcb44be4a7db8877ffa5c0007b8dd865b3bbc383831fe2ea177f62257a9191&fvd=n7&v=3") format("opentype");
+    font-display: auto;
+    font-style: normal;
+    font-weight: 700;
+    mso-font-alt: 'Arial';
+}
+@font-face {
+    font-family: "Helvetica Neue";
+    font-style: normal;
+    font-weight: 500;
+    src: url("https://images.arcteryx.com/fonts/HelveticaNeueLTW05-45Light.woff") format('woff'), url("https://images.arcteryx.com/fonts/HelveticaNeueLTW05-45Light.woff2") format('woff2');
+    mso-font-alt: 'Arial';
+}
+@font-face {
+    font-family: "Elan ITC Pro";
+    font-style: normal;
+    font-weight: 500;
+    src: url("https://images.arcteryx.com/fonts/ElanITCW05-Book.woff") format('woff'), url("https://images.arcteryx.com/fonts/ElanITCW05-Book.woff2") format('woff2');
+    mso-font-alt: 'Arial';
+}
+/* Elan ITC */
+@font-face {
+    font-family: "elan-itc-pro";
+    font-style: normal;
+    font-stretch: normal;
+    font-display: swap;
+    font-weight: 400;
+    src: url('https://images.arcteryx.com/fonts/ElanITCPro-Book-Web.woff2') format('woff2'), url('https://images.arcteryx.com/fonts/ElanITCPro-Book-Web.woff') format('woff');
+}
+body {
+}
+:root {
+    color-scheme: light dark;
+    supported-color-schemes: light dark;
+}
+body {
+    margin: 0;
+    padding: 0;
+    -webkit-text-size-adjust: 100% !important;
+    -ms-text-size-adjust: 100% !important;
+    -webkit-font-smoothing: antialiased !important;
+}
+img {
+    border: 0 !important;
+    outline: none !important;
+}
+h1, h2, h3, h4, h5, h6 {
+    Margin: 0px !important;
+    Padding: 0px !important;
+}
+p {
+    Margin: 0px !important;
+    Padding: 0px !important;
+}
+table {
+    border-collapse: collapse;
+    mso-table-lspace: 0px;
+    mso-table-rspace: 0px;
+}
+td, a, span {
+    border-collapse: collapse;
+    mso-line-height-rule: exactly;
+}
+.ExternalClass * {
+    line-height: 100%;
+}
+.em_defaultlink a {
+    color: inherit;
+    text-decoration: none;
+}
+.em_g_img + div {
+    display: none;
+}
+a[x-apple-data-detectors], u + .em_body a, #MessageViewBody a {
+    color: inherit;
+    text-decoration: none;
+    font-size: inherit !important;
+    font-family: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit;
+}
+center table {
+    width: 100% !important;
+}
+
+@media only screen and (max-width:599px) {
+.em_main_table {
+    width: 100%!important;
+}
+.em_wrapper {
+    width: 100%!important;
+}
+.em_hide {
+    display: none!important;
+}
+.em_full_img img {
+    width: 100%!important;
+    height: auto!important;
+}
+.em_full_img1 img {
+    width: 100%!important;
+    height: auto!important;
+    max-width: none !important;
+}
+.em_product_img1 img {
+    width:257px!important;
+    height:auto!important;
+    max-width:none!important;
+}
+.em_product_subsequent_imgs img {
+    width:154px!important;
+    height:auto!important;
+    max-width:none!important;
+}
+.em_express_and_warranty_img img {
+    width:50px!important;
+    height:50px!important;
+    max-width:none!important;
+}
+.em_side20 {
+    width: 20px!important;
+}
+.em_aside15 {
+    padding: 20px 15px!important;
+}
+.em_pbottom3 {
+    padding-bottom: 3px !important;
+}
+.em_pb32 {
+    padding-bottom: 21px !important;
+}
+.em_pb23 {
+    padding-bottom: 23px !important;
+}
+.em_pb19 {
+    padding-bottom: 19px !important;
+}
+.em_pbottom5 {
+    padding-bottom: 6px !important;
+}
+.em_pbottom7 {
+    padding-bottom: 7px !important;
+}
+.em_pbottom {
+    padding-bottom: 15px !important;
+}
+.em_ptop1 {
+    padding-top: 4px!important;
+}
+.em_abandoned_products_h_1 {
+    height:80px!important;
+}
+.em_h20 {
+    height: 20px!important;
+    font-size: 1px!important;
+    line-height: 1px!important;
+}
+.em_h15 {
+    height: 15px!important;
+}
+.em_h40 {
+    height: 37px!important;
+}
+.em_h40 a {
+    line-height: 37px!important;
+}
+.em_h50 {
+    height: 40px!important;
+}
+.em_h55 {
+    height: 50px!important;
+}
+.em_h38 {
+    height: 38px!important;
+}
+.em_h45 {
+    height: 45px!important;
+}
+.em_h23 {
+    height: 23px!important;
+}
+.em_h35 {
+    height: 35px!important;
+}
+.em_h33 {
+    height: 33px!important;
+}
+.em_h4 {
+    height: 3px!important;
+}
+.em_h32 {
+    height: 32px!important;
+}
+.em_abandoned_products_side {
+    display: none!important;  
+}
+u+.em_body .em_full_wrap {
+    width: 100%!important;
+    width: 100vw!important;
+}
+.em_f10 {
+    font-size: 12px!important;
+    line-height: 14px!important;
+}
+.em_f24 {
+    font-size: 24px!important;
+    line-height: 28px!important;
+}
+.em_wid49 {
+    width: 49%!important;
+}
+.em_wid1 {
+    width: 1%!important;
+}
+.em_wid12 {
+    width: 12px !important;
+}
+.em_hide_desktop {
+    display: table!important;
+    float: none!important;
+    width: 100%!important;
+    overflow: visible!important;
+    height: auto!important;
+}
+.em_clear {
+    clear: both !important;
+    width: 100% !important;
+    display: block !important;
+}
+.em_ptop8 {
+    padding-top: 8px !important;
+}
+.em_ptop25 {
+    padding-top: 25px !important;
+}
+.em_divider_space {
+    padding:40px 30px 0px !important;
+}
+.em_side25 {
+    width: 18px !important;
+}
+.em_h25 {
+    height: 25px!important;
+}
+.em_center {
+    text-align: center !important;
+}
+.em_hauto {
+    height: auto !important;
+}
+.em_padd {
+    padding: 8px 5px 0px !important;
+}
+.em_padd18 {
+    padding: 0px 18px 0px !important;
+}
+.em_h32 {
+    height: 32px !important;
+}
+.em_h37 {
+    height: 37px!important;
+}
+.em_h66 {
+    height: 64px!important;
+}
+.em_h20 {
+    height: 20px!important;  
+}
+.em_h2 {
+    height: 25px !important;
+}
+.em_h3 {
+    height: 28px !important;
+}
+.em_product_img_w2 {
+    width: 210px !important;
+    padding-right:15px !important;
+}
+.em_express_and_warranty_w2 {
+    display: block !important;
+}
+.em_w25 {
+    width: 50px !important;
+}
+.em_w15 {
+    width: 15px !important;
+}
+.em_w19 {
+    width: 19px !important;
+}
+.em_w18 {
+    width: 18px !important;
+}
+.em_w50 {
+    width: 60px !important;
+}
+.em_w136 {
+    width: 136px !important;
+}
+.em_f9 {
+    font-size: 9px!important;
+    line-height: 12px!important;
+}
+.em_f14 {
+    font-size: 14px!important;
+    height: 38px !important;
+}
+.em_f14 a {
+    font-size: 14px!important;
+    line-height: 38px !important;
+}
+.em_f38 {
+    font-size: 38px!important;
+    line-height: 43px!important;
+}
+.em_c_wi {
+    width: 169px !important;
+}
+.em_c_wi175 {
+    width: 175px !important;
+}
+.em_w49 {
+    width: 49% !important;
+}
+.em_w48 {
+    width: 48% !important;
+}
+.em_w40 {
+    width: 32% !important;
+}
+.em_padd0 {
+    padding: 0px 15px 27px !important;
+}
+.em_padd1 {
+    padding: 0px 55px 33px !important;
+}
+.em_padd2 {
+    padding: 0px 55px 29px !important;
+}
+.em_pb18 {
+    padding-bottom: 12px !important;
+}
+.em_pb41 {
+    padding-bottom: 48px !important;
+}
+ .em_bod{border-radius: 5px !important;}
+.em_pp7 {
+    padding-bottom: 66px !important;
+}
+}
+
+@media only screen and (max-width:480px) {
+.em_w25 {
+    width: 40px !important;
+}
+.em_w50 {
+    width: 50px !important;
+}
+.em_side1 {
+    width: 100px!important;
+}
+}
+
+@media screen and (max-width:374px) {
+.em_font13 {
+    font-size: 13px !important;
+    line-height: 16px !important;
+}
+.em_side1 {
+    width: 115px!important;
+}
+.em_w25 {
+    width: 25px !important;
+}
+.em_w50 {
+    width: 20px !important;
+}
+
+.em_f38 {
+    font-size: 32px!important;
+    line-height: 37px!important;
+}
+.em_padd1 {
+    padding: 0px 20px 33px !important;
+}
+.em_padd2 {
+    padding: 0px 20px 29px !important;
+}
+}
+
+@media screen and (prefers-color-scheme:dark) {
+.em_text_color {
+    color: #ffffff!important;
+}
+.em_text_color a {
+    color: #ffffff!important;
+}
+.em_grey_bg {
+    background-color: #2e2e2e !important;
+}
+.em_cta {
+    background-color: #2e2e2e !important;
+    border: 1px solid #ffffff !important;
+}
+.em_dark_bg {
+    background-color: #1E1E1E !important;
+}
+.em_grey_bg {
+    background-color: #1E1E1E !important;
+}
+.em_full_wrap {
+    background-color: #000000 !important;
+}
+.em_dm_logo {
+    /*content: url(http://drm.arcteryx.com/Trigger-Emails/Welcome-Email-1/arc-logo-white.png) !important;
+    width: 108px !important;*/
+    content: url(http://drm.arcteryx.com/Trigger-Emails/Welcome-Email-1/arc-logo-white.png) !important;
+    width: 108px !important;
+    height: auto !important;
+}
+}
+[data-ogsc] .em_dm_logo {
+    /*content: url(http://drm.arcteryx.com/Trigger-Emails/Welcome-Email-1/arc-logo-white.png) !important;
+    width: 108px !important;*/
+    content: url(http://drm.arcteryx.com/Trigger-Emails/Welcome-Email-1/arc-logo-white.png) !important;
+    width: 108px !important;
+    height: auto !important;
+}
+</style>
+<!--[if (gte mso 9)|(IE)]>   <style type="text/css">     body, table, td, span, a, p { font-family:Arial, sans-serif !important; }   </style>   <![endif]-->
+  
+</head>
+<body bgcolor="#ffffff" class="em_dark_bg em_body" style="margin:0px auto; padding:0px; background-color:#ffffff;">
+
+<!--==Global Preheader==-->  
+<table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+ <td align="center" valign="top">
+  <table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table em_dark" style="width:600px; table-layout:fixed;" bgcolor="#f9f9f6">
+  <tr>
+   <td align="left" valign="top" class="em_blk em_center" style=" font-family:Arial, sans-serif; font-size:0px; line-height:0px; color:#ffffff;">   Shop this week\u2019s most wanted.&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+   </td>
+  </tr>
+  </table>
+ </td>
+</tr>
+</table></td></tr></table>
+<!--//Global Preheader//-->  
+  
+<!--==Global Header==-->  
+<table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- == Header Section == -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+  <tr>
+    <td align="center" valign="top"><table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+        <!--PRE-HEADER SECTION-->
+        <tr>
+          
+<td align="left" valign="top" class=" em_blk em_center" style=" font-family:Arial, sans-serif; font-size:0px; line-height:0px;
+ color:#ffffff;">&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
+&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;</td>
+        </tr>
+        
+        <!--//PRE-HEADER SECTION--> 
+        
+        <!--HEADER SECTION-->
+        <tr>
+          <td align="center" valign="top"><table role="presentation" width="600" border="0" cellspacing="0" cellpadding="0" align="center" style="width:600px;" class="em_wrapper">
+              <tr>
+                <td width="35" style="width:35px;" class="em_side25"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                <td align="center" valign="top"><table role="presentation" width="530" border="0" cellspacing="0" cellpadding="0" align="center" style="width:530px;" class="em_wrapper">
+                    <tr>
+                      <td height="25" style="height:25px;" class="em_h35"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                    </tr>
+                    <tr>
+                      <td align="center" valign="top"><table role="presentation" width="530" border="0" cellspacing="0" cellpadding="0" align="center" style="width:530px;" class="em_wrapper">
+                          <tr>
+                            <td valign="bottom" align="center"><table role="presentation" width="110" style="width: 110px;" border="0" cellspacing="0" cellpadding="0" align="left">
+                                <tr>
+                                  <td align="left" valign="bottom" style="padding-bottom:2px;" class="em_pbottom3 em_dm_logo"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dNLDnZvCxNsHRIBg1nj5NYTviyfcKF0m9pUr0l5A_UEurUiGnW7uGXM_BdLJFTu2ObuvFN_fiJAEAzvdgFf9N1dCZ59aMF50d9NrgT"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/Logo-Assets/arc-logo-stroke.png" width="110" alt="Arc'teryx" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:110px;display:block;color:#000000;" border="0"></a></td>
+                                </tr>
+                              </table></td>
+                            <td width="178" style="width:178px;" class="em_side2"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                            <td class="em_text_color em_blk" align="right" valign="bottom" style="font-family:'helvetica-now-display', Arial, sans-serif; font-size:16px;line-height:18px;color:#000000;font-weight:bold; white-space: nowrap;"><p class="em_text_color em_blk" align="right" valign="bottom" style="font-family:'helvetica-now-display', Arial, sans-serif; font-size:16px;line-height:18px;color:#000000;font-weight:bold; white-space: nowrap;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dOe7hRMjSIjwSUVxF1Ks639Nh9Qm1jGFoOrO1XtWLQ8pI1KXwXlq_6lFv1AoyBOjAKssQCbNVPkJO_GcNFamgI7IAZOqK9dQ23b4-I"  target="_blank" style="text-decoration:none;color:#000000;">WOMEN'S</a></p></td>
+                            <td width="13" style="width:13px;" class="em_side1"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                            <td class="em_text_color em_blk" align="right" valign="bottom" style=" font-family:'helvetica-now-display', Arial, sans-serif; font-size:16px;line-height:18px;color:#000000;font-weight:bold; white-space: nowrap;"><p class="em_text_color em_blk" align="right" valign="bottom" style=" font-family:'helvetica-now-display', Arial, sans-serif; font-size:16px;line-height:18px;color:#000000;font-weight:bold; white-space: nowrap;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dPMdl4sFda0RwnbLCOQDTpPr_SpEcqqt_4jYITxgo4plI7fy6cIT6sxg9eKpb9ridYaRXyWpEFZXjeBHFFN4l60QRGh9DoRmYd58zL"  target="_blank" style="text-decoration:none;color:#000000;">MEN'S</a></p></td>
+                          </tr>
+                        </table></td>
+                    </tr>
+                    <tr>
+                      <td height="25" style="height:25px;" class="em_h30"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                    </tr>
+                  </table></td>
+                <td width="35" style="width:35px;" class="em_side25"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+            </table></td>
+        </tr>
+        <!--//HEADER SECTION-->
+        
+      </table></td>
+  </tr>
+</table>
+<!-- == //Header Section == --> </td></tr></table>
+<!--//Global Header//-->    
+
+<!--==Email Content==-->    
+<table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - HERO IMAGE BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top"><table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table em_grey_bg" style="width:600px; table-layout:fixed;" bgcolor="#ffffff">
+<tr>
+<td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr><td align="center" valign="top" class="em_hide"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dQZitC7v47kPbelFwPrLv9pmVDKUyB5JMkmnrDBfpu7_ICkrOssj3zSjp3qP265zezwORpNr1ZdhoIxGGHQjaU7ot_BVEFmPy0VIGX"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-hero-dsk-en.jpg" alt="Top gear this week" width="600" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td></tr>
+<!--[if !mso 9]><!-->
+<tr>
+<td height="0"><div class="em_hide_desktop" style="display:none;width:0;overflow:hidden;max-height:0!important">
+<table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" valign="top" class="em_full_img1"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dRqTlCaMVycU8Fi_0WA-djx6R1uvPTyZKGhYHrxg6gBpIwrzhy-awo1S5cWCJ82R4X_Uyrk4bJiLf9-LAZYz-rLQw8DuNXt-UlcCOh"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-hero-mob-en.jpg" width="380" alt="Top gear this week" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+</table></td>
+</tr>
+</table>
+</div></td>
+</tr>
+<!--<![endif]-->
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - HERO IMAGE BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - MAIN BODY TEXT BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table em_grey_bg" style="width:600px; table-layout:fixed;" bgcolor="#ffffff">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<!-- Main Body Text -->
+<tr>
+<td class="em_dark_bg" align="center" valign="top" bgcolor="#ffffff">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td width="55" style="width: 55px;" class="em_w15"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td class="em_text_color em_defaultlink" align="center" valign="top" style="color: #000000; font-family: 'helvetica-now-display', Arial, sans-serif; font-size:15px; line-height:22px;">
+<p class="em_text_color em_defaultlink" align="center" valign="top" style="color: #000000; font-family: 'helvetica-now-display', Arial, sans-serif; font-size:16px; line-height:22px;">Trusted by guests, tested by conditions \u2014 these are the most popular pieces in the mountains right now.</p>
+</td>
+</tr>
+</table>
+</td>
+<td width="55" style="width: 55px;" class="em_w15"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - MAIN BODY TEXT BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - 2 CTA - MOBILE STACKED BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" width="600" border="0" cellspacing="0" cellpadding="0" style="width: 600px;" align="center" class="em_wrapper em_dark_bg">
+<tr>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td width="24" style="width: 24px;" class="em_side25A"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td align="center" valign="top">
+<table border="0" width="100%" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<th align="center" valign="top" width="272" class="em_clear" style="width: 272px;">
+<table role="presentation" class="em_wrapper" width="272" style="width: 272px;" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" height="52" bgcolor="#1A1A1A" valign="middle" class="em_defaultlink em_cta_text_color em_cta" style="font-family:'Helvetica Now Display', Arial, sans-serif; height: 52px; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;">
+<p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dSKMuCxUNs7edxj2NlaWd8FnAgpJaXzLk-VnNwYaDdzpoikLDsorpbzpqwWlH9sQb0hK9PGU7i1yZjF72wASMMj01sOVW4OJROVifb" target="_blank" style="text-decoration: none; color: #ffffff; display:block;line-height:52px;" >Shop women's</a></p>
+</td>
+</tr>
+</table>
+</th>
+<th class="em_hide" width="8" style="width:8px;line-height: 0px;font-size: 0px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" alt="" width="1" height="1" border="0" style="display:block"></th>
+<th align="center" valign="top" width="272" class="em_clear em_ptop8" style="width: 272px;">
+<table role="presentation" class="em_wrapper" width="272" style="width: 272px;" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" height="52" bgcolor="#1A1A1A" valign="middle" class="em_defaultlink em_cta_text_color em_cta" style="font-family:'Helvetica Now Display', Arial, sans-serif; height: 52px; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;">
+<p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dT2xySq40w1NSaJnI14bbXaovZkvOJkgbtO60ti5W8M0gfhEpKvRbouxYA31yxybsR0JB-OXVCxEfL9i9Of3vFg2KfgQPmO3jqC7tt" target="_blank" style="text-decoration: none; color: #ffffff; display:block;line-height:52px;" >Shop men's</a></p>
+</td>
+</tr>
+</table>
+</th>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+<td width="24" style="width: 24px;" class="em_side25A"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - 2 CTA - MOBILE STACKED BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - NEW THIS WEEK - IMAGE + DESCRIPTION BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<!-- Image -->
+<tr>
+<td align="center" valign="top" class="em_hide"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dUskggyxr0PEaAv01-VPzOB84YFiLuFJ1wcrERCSRPNZre0GcB-S4vEZAqefeP2T3T_J5JFCBR-H83uEDNSHm_qSg7K8siYRhCCL9d"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-p1-nam_v1.jpg" alt="Altira Insulated Cropped Jacket" width="600" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+<!--[if !mso 9]><!-->
+<tr>
+<td height="0">
+<div class="em_hide_desktop" style="display:none;width:0;overflow:hidden;max-height:0!important">
+<table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td align="center" valign="top" class="em_full_img1"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dVouX7UXDgvPadGezcLSLrQgyqwyRnL0wnrdOb2ofkgeYETAAUvSRM7Q-e6rrQ5q8wrnAJWnN8Igjof7dynYjLh8Ed3NfNWVXNlOk0"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-p1-nam_v1.jpg" width="380" alt="Altira Insulated Cropped Jacket" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+<!--<![endif]-->
+<!-- Product Description -->
+<tr>
+<td align="center" valign="top" style="padding: 20px 20px 0px 20px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td width="70%" class="em_text_color em_defaultlink em_clear" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-bottom:10px;">
+<h1 class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; line-height:22px; font-weight: 600;">Altira Insulated Cropped Jacket</h1>
+</td>
+<td width="30%" class="em_text_color em_defaultlink em_hide" align="right" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-bottom:10px;">
+<h1 class="em_text_color em_defaultlink" align="right" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; line-height:22px; font-weight: 600;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dWJymEdAJiu5dVUasM-MGkGhPINUolHqtXJyytFjuRC8H6NJYS4vHiMDcUzjjpJfeOOcIEXqJUQU6yFa9mks7W8cN7wJKirL2lk6mE" target="_blank" style="text-decoration:underline;color:#1A1A1A;" >Shop&nbsp;now</a></span></h1>
+</td>
+</tr>
+<tr>
+<td width="70%" class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px;">
+<p class="em_text_color em_defaultlink" align="left" valign="top" style="color: #6E6C6C; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; line-height:22px; font-weight: 400;">Cropped, insulated hardshell jacket for low-output hikes in chilly conditions.</p>
+</td>
+</tr>
+<tr>
+<td width="100%" class="em_text_color em_defaultlink em_clear" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-top:10px; display: none;">
+<h1 class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; line-height:22px; font-weight: 600;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dX5x0llWV94YV3DuzcCteD7At5pzCj7X8KGVCKBDFmKKUwOgAvJ88Bk44HfrEHWgBvKfyL0oj3Qzrsgfc78p1RIO_-L825SlYXguJe" target="_blank" style="text-decoration:underline;color:#1A1A1A;" >Shop&nbsp;now</a></span></h1>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - NEW THIS WEEK - IMAGE + DESCRIPTION BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - NEW THIS WEEK - IMAGE + DESCRIPTION BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<!-- Image -->
+<tr>
+<td align="center" valign="top" class="em_hide"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dYH3vhMGbAzX3S6kvbdDmI8svVbutYo4GIXoI2LgkzI0q03KdcaQIWviR17KBD6fL9tRccZvKpT2yv-zREdqVHzBvw-Of_RmMzV1bl"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-p2-nam_v1.jpg" alt="Gamma MX Jacket" width="600" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+<!--[if !mso 9]><!-->
+<tr>
+<td height="0">
+<div class="em_hide_desktop" style="display:none;width:0;overflow:hidden;max-height:0!important">
+<table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td align="center" valign="top" class="em_full_img1"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dZj9EcAx3Dpc2FT3_uGM3fppXbtmdLBHKcaU02adHB1vtSzYXtqSPnYOQyEy3MYhVB5ZWnMFQvSmcNALeBp84YFwkVgCgzUTi52w-1"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-p2-nam_v1.jpg" width="380" alt="Gamma MX Jacket" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+<!--<![endif]-->
+<!-- Product Description -->
+<tr>
+<td align="center" valign="top" style="padding: 20px 20px 0px 20px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td width="70%" class="em_text_color em_defaultlink em_clear" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-bottom:10px;">
+<h1 class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; line-height:22px; font-weight: 600;">Gamma MX Jacket</h1>
+</td>
+<td width="30%" class="em_text_color em_defaultlink em_hide" align="right" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-bottom:10px;">
+<h1 class="em_text_color em_defaultlink" align="right" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; line-height:22px; font-weight: 600;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09da_fDdje_-PALviVZ97owg2vM40WDAevLukhmHp9gZnyQIiTk4jlltYu7pBlLUwQubh1Xo0l6YYMKq14tcxTImjV-tIk1Cn9WmRhMu" target="_blank" style="text-decoration:underline;color:#1A1A1A;" >Shop&nbsp;now</a></span></h1>
+</td>
+</tr>
+<tr>
+<td width="70%" class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px;">
+<p class="em_text_color em_defaultlink" align="left" valign="top" style="color: #6E6C6C; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; line-height:22px; font-weight: 400;">Warm, highly durable softshell jacket for mixed conditions.</p>
+</td>
+</tr>
+<tr>
+<td width="100%" class="em_text_color em_defaultlink em_clear" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-top:10px; display: none;">
+<h1 class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; line-height:22px; font-weight: 600;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09db8rhFsxDEbTiNlkPRujZpRr2bx28Ens_4GsfeaBZw87g9VX0BuwesgTVXdNiFJqmrRFDrvATOe3CI7zRJEgUn0afQ4lTKsDOcdg9q" target="_blank" style="text-decoration:underline;color:#1A1A1A;" >Shop&nbsp;now</a></span></h1>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - NEW THIS WEEK - IMAGE + DESCRIPTION BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - NEW THIS WEEK - IMAGE + DESCRIPTION BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<!-- Image -->
+<tr>
+<td align="center" valign="top" class="em_hide"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dc5y4ybUMisbDP0syP7n5AsWidP9-LYGESbwTcAYQXOE0Jrnv0A6CZJhn-EafAgoCwxB-dMa1k2DyEHqJqkI3OI6NvJRpHHVy4Ceks"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-p3-nam.jpg" alt="Kopec 2 Low GTX Shoe" width="600" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+<!--[if !mso 9]><!-->
+<tr>
+<td height="0">
+<div class="em_hide_desktop" style="display:none;width:0;overflow:hidden;max-height:0!important">
+<table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td align="center" valign="top" class="em_full_img1"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dd_-Tvy1vCwB7Ht5MTInrhVBrhXQf1FPm-uj6mguz3gvnV6Aon3Uxg2nD3drpnkOgfwKxLplpHhuhcskX3NbDuOHniXX0MeYSf6Jj5"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/trending-sept-p3-nam.jpg" width="380" alt="Kopec 2 Low GTX Shoe" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+<!--<![endif]-->
+<!-- Product Description -->
+<tr>
+<td align="center" valign="top" style="padding: 20px 20px 0px 20px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td width="70%" class="em_text_color em_defaultlink em_clear" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-bottom:10px;">
+<h1 class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; line-height:22px; font-weight: 600;">Kopec 2 Low GTX Shoe</h1>
+</td>
+<td width="30%" class="em_text_color em_defaultlink em_hide" align="right" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-bottom:10px;">
+<h1 class="em_text_color em_defaultlink" align="right" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; line-height:22px; font-weight: 600;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09deSo2RpuxIkiFHWAocj01o6ZUSBbsyGSZNQL1VYsW3TPb6-UwabCH_fhDwE94hT7401jF_yCbf9dSL-mfvSFS2Tcb69JEA_pTRmLBy" target="_blank" style="text-decoration:underline;color:#1A1A1A;" >Shop&nbsp;now</a></span></h1>
+</td>
+</tr>
+<tr>
+<td width="70%" class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px;">
+<p class="em_text_color em_defaultlink" align="left" valign="top" style="color: #6E6C6C; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; line-height:22px; font-weight: 400;">Waterproof, lightweight yet sturdy shoe for day hikes.</p>
+</td>
+</tr>
+<tr>
+<td width="100%" class="em_text_color em_defaultlink em_clear" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:18px; font-weight: 400; line-height:22px; padding-top:10px; display: none;">
+<h1 class="em_text_color em_defaultlink" align="left" valign="top" style="color: #1A1A1A; font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; line-height:22px; font-weight: 600;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dfyAiFhaoNFFNpmjvOxyyEkvmcEFBsIUsntI33lJHItgOMuHD6RwpCZqOQANRvpHRnx-9nPEf7IsmHNB-aKnsXQQ5kS8BM8g7_Z8CV" target="_blank" style="text-decoration:underline;color:#1A1A1A;" >Shop&nbsp;now</a></span></h1>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - NEW THIS WEEK - IMAGE + DESCRIPTION BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - FULL WIDTH IMAGE BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table em_grey_bg" style="width:600px; table-layout:fixed;" bgcolor="#ffffff">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" valign="top" class="em_hide"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dgnsZutuar7W38VRBOPIWdFWZHA-1IrE9PGf3Qi9NWvlumkwWf-a87gEd7TmnxP5BBUeW7Qu9djWTPgE3PoRCFxDHBs3zGtjWLVrIm"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/shells-secondary-dsk-en.jpg" alt="Pinnacle Shells" width="600" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+<!--[if !mso 9]><!-->
+<tr>
+<td height="0">
+<div class="em_hide_desktop" style="display:none;width:0;overflow:hidden;max-height:0!important">
+<table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" valign="top" class="em_full_img1"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dhnVt6lphsQDdvQgNiDxkN6_LpEteMqjn4myFRNMzkYykGVIyAx3P21s3u2cs65iCGKMHkV4ImE7Sx_YN_dIqK4ZzyOcwJPT4NfqUZ"  target="_blank" style="text-decoration:none;"><img src="http://drm.arcteryx.com/2026/F26/Outdoor/Trending-this-Week/September/shells-secondary-mob-en.jpg" width="380" alt="Pinnacle Shells" style="font-family:Arial,sans-serif;font-size:14px;line-height:20px;max-width:600px;display:block;color:#000000;" border="0"></a></td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+<!--<![endif]-->
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - FULL WIDTH IMAGE BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - MAIN BODY TEXT BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table em_grey_bg" style="width:600px; table-layout:fixed;" bgcolor="#ffffff">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<!-- Main Body Text -->
+<tr>
+<td class="em_dark_bg" align="center" valign="top" bgcolor="#ffffff">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td width="55" style="width: 55px;" class="em_w15"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td class="em_text_color em_defaultlink" align="center" valign="top" style="color: #000000; font-family: 'helvetica-now-display', Arial, sans-serif; font-size:15px; line-height:22px;">
+<p class="em_text_color em_defaultlink" align="center" valign="top" style="color: #000000; font-family: 'helvetica-now-display', Arial, sans-serif; font-size:16px; line-height:22px;">The foundation of any alpine kit, obsessively designed to provide the most advanced protection in the mountains.</p>
+</td>
+</tr>
+</table>
+</td>
+<td width="55" style="width: 55px;" class="em_w15"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - MAIN BODY TEXT BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- START - 2 CTA - MOBILE STACKED BLOCK -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;">
+<tr>
+<td align="center" valign="top">
+<table role="presentation" width="600" border="0" cellspacing="0" cellpadding="0" style="width: 600px;" align="center" class="em_wrapper em_dark_bg">
+<tr>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td width="24" style="width: 24px;" class="em_side25A"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+<td align="center" valign="top">
+<table width="100%" border="0" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<td align="center" valign="top">
+<table border="0" width="100%" cellspacing="0" cellpadding="0" align="center" role="presentation">
+<tr>
+<th align="center" valign="top" width="272" class="em_clear" style="width: 272px;">
+<table role="presentation" class="em_wrapper" width="272" style="width: 272px;" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" height="52" bgcolor="#1A1A1A" valign="middle" class="em_defaultlink em_cta_text_color em_cta" style="font-family:'Helvetica Now Display', Arial, sans-serif; height: 52px; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;">
+<p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09diCh_ktvARpABwhzkMVK1JzTMxtBrAkPQmel6VyR5h3BNzdWbW1h61QsPfiowdaAqiw0yC54pJGM53buJRpJvtvdESf3OvKVouBwzv" target="_blank" style="text-decoration: none; color: #ffffff; display:block;line-height:52px;" >Shop women's</a></p>
+</td>
+</tr>
+</table>
+</th>
+<th class="em_hide" width="8" style="width:8px;line-height: 0px;font-size: 0px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" alt="" width="1" height="1" border="0" style="display:block"></th>
+<th align="center" valign="top" width="272" class="em_clear em_ptop8" style="width: 272px;">
+<table role="presentation" class="em_wrapper" width="272" style="width: 272px;" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td align="center" height="52" bgcolor="#1A1A1A" valign="middle" class="em_defaultlink em_cta_text_color em_cta" style="font-family:'Helvetica Now Display', Arial, sans-serif; height: 52px; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;">
+<p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'Helvetica Now Display', Arial, sans-serif; font-size:16px; color:#ffffff; font-weight: 700; letter-spacing: 0.2px;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09djnbhXq8FH8gSC8HYLoGxn4cZ8mCwKXY1m1u5GQWdI0It73PXb33IfkgjrRXbHBMAmN101IJgzE-SahjaYGjCqprTzdVWvHISJGMtj" target="_blank" style="text-decoration: none; color: #ffffff; display:block;line-height:52px;" >Shop men's</a></p>
+</td>
+</tr>
+</table>
+</th>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+<td width="24" style="width: 24px;" class="em_side25A"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+<!-- END - 2 CTA - MOBILE STACKED BLOCK --></td></tr></table><table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_full_wrap" style="table-layout:fixed;"><tr>
+<td align="center" valign="top">
+<table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px; table-layout:fixed;">
+<tr>
+<td align="center" valign="top" class="em_dark_bg">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" align="center">
+<tr>
+<td height="40" style="height: 40px;">
+<img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" border="0" style="display:block;">
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table></td></tr></table>
+<!--//Email Content//-->  
+  
+<!--==Global Footer==-->  
+<table cellpadding="0" cellspacing="0" width="100%" role="presentation" style="min-width: 100%; " class="stylingblock-content-wrapper"><tr><td class="stylingblock-content-wrapper camarker-inner">
+<!-- == Footer Section == -->
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" class="em_dark_bg em_full_wrap" bgcolor="#ffffff" style="table-layout:fixed;">
+  <tr>
+    <td align="center" valign="top"><table role="presentation" align="center" width="600" border="0" cellspacing="0" cellpadding="0" class="em_main_table" style="width:600px;" bgcolor="#333333">
+        <tr>
+          <td align="center" valign="top"><table role="presentation" align="center" style="width:600px;" class="em_wrapper" width="600" border="0" cellspacing="0" cellpadding="0" bgcolor="#333333">
+              <tr>
+                <td height="12" style="height:12px; font-size:0px; line-height:0px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+              <tr>
+                <td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td class="em_fw15" width="48" style="width:48px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                      <td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                          <tr>
+                            <td align="center" valign="top"><table role="presentation" class="em_wrapper" align="center" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                  <th align="center" valign="top" class="em_clear"><table role="presentation" align="left" style="width:250px;" class="em_wrapper" width="250" border="0" cellspacing="0" cellpadding="0">
+                                      <tr>
+                                        <td align="center" valign="top"><table role="presentation" align="center" class="em_wrapper" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                              <td align="center" valign="top" style="width:123px;" width="123" class="em_wid49"><table role="presentation" align="center" style="width:123px;" width="123" class="em_wrapper" border="0" cellspacing="0" cellpadding="0">
+                                                  <tr>
+                                                    <td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                        <tr>
+                                                          <td class="em_fbd" align="center" valign="middle" style="border: 2px solid #FFFFFF"><table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                              
+                                                                <tr>
+                                                                  <td align="center" height="86" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif; height: 86px; font-size:14px; color:#F9F9F6;font-weight: 700;"><h1 align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif;  font-size:14px; color:#F9F9F6; font-weight: 700;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dkWraQoPVryjcyP0xHJQ-tOg6pdZ3xQBGRFg6N_X9OmcEh2MRO7_A38J-bnImLiWNqVesioHQ_ywdC2yAc6Q0ZYx240teoL5XSVFXn" target="_blank" style="text-decoration: none; color: #F9F9F6; display:block;line-height:21px;" >Find <br>a store</a></h1></td>
+                                                                </tr>
+                                                              
+                                                            </table></td>
+                                                        </tr>
+                                                      </table></td>
+                                                  </tr>
+                                                </table></td>
+                                              <td width="4" style="width:4px;" class="em_wid1"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                                              <td align="center" valign="top" style="width:123px;" width="123" class="em_wid49"><table role="presentation" align="center" style="width:123px;" width="123" class="em_wrapper" border="0" cellspacing="0" cellpadding="0">
+                                                  <tr>
+                                                    <td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                        <tr>
+                                                          <td class="em_fbd" align="center" valign="middle" style="border: 2px solid #FFFFFF"><table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                              
+                                                                <tr>
+                                                                  <td align="center" height="86" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif; height: 86px;   font-size:14px; color:#F9F9F6;font-weight: 700;"><p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif;  font-size:14px; color:#F9F9F6; font-weight: 700;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dlxNGeEi5DNlqNoAjNK6TvzlCxmCSwMrfhrlOwl0JDue5qPFtT_lgswQ9VWPP1cLJgDSMxRlzPPZYtpeN2tW8xKUbXLHfUm_GJGMIy" target="_blank" style="text-decoration: none; color: #F9F9F6; display:block;line-height:21px;" >Shop <br> footwear</a></p></td>
+                                                                </tr>
+                                                              
+                                                            </table></td>
+                                                        </tr>
+                                                      </table></td>
+                                                  </tr>
+                                                </table></td>
+                                            </tr>
+                                          </table></td>
+                                      </tr>
+                                    </table></th>
+                                  <th width="4" style="width:4px;line-height: 0px; font-size: 0px;" class="em_clear em_h4"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></th>
+                                  <th align="center" valign="top" class="em_clear"><table role="presentation" align="left" style="width:250px;" class="em_wrapper" width="250" border="0" cellspacing="0" cellpadding="0">
+                                      <tr>
+                                        <td align="center" valign="top"><table role="presentation" align="center" class="em_wrapper" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                            <tr>
+                                              <td align="center" valign="top" style="width:123px;" width="123" class="em_wid49"><table role="presentation" align="center" style="width:123px;" width="123" class="em_wrapper" border="0" cellspacing="0" cellpadding="0">
+                                                  <tr>
+                                                    <td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                        <tr>
+                                                          <td class="em_fbd" align="center" valign="middle" style="border: 2px solid #FFFFFF"><table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                              
+                                                                <tr>
+                                                                  <td align="center" height="86" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif; height: 86px; font-size:14px; color:#F9F9F6;font-weight: 700;"><p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif;  font-size:14px; color:#F9F9F6; font-weight: 700;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dmPsI3up_8KbQpgTC1mAz4vmUDJW4G1xCzAoqAvtHUrcjlgEuUh865enHroa4rpNarr5wkC29OhwAJRCp3kG_AsUN0-rHy8KvosB_a" target="_blank" style="text-decoration: none; color: #F9F9F6; display:block;line-height:21px;" >Shop <br> new arrivals</a></p></td>
+                                                                </tr>
+                                                              
+                                                            </table></td>
+                                                        </tr>
+                                                      </table></td>
+                                                  </tr>
+                                                </table></td>
+                                              <td width="4" style="width:4px;" class="em_wid1"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                                              <td align="center" valign="top" style="width:123px;" width="123" class="em_wid49"><table role="presentation" align="center" style="width:123px;" width="123" class="em_wrapper" border="0" cellspacing="0" cellpadding="0">
+                                                  <tr>
+                                                    <td align="center" valign="top"><table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                        <tr>
+                                                          <td class="em_fbd" align="center" valign="middle" style="border: 2px solid #FFFFFF"><table role="presentation" align="center" width="100%" border="0" cellspacing="0" cellpadding="0">
+                                                              
+                                                                <tr>
+                                                                  <td align="center" height="86" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif; height: 86px;   font-size:14px; color:#F9F9F6;font-weight: 700;"><p align="center" valign="middle" class="em_defaultlink em_cta_text_color" style="font-family:'helvetica-now-display', Arial, sans-serif;  font-size:14px; color:#F9F9F6; font-weight: 700;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dn-xBp6QD1kg2p7VZh7nsEeYvXPFN7OcBBkVGdo1kOnaee50ssDifALdxyiVmSiJcjzNVQBiOE-WMPv3bOEKICZu8YeQzvgMHRi1Z_" target="_blank" style="text-decoration: none; color: #F9F9F6; display:block;line-height:21px;" >ReBIRD&trade;<br>RESALE</a></p></td>
+                                                                </tr>
+                                                              
+                                                            </table></td>
+                                                        </tr>
+                                                      </table></td>
+                                                  </tr>
+                                                </table></td>
+                                            </tr>
+                                          </table></td>
+                                      </tr>
+                                    </table></th>
+                                </tr>
+                              </table></td>
+                          </tr>
+                          <tr>
+                            <td height="40" style="height:40px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                          </tr>
+                          <tr>
+                            <td align="center" valign="top"><table role="presentation" align="center" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                  <td align="center" valign="top"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09doGnmqU83QFSQBAeDNr7jx3x28KlAiYlfrWDPOOf13gGEjhBpLUYWhxX1cV9OPnkxL6pyeX95-BOSOqGLUAY8VIOenhuweUR8" target="_blank" style="text-decoration:none;color:#000000;" ><img src="http://drm.arcteryx.com/Footers/android_app.png" width="105" alt="Android App" border="0" style="display:block;max-width:105px;font-family:'URW DIN', Arial, sans-serif; font-size:9px;line-height:13px;color:#000000;"></a></td>
+                                  <td width="35" style="width:35px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                                  <td align="center" valign="top"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dpXxGtal3kZ40gxRJ7CsP6B4hhw9Vcmn9eq3M4gGvHo_cUvEGvjLHNUhiePbhv0l5PqzEKHnlyJ2Ck3yUAsQtLx9K4kbHKdIA" target="_blank" style="text-decoration:none;color:#000000;" ><img src="http://drm.arcteryx.com/Footers/ios_app.png" alt="iOS App" width="62" style="display:block;max-width:62px;font-family:'URW DIN', Arial, sans-serif; font-size:9px;line-height:13px;color:#000000;" border="0"></a></td>
+                                </tr>
+                              </table></td>
+                          </tr>
+                          <tr>
+                            <td height="32" style="height:32px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                          </tr>
+                          <tr>
+                            <td align="center" valign="top"><table role="presentation" align="center" border="0" cellspacing="0" cellpadding="0">
+                                <tr>
+                                  <td align="center" valign="top"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dqnBIjD55gY6Zkf7zzgDAnRzwxv993Stn5ZrNT2C546h5ZUmf2islCWqQMM0g3yimgitbaAfHTyQz5hHqSNUmODDyQZ_032ew" target="_blank" style="text-decoration:none;color:#000000;" ><img src="https://drm.arcteryx.com/Footers/insta_icon.png" alt="INSTA" width="16" style="display:block;max-width:16px;font-family:'URW DIN',Arial,sans-serif;font-size:9px;line-height:13px;color:#000000;" border="0"></a></td>
+                                  <td width="32" style="width:32px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                                  <td align="center" valign="middle"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dr1wK_43_5zRRUlKFk8T45YAbPi9Rk1ewbt76_RM_Yj3d56YrC4ZHQPVq5SHdh-56aKFrW1w8KMhfOFVjC8HAeTrIDAcQQpDM" target="_blank" style="text-decoration:none;color:#000000;" ><img src="http://drm.arcteryx.com/Footers/yt_icon.png" alt="YT" width="17" style="display:block;max-width:17px;font-family:'URW DIN',Arial,sans-serif;font-size:9px;line-height:13px;color:#000000;" border="0"></a></td>
+                                  <td width="32" style="width:32px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                                  <td align="center" valign="top"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dsbaOVuEGkxPvuhUXrBAhWkMDaTYaaGiehsIwUf0Sb69Z1lsibKcU874A9rj6VQnrTNsflKywXIXa5K17vN2tcKei8Mt53iKg" target="_blank" style="text-decoration:none;color:#000000;" ><img src="http://drm.arcteryx.com/Footers/fb_icon.png" alt="FB" width="9" style="display:block;max-width:9px;font-family:'URW DIN',Arial,sans-serif;font-size:9px;line-height:13px;color:#000000;" border="0"></a></td>
+                                  <td width="32" style="width:32px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                                  <td align="center" valign="top"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dt9_UnTgkte67sy48-LxHl95-e5bzxTnaGILcyqolszPYrp9UDa8y8t_awXTz5a63GXFtKiFRWGcsWtJa8fqoHOKETRXgcAwg" target="_blank" style="text-decoration:none;color:#000000;" ><img src="http://drm.arcteryx.com/Footers/tt_icon.png" alt="tt" width="14" style="display:block;max-width:14px;font-family:'URW DIN',Arial,sans-serif;font-size:9px;line-height:13px;color:#000000;" border="0"></a></td>
+                                </tr>
+                              </table></td>
+                          </tr>
+                        </table></td>
+                      <td class="em_fw15" width="48" style="width:48px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+                    </tr>
+                  </table></td>
+              </tr>
+              <tr>
+                <td height="31" style="height:31px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+              <tr>
+                <td height="2" style="height:2px;font-size:0px;line-height:0px;background-color: #f0f0f0" bgcolor="#f0f0f0"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+              <tr>
+                <td height="18" style="height:18px;font-size:0px;line-height:0px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+              <tr>
+                <td class="em_text_color em_aside15" align="center" valign="top" style="font-family:'helvetica-now-display',Arial,sans-serif;font-size:14px;line-height:20px;color:#FFFFFF;font-weight: 700;"><p class="em_text_color" align="center" valign="top" style="font-family:'helvetica-now-display', Arial, sans-serif; font-size:14px;line-height:20px;color:#FFFFFF;font-weight: 700;"><span style="text-decoration:underline;"><a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dvCIV21HUlJA0F4dN2_iscdnwvTkquBTlGZ1oB4bpqMWBizNJmi6bnU11OiXkamrgWuaWiPKdZWWrUeMHgt82lp7_yB4qB1V442Vx9" target="_blank" style="text-decoration:underline;color:#FFFFFF;" >Unsubscribe</a></span>&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;
+<a href="https://click.e.arcteryx.com/?qs=ABB7InYiOjEsImQiOjUwMDZ9AAYAAAAABVFI09dwo-DEatNbcPrdWp5ctacT_jP4tPDSKp_lhr7IoKc0xpcu3WGmw-m9wYY3IFSg7ImzWMs0pil-Vd1Cg8idIr4iS6Gdf_GGdpg" target="_blank" style="text-decoration:underline;color:#FFFFFF;" >Privacy Policy</a></p></td>
+              </tr>
+              <tr>
+                <td height="18" style="height:18px;font-size:0px;line-height:0px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+              <tr>
+                <td class="em_f9 em_defaultlink em_text_color" align="center" valign="top" style="font-family:'helvetica-now-display', Arial, sans-serif;font-size:12px;line-height:18px;color:#FFFFFF;padding:0px 90px;"><p class="em_f9" align="center" valign="top" style="font-family:'helvetica-now-display', Arial, sans-serif; font-size:12px;line-height:18px;color:#FFFFFF;">This message was intended for: <a href="mailto:eddyhu@gmail.com" style="text-decoration:none; color: #ffffff">eddyhu@gmail.com</a> <br>
+                    <br>
+                    To ensure you keep hearing from us, please add <a href="mailto:email@news.arcteryx.com" style="text-decoration: underline; color: #ffffff;font-weight: 700;" alias="mail">email@news.arcteryx.com</a> to your address book. <br>
+                    <br>
+                    ARC\u2019TERYX Equipment, A Division Of Amer &zwnj;Sports&nbsp;Canada&nbsp;Inc.&zwnj; <br>
+                    <span class="em_mob_block em_pf"></span> &zwnj;110-2220&zwnj; &zwnj;Dollarton&zwnj; Hwy, &zwnj;North&zwnj; &zwnj;Vancouver&zwnj;, &zwnj;BC&zwnj;, &zwnj;V7H&nbsp;1A8,&nbsp;Canada&zwnj;</p></td>
+              </tr>
+              <tr>
+                <td height="41" style="height:41px;"><img src="http://drm.arcteryx.com/2018/template/spacer.gif" width="1" height="1" alt="" border="0" style="display:block;"></td>
+              </tr>
+            </table></td>
+        </tr>
+        <tr>
+          <td class="em_dark_bg em_hide" style="line-height:1px;min-width:600px;background-color:#333333;"><img alt="" src="http://drm.arcteryx.com/2018/template/spacer.gif" height="1" width="600" style="max-height:1px;min-height:1px;display:block;width:600px;min-width:600px;" border="0"></td>
+        </tr>
+      </table></td>
+  </tr>
+</table>
+<!-- == //Footer Section == --></td></tr></table>
+<!--//Global Footer//-->    
+<style data-ignore-inlining> 
+@media (prefers-color-scheme: dark) { #_t::before {content:url('https://monnuuck.emltrk.com/v2/monnuuck?rd&i=255079899&t=Gift-Guide-9');}} 
+@media (prefers-color-scheme: light) { #_t::before {content:url('https://monnuuck.emltrk.com/v2/monnuuck?rl&i=255079899&t=Gift-Guide-9');}} 
+@media print{ #_t {background-image:url('https://monnuuck.emltrk.com/v2/monnuuck?p&i=255079899&t=Gift-Guide-9');}} 
+div.OutlookMessageHeader {background-image:url('https://monnuuck.emltrk.com/v2/monnuuck?f&i=255079899&t=Gift-Guide-9')} 
+table.moz-email-headers-table {background-image:url('https://monnuuck.emltrk.com/v2/monnuuck?f&i=255079899&t=Gift-Guide-9')} 
+blockquote #_t {background-image:url('https://monnuuck.emltrk.com/v2/monnuuck?f&i=255079899&t=Gift-Guide-9')} 
+#MailContainerBody #_t {background-image:url('https://monnuuck.emltrk.com/v2/monnuuck?f&i=255079899&t=Gift-Guide-9')} 
+</style><div id="_t"></div>
+<img src="https://monnuuck.emltrk.com/v2/monnuuck?i=255079899&t=Gift-Guide-9" width="1" height="1" border="0" alt="" />
+<img src="https://click.e.arcteryx.com/open.aspx?C3CIO6Z5WQQU3BPI5TQZB6GJUI.60264&d=60264&bmt=0" width="1" height="1" alt="">
+</body>
+</html>
