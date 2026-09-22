@@ -53,20 +53,9 @@ S=$(ls -d /nix/store/*-strace-[0-9]*/bin/strace 2>/dev/null | head -1)
 PARENT_PANE=""
 if [ -n "${SCROLL_TEST_HERDR_BIN:-}" ]; then
   [ -x "$SCROLL_TEST_HERDR_BIN" ] || { echo "no herdr build at $SCROLL_TEST_HERDR_BIN" >&2; exit 3; }
-  # desktop.sh drives hyprctl and spawns a ghostty, and an ssh shell carries no compositor
-  # environment -- hyprctl then prints a non-JSON error, jq spews, and the only symptom is
-  # "window never appeared". Borrow the environment from the desktop ghostty first.
-  if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
-    for __g in $(pgrep -f "[g]hostty.*herdr" 2>/dev/null); do
-      grep -qz "HYPRLAND_INSTANCE_SIGNATURE" /proc/"$__g"/environ 2>/dev/null || continue
-      eval "$(tr '\0' '\n' < /proc/"$__g"/environ \
-        | grep -E "^(WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|DISPLAY|XDG_SESSION_TYPE|GDK_BACKEND)=" \
-        | sed 's/^/export /')"
-      break
-    done
-  fi
-  [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || { echo "no compositor environment to borrow" >&2; exit 3; }
+  # desktop.sh borrows the compositor environment itself at source time.
   . "$(dirname "$(readlink -f "$0")")/desktop.sh"
+  [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || { echo "no compositor environment to borrow" >&2; exit 3; }
   TEST_HERDR_BIN="$SCROLL_TEST_HERDR_BIN"
   TEST_SESSION=${TEST_SESSION:-fpsgate}
   TEST_CLASS=${TEST_CLASS:-dev.fpsgate}

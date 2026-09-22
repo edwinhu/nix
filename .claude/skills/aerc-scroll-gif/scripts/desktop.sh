@@ -5,6 +5,21 @@
 # window — so a check never touches the user's herdr session or keyboard focus.
 # Source it: `. "$(dirname "$(readlink -f "$0")")/desktop.sh"`.
 
+# EVERY function below shells out to hyprctl or spawns a ghostty, and a shell with no compositor
+# environment -- an ssh session, a Stop hook, a cron tick -- makes hyprctl print a non-JSON error
+# that jq then chokes on. The only visible symptom is "window never appeared", which reads as a
+# compositor fault rather than a missing variable, and it silently disabled every gate that sources
+# this file. Borrow the environment from the desktop ghostty once, here, at source time.
+if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+  for __g in $(pgrep -f "[g]hostty.*herdr" 2>/dev/null); do
+    grep -qz "HYPRLAND_INSTANCE_SIGNATURE" /proc/"$__g"/environ 2>/dev/null || continue
+    eval "$(tr '\0' '\n' < /proc/"$__g"/environ \
+      | grep -E "^(WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|DISPLAY|XDG_SESSION_TYPE|GDK_BACKEND)=" \
+      | sed 's/^/export /')"
+    break
+  done
+fi
+
 TEST_HERDR_BIN=${TEST_HERDR_BIN:-/home/eh/nix/.craft/herdr-build/bin/herdr}
 TEST_SESSION=${TEST_SESSION:-aerc-test}
 TEST_CLASS=${TEST_CLASS:-dev.herdr.test}
