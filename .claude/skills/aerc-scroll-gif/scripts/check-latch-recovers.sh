@@ -45,6 +45,20 @@ MIN_RECOVER_SECONDS=${LATCH_MIN_RECOVER_SECONDS:-30}
 # loss to HOLD before asking whether it recovers.
 LOSS_CONFIRM_SECONDS=${LATCH_LOSS_CONFIRM_SECONDS:-10}
 
+# THE RECONNECT DETECTOR, and it is evidence rather than a heuristic. The handshake is the other
+# place direct_graphics is set true, so a client that reconnects restores the transport and reads as
+# a pass. Timing alone could not separate the two: the freeze needed to blow DIRECT_OUTER_TIMEOUT
+# (9s) is also long enough to cost the client its connection, so the reconnect lands BEFORE the 60s
+# cooldown could. herdr logs every one -- "client connected client_id=N" -- so count them instead.
+logs() { cat "$HOME/.config/herdr/herdr-server.log" "$HOME/.config/herdr-dev/herdr-server.log" 2>/dev/null; }
+connects()  { logs | grep -c "client connected"; }
+# THE SERVER'S OWN ACCOUNT OF THE EXPIRY. Watching file_frame_transport cannot establish one:
+# pane.graphics.info reports the CLIENT's state, so it answers ABSENT both for a real suspension
+# and for a client still catching up from the stall, and a 1s blip read as a loss three separate
+# times. These two lines were added to herdr (992172b9) precisely so the gate can stop guessing.
+suspends() { logs | grep -c "direct graphics suspended"; }
+restores() { logs | grep -c "direct graphics restored"; }
+
 [ -x "$HERDR_BIN" ] || { echo "no herdr at $HERDR_BIN" >&2; exit 3; }
 [ -x "$TB" ] || { echo "terminal-browser is not installed" >&2; exit 3; }
 
@@ -92,6 +106,18 @@ trap cleanup EXIT
 PAGE=${LATCH_PAGE:-/home/eh/nix/.craft/fixtures/arcteryx.html}
 if [ -r "$PAGE" ]; then
   cp "$PAGE" "$WORK/page.html"
+  # A TRANSFER MUST BE IN FLIGHT WHEN WE STALL, or the stall costs nothing and the run is void.
+  # This is what made the trigger 50/50: `pane run` returns at once but electron takes seconds to
+  # boot, so a 12s stall often covered a browser that had not painted yet -- the ABSENT reading was
+  # just the frozen client, and the "recovery" was the first paint finally arriving. A static page
+  # has the same problem from the other end: once it has painted, nothing transfers. So give the
+  # fixture a permanent repaint. The email's own content is untouched; this only guarantees the
+  # deadline is armed whenever we choose to stall.
+  cat >> "$WORK/page.html" <<'ANIM'
+<div style="position:fixed;top:0;left:0;width:64px;height:64px;background:#111;
+            animation:latchspin 1s linear infinite"></div>
+<style>@keyframes latchspin{from{transform:rotate(0)}to{transform:rotate(360deg)}}</style>
+ANIM
 else
   echo "no fixture at $PAGE; falling back to a synthetic page, which transfers too fast to be faithful" >&2
   python3 - "$WORK/page.html" <<'PY'
@@ -169,60 +195,59 @@ PIDS=$(client_pids)
 # its opening transfer is then in flight against a client that cannot answer, which is exactly the
 # documented cause (a busy host, or electron booting cold).
 if [ "$STALL_SECONDS" -gt 0 ]; then
-  for p in $PIDS; do kill -STOP "$p" 2>/dev/null; done
+  # Start the browser FIRST and let it reach a steady repaint, so the stall lands on a transfer
+  # that is actually in flight. Stalling before electron has booted is what voided half the runs.
   h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
+  for _ in $(seq 1 "${LATCH_PAINT_WAIT:-25}"); do
+    [ "$(transport "$PANE")" = "direct-kitty" ] && break
+    sleep 1
+  done
+  sleep "${LATCH_SETTLE:-6}"
+  CONNECTS_BEFORE=$(connects); SUSPENDS_BEFORE=$(suspends); RESTORES_BEFORE=$(restores)
+  for p in $PIDS; do kill -STOP "$p" 2>/dev/null; done
   sleep "$STALL_SECONDS"
   for p in $PIDS; do kill -CONT "$p" 2>/dev/null; done
   echo "stalled the client ${STALL_SECONDS}s across the browser's first transfer, then resumed it"
 else
   # LATCH_STALL_SECONDS=0: no stall at all. The question is whether the real fixture's own first
   # transfer misses the deadline, which is what a user actually hits.
+  CONNECTS_BEFORE=$(connects); SUSPENDS_BEFORE=$(suspends); RESTORES_BEFORE=$(restores)
   h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
   echo "no stall; letting the fixture's own first transfer run against the deadline"
 fi
 
 # Did the stall actually cost us the transport? If not, this run measured nothing -- say so rather
 # than reporting a recovery that was never a loss.
-LOST=""
-for i in $(seq 1 15); do
-  T=$(transport "$PANE")
-  if [ "$T" != "direct-kitty" ]; then LOST="$T"; break; fi
+# DID THE SERVER ACTUALLY SUSPEND? Only its own log can say. No suspend line means the stall never
+# blew a deadline -- the run measured nothing, and no amount of ABSENT readings changes that.
+for i in $(seq 1 30); do
+  [ "$(suspends)" -gt "${SUSPENDS_BEFORE:-0}" ] && break
   sleep 1
 done
-[ -n "$LOST" ] || {
-  echo "the stall did not cost the transport (still direct-kitty); nothing to recover from" >&2
-  echo "  raise LATCH_STALL_SECONDS above the outer timeout, or the deadline was not armed" >&2
+if [ "$(suspends)" -le "${SUSPENDS_BEFORE:-0}" ]; then
+  echo "the server logged no suspension, so the stall blew no deadline -- nothing to recover from." >&2
+  echo "  (If this herdr predates the suspend/restore logging, it cannot be measured this way.)" >&2
   exit 3
-}
+fi
+echo "lost: the server logged a direct-graphics suspension"
 
-# CONFIRM the loss is an expiry and not the client catching up.
-for i in $(seq 1 "$LOSS_CONFIRM_SECONDS"); do
-  if [ "$(transport "$PANE")" = "direct-kitty" ]; then
-    echo "the transport returned after ${i}s of ABSENT -- a blip while the client caught up, not an" >&2
-    echo "  expiry. Nothing was lost, so there is nothing to recover; this run measured nothing." >&2
+for i in $(seq 1 "$RECOVER_SECONDS"); do
+  if [ "$(restores)" -gt "${RESTORES_BEFORE:-0}" ]; then
+    echo "MET: the server logged a direct-graphics restore at T+${i}s -- a suspension, not a latch"
+    exit 0
+  fi
+  NOW=$(connects)
+  if [ "${NOW:-0}" -gt "${CONNECTS_BEFORE:-0}" ] && [ "$(transport "$PANE")" = "direct-kitty" ]; then
+    echo "the transport came back at T+${i}s, but via $((NOW - CONNECTS_BEFORE)) new client" >&2
+    echo "  connection(s) and with no restore logged -- a RECONNECT, which is the manual workaround" >&2
+    echo "  a user performs, not the server giving the path back. Measured nothing." >&2
     exit 3
   fi
   sleep 1
 done
-echo "lost: transport went to $LOST and stayed absent ${LOSS_CONFIRM_SECONDS}s -- an expiry"
 
-for i in $(seq 1 "$RECOVER_SECONDS"); do
-  T=$(transport "$PANE")
-  if [ "$T" = "direct-kitty" ]; then
-    if [ "$i" -lt "$MIN_RECOVER_SECONDS" ]; then
-      echo "the transport came back at T+${i}s, inside the ${MIN_RECOVER_SECONDS}s floor -- too fast to be" >&2
-      echo "  the ${MIN_RECOVER_SECONDS}s+ cooldown, so a client RECONNECT restored it, not the cooldown." >&2
-      echo "  A reconnect is the manual workaround, not the fix; this run measured nothing." >&2
-      exit 3
-    fi
-    echo "MET: the transport came back at T+${i}s after the stall -- the cooldown restored it"
-    exit 0
-  fi
-  sleep 1
-done
-
-echo "UNMET: the transport never came back in ${RECOVER_SECONDS}s -- it is a ONE-WAY LATCH"
-echo "  expire_direct_graphics (server/headless/pane_graphics.rs) clears client.direct_graphics and"
-echo "  only the handshake sets it true, so this connection is on the pty fallback for good: every"
-echo "  frame from here is a full surface down the pty until the client reconnects."
+echo "UNMET: the server suspended direct graphics and never logged a restore in ${RECOVER_SECONDS}s"
+echo "  -- it is a ONE-WAY LATCH. expire_direct_graphics clears client.direct_graphics and only the"
+echo "  handshake sets it true, so this connection is on the pty fallback for good: every frame from"
+echo "  here is a full surface down the pty until the client reconnects."
 exit 1
