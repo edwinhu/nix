@@ -95,16 +95,32 @@ rm -rf "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions
 # instance has been seen to SIGSEGV. A crashed test ghostty kills its herdr client, which removes
 # the only direct-graphics-capable client, which makes herdr stop advertising the transport -- an
 # UNMET that looks like the bug under test and is not.
-setsid env $UNSET "$GH" --gtk-single-instance=false --class=dev.dkgate -e bash -c "env $UNSET $HERDR_BIN --session $SESSION" \
-  > "$WORK/ghostty.log" 2>&1 &
-GPID=$!
-for _ in $(seq 1 45); do
-  [ -S "$SOCK" ] && break
-  [ -S "$SOCK_DEV" ] && { SOCK="$SOCK_DEV"; break; }
-  sleep 1
-done
-[ -S "$SOCK" ] || { echo "the test session never opened a socket at either path:" >&2
-                    echo "  release: $SOCK" >&2
+# RETRY ONCE ON A CRASHED WINDOW. ghostty SIGSEGVs on this host in its `io` thread -- six cores
+# since August, three of them tonight, and the binary is stripped so there is no symbol to chase.
+# It is transient, so one retry converts a lost round into a slightly slower one. Two failures in a
+# row is reported as could-not-run rather than retried forever.
+start_session() {
+  rm -rf "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
+  setsid env $UNSET "$GH" --gtk-single-instance=false --class=dev.dkgate -e bash -c "env $UNSET $HERDR_BIN --session $SESSION" \
+    > "$WORK/ghostty.log" 2>&1 &
+  GPID=$!
+  for _ in $(seq 1 45); do
+    [ -S "$SOCK_REL" ] && { SOCK="$SOCK_REL"; return 0; }
+    [ -S "$SOCK_DEV" ] && { SOCK="$SOCK_DEV"; return 0; }
+    kill -0 "$GPID" 2>/dev/null || return 1
+    sleep 1
+  done
+  return 1
+}
+SOCK_REL="$SOCK"
+if ! start_session; then
+  echo "the test window died or never opened a socket; retrying once (ghostty SIGSEGVs here)" >&2
+  kill "$GPID" 2>/dev/null
+  sleep 2
+  start_session || true
+fi
+[ -S "$SOCK" ] || { echo "the test session never opened a socket at either path, twice:" >&2
+                    echo "  release: $SOCK_REL" >&2
                     echo "  dev:     $SOCK_DEV" >&2
                     sed -n '$p' "$WORK/ghostty.log" >&2; exit 3; }
 echo "session socket: $SOCK"
@@ -116,7 +132,14 @@ sleep 4
 # no direct-graphics-capable client, and the transport stops being advertised -- which this gate
 # would otherwise report as UNMET, blaming the product for the harness. A dead window is
 # could-not-run, and could-not-run is exit 3.
-session_alive() { kill -0 "$GPID" 2>/dev/null && [ -S "$SOCK" ]; }
+# Liveness is BEHAVIOURAL, not a pid check. $GPID is whatever `setsid ... &` handed back, which
+# does not reliably track the window (setsid may fork), so `kill -0 $GPID` can condemn a perfectly
+# healthy session -- it did exactly that while testing the retry path. What matters is whether the
+# session still answers, so ask it.
+session_alive() {
+  [ -S "$SOCK" ] || return 1
+  env HERDR_SOCKET_PATH="$SOCK" timeout 10 "$HERDR_BIN" pane list >/dev/null 2>&1
+}
 session_alive || {
   echo "the test ghostty died before the measurement started (it SIGSEGVs on this host)." >&2
   echo "That removes the only direct-graphics-capable client, so an UNMET here would be the" >&2
