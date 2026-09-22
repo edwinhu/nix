@@ -20,6 +20,14 @@
 # Recovery is capped by what the handshake negotiated, so a client that never had the capability
 # never gains one; this gate establishes direct-kitty first and refuses to run otherwise.
 #
+# THIS GATE IS KNOWN TO DISCRIMINATE, which is not something its earlier verdicts established.
+# Measured 2026-09-22 on ONE source build, changing only whether restore_direct_graphics does its
+# work (an env-gated early return, reverted after the run):
+#   restore path present -> exit 0, "direct graphics restored" logged at T+54s
+#   restore path removed -> exit 1, suspension logged and no restore in 100s
+# Same trigger, same fixture, same binary otherwise. Before this the gate could only ever exit 3
+# (see the logs() note below), so every prior MET/UNMET attributed to it was void.
+#
 # HERDR_LATCH_BIN picks the herdr under test (default: the installed one).
 # Exit 0 it recovered, 1 it never did (the latch), 3 could-not-run.
 set -uo pipefail
@@ -50,7 +58,15 @@ LOSS_CONFIRM_SECONDS=${LATCH_LOSS_CONFIRM_SECONDS:-10}
 # a pass. Timing alone could not separate the two: the freeze needed to blow DIRECT_OUTER_TIMEOUT
 # (9s) is also long enough to cost the client its connection, so the reconnect lands BEFORE the 60s
 # cooldown could. herdr logs every one -- "client connected client_id=N" -- so count them instead.
-logs() { cat "$HOME/.config/herdr/herdr-server.log" "$HOME/.config/herdr-dev/herdr-server.log" 2>/dev/null; }
+# THE GATE'S OWN SESSION LOG, and only it. `herdr --session <name>` puts data_dir at
+# config_dir/sessions/<name> (session.rs data_dir_for), so the server started by this gate logs to
+# sessions/$SESSION/herdr-server.log. This used to read the two GLOBAL logs, which the gate's server
+# never writes a line to: suspends() was therefore always 0 and the run could only ever exit 3,
+# whatever the trigger did. Reading the global log is not merely useless either -- it is the user's
+# live server, and its unrelated "client connected" lines inflate connects() and trip the reconnect
+# guard on traffic that has nothing to do with this measurement.
+logs() { cat "$HOME/.config/herdr/sessions/$SESSION/herdr-server.log" \
+             "$HOME/.config/herdr-dev/sessions/$SESSION/herdr-server.log" 2>/dev/null; }
 connects()  { logs | grep -c "client connected"; }
 # THE SERVER'S OWN ACCOUNT OF THE EXPIRY. Watching file_frame_transport cannot establish one:
 # pane.graphics.info reports the CLIENT's state, so it answers ABSENT both for a real suspension
@@ -92,8 +108,7 @@ cleanup() {
     grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
   done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
-  for z in $(ps -eo pid=,args= | awk '/dev\.paintgate/ && !/awk/ {print $1}'); do kill "$z" 2>/dev/null; done
-  for z in $(ps -eo pid=,args= | awk '/dev\.paintgate-ssh/ && !/awk/ {print $1}'); do kill "$z" 2>/dev/null; done
+  for z in $(ps -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'); do kill -CONT "$z" 2>/dev/null; kill "$z" 2>/dev/null; done
   rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
 }
 trap cleanup EXIT
@@ -185,7 +200,23 @@ printf '#!/usr/bin/env bash\nexport XDG_RUNTIME_DIR=%s\nexec %s open file://%s\n
 chmod +x "$WORK/run.sh"
 # Explicit PIDs, never `pkill -f`: -f matches this script's own command line and has killed the
 # shell running it (exit 144). The [d] bracket keeps the awk out of its own match.
-client_pids() { ps -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'; }
+#
+# STALL THE CLIENT, NOT THE WINDOW. This pattern used to be /[d]ev\.latchgate/, which matches the
+# GHOSTTY process and nothing else: the herdr client execs over `env`, so its command line is
+# "<herdr> --session latchgate" and carries no class string. Two reasons that trigger could not
+# work, and together they are the 50/50 the header describes:
+#   1. The gate is owed a response by the CLIENT. Freezing its terminal emulator leaves the client
+#      running, reading the socket and answering on time.
+#   2. Under the FILE transport the client writes ~135 bytes -- a kitty escape naming a path -- so
+#      a stopped terminal's pty never fills and the client never blocks on it. The payload the
+#      deadline is about never crosses the pty at all.
+# A stopped client cannot read the transmission off the socket, so DIRECT_DELIVERY_TIMEOUT expires
+# with certainty while a transfer is in flight, which the animated fixture guarantees.
+window_pids() { ps -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'; }
+client_pids() {
+  ps -eo pid=,args= | awk -v s="--session $SESSION" \
+    'index($0, s) && !/ghostty/ && !/awk/ && !/check-latch-recovers/ {print $1}'
+}
 PIDS=$(client_pids)
 [ -n "${PIDS:-}" ] || { echo "could not find the client process to stall" >&2; exit 3; }
 
