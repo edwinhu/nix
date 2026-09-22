@@ -3899,6 +3899,45 @@ in
   # systemd.user.services (a plain attrset literal can't assign the same path
   # twice; mkMerge combines them into one definition).
   systemd.user.services = lib.mkMerge [
+    # The o viewer silently falls back to the slow pty path and NOTHING reports it: herdr stops
+    # advertising file_frame_transport and terminal-browser just starts writing VT (upstream
+    # terminal-browser #97, "falling back is what working looks like"). Measured 2026-09-22 on this
+    # machine: 24 full-surface transmits and 216 MB announced for one 2400px scroll on the fallback,
+    # against zero on the direct path. It recurred within 15 minutes of being fixed, on a client
+    # that never died, because a transfer that misses herdr's 3/5/9s deadline clears the client
+    # capability and only the handshake ever sets it back (herdr #3785).
+    #
+    # So: watch for it, and say so ONCE per transition rather than every half hour.
+    { direct-kitty-watch = {
+      Unit = {
+        Description = "Warn when the aerc o viewer falls back off herdr direct-kitty graphics";
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        Environment = [
+          "PATH=${pkgs.libnotify}/bin:${pkgs.coreutils}/bin:${pkgs.python3}/bin:${pkgs.bash}/bin"
+          "HOME=/home/eh"
+        ];
+        ExecStart = "${pkgs.writeShellScript "direct-kitty-watch" ''
+          CHECK=/home/eh/nix/.claude/skills/aerc-scroll-gif/scripts/check-live-direct-kitty.sh
+          # The check lives in the repo rather than the store on purpose: one copy, edited in
+          # place, no second definition to drift. A missing repo is not an error worth waking for.
+          [ -x "$CHECK" ] || exit 0
+          STATE="$XDG_RUNTIME_DIR/direct-kitty-watch.state"
+          bash "$CHECK" >/dev/null 2>&1
+          rc=$?
+          prev=$(cat "$STATE" 2>/dev/null || echo 0)
+          printf %s "$rc" > "$STATE"
+          # 3 is could-not-run (no session yet, socket down) -- not a regression, stay quiet.
+          [ "$rc" = 1 ] || exit 0
+          [ "$prev" = 1 ] && exit 0
+          notify-send -u normal "Mail rendering degraded" \
+            "The o viewer fell back to the slow pty path. Restart the herdr CLIENT: close and reopen the terminal window running herdr. Panes live in the server and survive it."
+        ''}";
+        Nice = 15;
+      };
+    }; }
     # Reap abandoned preview servers: `tinymist preview`, the preview skill's
     # http.server static servers, and its tailscale origin proxies. Nothing else
     # sweeps them -- typst-preview.nvim only cleans up on VimLeavePre, and the
@@ -4425,6 +4464,17 @@ in
 
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
   systemd.user.timers = lib.mkMerge [
+    # 30min, matching preview-reap: often enough that a degraded session is caught within one
+    # working stretch, rare enough that the check (one unix-socket round trip) costs nothing.
+    { direct-kitty-watch = {
+      Unit.Description = "direct-kitty fallback watch (every 30min)";
+      Timer = {
+        OnStartupSec = "8min";
+        OnUnitActiveSec = "30min";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
     # 30min: two consecutive idle checks means an abandoned preview dies within
     # an hour, which is soon enough for 5.5 GiB and slow enough that a preview
     # left open over a coffee break survives.
