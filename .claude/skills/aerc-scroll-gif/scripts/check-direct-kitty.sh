@@ -18,7 +18,12 @@ HERDR_BIN=${HERDR_DIRECT_BIN:-/nix/store/vmgh0yp88y87waiv77ijl5m9yvky0x46-herdr-
 TB="$HOME/.local/share/terminal-browser/app/bin/terminal-browser"
 GH="$HOME/.nix-profile/bin/ghostty"          # nixGL-wrapped; the store binary fails EGL here
 SESSION=${DIRECT_KITTY_SESSION:-dkgate}
+# A cargo build writes to ~/.config/herdr-dev/, a release build to ~/.config/herdr/. Gating a
+# locally built herdr -- the whole point of having the fork -- means accepting either, or the gate
+# waits 30s on a socket that will never appear and reports "the test session never opened its
+# socket" for a server that started perfectly.
 SOCK="$HOME/.config/herdr/sessions/$SESSION/herdr.sock"
+SOCK_DEV="$HOME/.config/herdr-dev/sessions/$SESSION/herdr.sock"
 
 [ -x "$HERDR_BIN" ] || { echo "no herdr binary at $HERDR_BIN" >&2; exit 3; }
 [ -x "$TB" ] || { echo "terminal-browser is not installed" >&2; exit 3; }
@@ -66,7 +71,7 @@ cleanup() {
   done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
   [ -n "${GPID:-}" ] && kill "$GPID" 2>/dev/null
-  rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" 2>/dev/null
+  rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -83,7 +88,7 @@ rows = "".join(f'<p style="font-size:22px">direct kitty line {i}</p>' for i in r
 open(sys.argv[1], "w").write('<html><body style="background:#fff">' + rows + "</body></html>")
 PY
 
-rm -rf "$HOME/.config/herdr/sessions/$SESSION" 2>/dev/null
+rm -rf "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
 # shellcheck disable=SC2086
 # --gtk-single-instance=false: the desktop ghostty runs with single-instance TRUE, so a second
 # invocation delegates to that process instead of owning its own window, and the delegating
@@ -93,9 +98,16 @@ rm -rf "$HOME/.config/herdr/sessions/$SESSION" 2>/dev/null
 setsid env $UNSET "$GH" --gtk-single-instance=false --class=dev.dkgate -e bash -c "env $UNSET $HERDR_BIN --session $SESSION" \
   > "$WORK/ghostty.log" 2>&1 &
 GPID=$!
-for _ in $(seq 1 30); do [ -S "$SOCK" ] && break; sleep 1; done
-[ -S "$SOCK" ] || { echo "the test session never opened its socket; see $WORK/ghostty.log" >&2
+for _ in $(seq 1 45); do
+  [ -S "$SOCK" ] && break
+  [ -S "$SOCK_DEV" ] && { SOCK="$SOCK_DEV"; break; }
+  sleep 1
+done
+[ -S "$SOCK" ] || { echo "the test session never opened a socket at either path:" >&2
+                    echo "  release: $SOCK" >&2
+                    echo "  dev:     $SOCK_DEV" >&2
                     sed -n '$p' "$WORK/ghostty.log" >&2; exit 3; }
+echo "session socket: $SOCK"
 sleep 4
 
 h() { env HERDR_SOCKET_PATH="$SOCK" timeout 25 "$HERDR_BIN" "$@" 2>/dev/null | grep -v "^mise "; }
