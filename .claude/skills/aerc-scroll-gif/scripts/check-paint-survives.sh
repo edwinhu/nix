@@ -54,8 +54,8 @@ cleanup() {
     grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
   done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
-  for z in $(ps -eo pid=,args= | awk '/dev\.paintgate/ && !/awk/ {print $1}'); do kill "$z" 2>/dev/null; done
-  for z in $(ps -eo pid=,args= | awk '/dev\.paintgate-ssh/ && !/awk/ {print $1}'); do kill "$z" 2>/dev/null; done
+  for z in $(ps -ww -eo pid=,args= | awk '/dev\.paintgate/ && !/awk/ {print $1}'); do kill "$z" 2>/dev/null; done
+  for z in $(ps -ww -eo pid=,args= | awk '/dev\.paintgate-ssh/ && !/awk/ {print $1}'); do kill "$z" 2>/dev/null; done
   rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
 }
 trap cleanup EXIT

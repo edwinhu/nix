@@ -140,7 +140,7 @@ cleanup() {
     kill "$__p" 2>/dev/null
   done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
-  for z in $(ps -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'); do kill -CONT "$z" 2>/dev/null; kill "$z" 2>/dev/null; done
+  for z in $(ps -ww -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'); do kill -CONT "$z" 2>/dev/null; kill "$z" 2>/dev/null; done
   rm -rf "$WORK" "$HOME/.config/herdr/sessions/$SESSION" "$HOME/.config/herdr-dev/sessions/$SESSION" 2>/dev/null
 }
 trap cleanup EXIT
@@ -267,9 +267,13 @@ chmod +x "$WORK/run.sh"
 #      deadline is about never crosses the pty at all.
 # A stopped client cannot read the transmission off the socket, so DIRECT_DELIVERY_TIMEOUT expires
 # with certainty while a transfer is in flight, which the animated fixture guarantees.
-window_pids() { ps -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'; }
+# ps -ww: without it ps truncates each line to $COLUMNS, and the Stop hook exports COLUMNS=80, so
+# "--session latchgate" fell off the end of the client line and every hook run exited 3 with
+# "could not find the client process" while every interactive run passed. Reproduced with
+# COLUMNS=80 before the fix.
+window_pids() { ps -ww -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'; }
 client_pids() {
-  ps -eo pid=,args= | awk -v s="--session $SESSION" \
+  ps -ww -eo pid=,args= | awk -v s="--session $SESSION" \
     'index($0, s) && !/ghostty/ && !/awk/ && !/check-latch-recovers/ {print $1}'
 }
 PIDS=$(client_pids)
