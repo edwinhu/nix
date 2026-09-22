@@ -2,6 +2,12 @@
 
 let
   homeDir = if pkgs.stdenv.isDarwin then "/Users/${user}" else "/home/${user}";
+
+  # agenix decrypts every declared secret in one unit, so ONE missing .age file fails the whole
+  # activation and leaves the previous generation's secrets in place. A secret committed to
+  # nix-secrets but not yet in the locked input is exactly that case, so declare it only if present.
+  optionalSecret = name: attrs:
+    lib.optionalAttrs (builtins.pathExists "${nix-secrets}/${name}.age") { ${name} = attrs; };
 in
 {
   age.secrets = {
@@ -23,12 +29,6 @@ in
     };
     claude-api-key = {
       file = "${nix-secrets}/claude-api-key.age";
-      mode = "400";
-    };
-    # OpenRouter: one key, every model behind one OpenAI-compatible endpoint. Used by the hound
-    # Stop hook's goal judge, which asks a small model for a structured verdict.
-    openrouter-api-key = {
-      file = "${nix-secrets}/openrouter-api-key.age";
       mode = "400";
     };
     readwise-token = {
@@ -154,6 +154,11 @@ in
       mode = "600";
       symlink = false;
     };
+  } // optionalSecret "openrouter-api-key" {
+    # One key, every model behind one OpenAI-compatible endpoint. Used by the hound Stop hook's
+    # goal judge, which asks a small model for a structured verdict.
+    file = "${nix-secrets}/openrouter-api-key.age";
+    mode = "400";
   };
   
   # NOTE: nix-darwin home-manager activation runs without /dev/tty, so
