@@ -137,7 +137,10 @@ if [ -n "${SCROLL_ENV:-}" ]; then
 fi
 sleep 4
 
-BEFORE=$(grep -c "a=T" "$WORK/trace.txt" 2>/dev/null || echo 0)
+# grep -c EXITS 1 when the count is zero while still printing 0, so `|| echo 0` appended a second
+# line and the python arg became "0\n0". Zero is the expected count once the direct-kitty file
+# transport is live, so the failure mode was reachable only on a WORKING pipeline.
+BEFORE=$(grep -c "a=T" "$WORK/trace.txt" 2>/dev/null); BEFORE=${BEFORE:-0}
 T0=$(date +%s.%N)
 timeout 120 bun "$SCRIPTS/wheel-probe.ts" --ticks "$TICKS" --gap 50 --port "$PORT" > "$WORK/wheel.txt" 2>&1
 RC=$?
