@@ -23,6 +23,9 @@ run() {
 
 run "aerc-mail-tty launcher (16 tests)" python3 -m pytest -q modules/linux/test_aerc_mail_tty.py
 run "aerc-scroll-gif harness baseline" bash .claude/skills/aerc-scroll-gif/tests/test_record_scroll.sh
+# The gate scripts decide every verdict this instrument gives, and nothing tested that logic until
+# now -- every wrong answer tonight came from it, not from the pipeline it measures.
+run "aerc-scroll-gif gate verdicts" python3 -m pytest -q .claude/skills/aerc-scroll-gif/tests/test_gate_verdicts.py
 
 echo
 if [ "$rc" -eq 0 ]; then echo "host suites: all passed"; else echo "host suites: FAILURES above" >&2; fi
