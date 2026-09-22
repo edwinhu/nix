@@ -367,7 +367,10 @@
               cp -r ${./.claude/skills/aerc-scroll-gif} instrument
               chmod -R u+w instrument
               cd instrument
-              python3 -m pytest -q tests/test_judge_pixels.py tests/test_judge_taps.py
+              # test_gate_verdicts.py too: it pins the decisions the gate scripts make, and it
+              # sandboxes cleanly because it extracts the heredoc and runs python -- no nix, no
+              # desktop, no git. It ran only via `nix run .#test-host` before, which is manual.
+              python3 -m pytest -q tests/test_judge_pixels.py tests/test_judge_taps.py tests/test_gate_verdicts.py
               touch $out
             '';
         });
