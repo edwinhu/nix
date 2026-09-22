@@ -17,12 +17,22 @@
 # DO NOT REACH FOR A RENDER-SCALE KNOB. All five variables the daemon reads were measured on
 # 2026-09-21 with arrival proven in /proc/<daemon>/environ, and every one is inert on announced
 # bytes: RENDER_SCALE (0.5 and 1 alike -- it is on the RECORDING path, not the live transmit),
-# DISPLAY_SCALE, SHM, and FPS, which bought 8% for a 4x frame-rate cut because transmits are
-# scroll-event driven at ~100px each, not clock driven. The surface tracks the PANE under every
-# knob. The amplification is inside terminal-browser's transmit, and it ships here as a binary:
-# paint.ts computes a damage rect and the only format string in pixel.node is the full-surface one.
-# So this gate is RED for a reason nothing available here can fix. Do not raise the budget to make
-# it green. See .craft/scrollmeasure/07-knob-sweep.md for the table.
+# DISPLAY_SCALE, SHM, and FPS, which bought 8% for a 4x frame-rate cut. See
+# .craft/scrollmeasure/07-knob-sweep.md.
+#
+# WHAT THIS GATE IS ACTUALLY MEASURING -- corrected 2026-09-22, and the correction matters more
+# than the number. These full-surface pty transmits are terminal-browser's FALLBACK path. It has a
+# dedicated herdr transport (frames as files, damage rects, a 3-slot ACK window:
+# engine/crates/pixel-core/src/herdr.rs in its source) which it abandons SILENTLY when herdr's
+# pane.graphics.info omits file_frame_transport. On this host that field is absent, because herdr
+# sets it only when direct_graphics_available is true, and the client handshake clears that for an
+# ssh session (herdr src/client/handshake.rs:65-69). So this gate measures the degraded path, and
+# the fix is to restore the fast one, not to shrink the fallback.
+#
+# An earlier version of this header claimed terminal-browser "ships here as a binary with no
+# source". That was FALSE. It is MIT and public (github.com/zenbu-labs/terminal-browser); a clone
+# of the exact installed tag is at .craft/tb-src, and the install ships sourcemaps with
+# sourcesContent. Nothing here is unfixable for want of source.
 set -uo pipefail
 
 # The budget is a RATIO, not a byte rate: bytes scale with the surface and the scroll
