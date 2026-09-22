@@ -64,7 +64,10 @@ mkdir -p "$PRIV/terminal-browser"
 if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
   for e in "$XDG_RUNTIME_DIR"/*; do
     [ -e "$e" ] || continue
-    case "${e##*/}" in terminal-browser) continue ;; esac
+    # The daemon socket dir is terminal-browser-<hash>/, NOT terminal-browser/ -- skipping only the
+    # exact name symlinked the user's real daemon straight through, so the "private" daemon was
+    # theirs and `shutdown` reached it. Skip the whole family.
+    case "${e##*/}" in terminal-browser*) continue ;; esac
     ln -sfn "$e" "$PRIV/${e##*/}" 2>/dev/null
   done
 fi
@@ -72,7 +75,13 @@ tb() { env XDG_RUNTIME_DIR="$PRIV" timeout 20 "$TB" "$@"; }
 
 cleanup() {
   [ -n "${PANE:-}" ] && timeout 20 "$HERDR" pane close "$PANE" >/dev/null 2>&1
-  tb shutdown >/dev/null 2>&1
+  # Our own daemon only, found by the private runtime dir it carries. NEVER `shutdown`: it ends
+  # every terminal-browser daemon on the machine, closing whatever the user has open in the o viewer.
+  for __c in /proc/[0-9]*/environ; do
+    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$__c" 2>/dev/null || continue
+    __p=${__c#/proc/}; __p=${__p%/environ}
+    grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
+  done
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -84,7 +93,6 @@ open(sys.argv[1], "w").write('<html><body style="background:#fff">' + rows + "</
 PY
 
 # Own the daemon outright: private socket, so this is ours and only ours.
-tb shutdown >/dev/null 2>&1
 # The pane inherits the herdr SERVER's environment, not this script's, so anything the browser must
 # see has to be written into the launcher. SCROLL_ENV carries experiments: SCROLL_ENV="GDK_SCALE=1"
 cat > "$WORK/run.sh" <<EOF

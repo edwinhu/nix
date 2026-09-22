@@ -37,7 +37,44 @@ HERDR=$(command -v herdr || echo /home/eh/.local/share/mise/installs/herdr/lates
 command -v bun >/dev/null || { echo "bun is required for the cdp wheel driver" >&2; exit 3; }
 S=$(ls -d /nix/store/*-strace-[0-9]*/bin/strace 2>/dev/null | head -1)
 [ -x "${S:-/nonexistent}" ] || { echo "strace unavailable" >&2; exit 3; }
-[ -n "${HERDR_PANE_ID:-}" ] || { echo "no HERDR_PANE_ID: this gate needs a herdr pane to split" >&2; exit 3; }
+# TWO SERVERS, and which one is measured is the whole point of the flag. By default the gate
+# splits a pane on the herdr the user is running, which is what the number has to be true of.
+# SCROLL_TEST_HERDR_BIN measures a BUILD instead: desktop.sh brings up a dedicated session in its
+# own ghostty window, on its own socket, so a server-side change can be measured without
+# restarting the user's live server -- which no check here is allowed to do.
+PARENT_PANE=""
+if [ -n "${SCROLL_TEST_HERDR_BIN:-}" ]; then
+  [ -x "$SCROLL_TEST_HERDR_BIN" ] || { echo "no herdr build at $SCROLL_TEST_HERDR_BIN" >&2; exit 3; }
+  # desktop.sh drives hyprctl and spawns a ghostty, and an ssh shell carries no compositor
+  # environment -- hyprctl then prints a non-JSON error, jq spews, and the only symptom is
+  # "window never appeared". Borrow the environment from the desktop ghostty first.
+  if [ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    for __g in $(pgrep -f "[g]hostty.*herdr" 2>/dev/null); do
+      grep -qz "HYPRLAND_INSTANCE_SIGNATURE" /proc/"$__g"/environ 2>/dev/null || continue
+      eval "$(tr '\0' '\n' < /proc/"$__g"/environ \
+        | grep -E "^(WAYLAND_DISPLAY|HYPRLAND_INSTANCE_SIGNATURE|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|DISPLAY|XDG_SESSION_TYPE|GDK_BACKEND)=" \
+        | sed 's/^/export /')"
+      break
+    done
+  fi
+  [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || { echo "no compositor environment to borrow" >&2; exit 3; }
+  . "$(dirname "$(readlink -f "$0")")/desktop.sh"
+  TEST_HERDR_BIN="$SCROLL_TEST_HERDR_BIN"
+  TEST_SESSION=${TEST_SESSION:-fpsgate}
+  TEST_CLASS=${TEST_CLASS:-dev.fpsgate}
+  TEST_SOCKET="$HOME/.config/herdr/sessions/$TEST_SESSION/herdr.sock"
+  desktop_lock
+  test_session_ensure || exit 3
+  HERDR="$TEST_HERDR_BIN"
+  export HERDR_SOCKET_PATH="$TEST_SOCKET"
+  PARENT_PANE=$(h pane list 2>/dev/null | grep -v "^mise " \
+    | python3 -c "import sys,json; p=json.load(sys.stdin)['result']['panes']; print(p[0]['pane_id'] if p else '')" 2>/dev/null)
+  [ -n "${PARENT_PANE:-}" ] || { echo "the test session has no pane to split" >&2; exit 3; }
+  echo "measuring the build at $SCROLL_TEST_HERDR_BIN (session $TEST_SESSION), not the live server" >&2
+else
+  [ -n "${HERDR_PANE_ID:-}" ] || { echo "no HERDR_PANE_ID: this gate needs a herdr pane to split" >&2; exit 3; }
+  PARENT_PANE="$HERDR_PANE_ID"
+fi
 
 WORK=$(mktemp -d); PANE=""
 
@@ -49,7 +86,10 @@ mkdir -p "$PRIV/terminal-browser"
 if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
   for e in "$XDG_RUNTIME_DIR"/*; do
     [ -e "$e" ] || continue
-    case "${e##*/}" in terminal-browser) continue ;; esac
+    # The daemon socket dir is terminal-browser-<hash>/, NOT terminal-browser/ -- skipping only the
+    # exact name symlinked the user's real daemon straight through, so the "private" daemon was
+    # theirs and `shutdown` reached it. Skip the whole family.
+    case "${e##*/}" in terminal-browser*) continue ;; esac
     ln -sfn "$e" "$PRIV/${e##*/}" 2>/dev/null
   done
 fi
@@ -59,7 +99,13 @@ tb() { env XDG_RUNTIME_DIR="$PRIV" timeout 20 "$TB" "$@"; }
 # question is what the daemon actually did.
 cleanup() {
   [ -n "${PANE:-}" ] && timeout 20 "$HERDR" pane close "$PANE" >/dev/null 2>&1
-  tb shutdown >/dev/null 2>&1
+  # Our own daemon only, found by the private runtime dir it carries. NEVER `shutdown`: it ends
+  # every terminal-browser daemon on the machine, closing whatever the user has open in the o viewer.
+  for __c in /proc/[0-9]*/environ; do
+    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$__c" 2>/dev/null || continue
+    __p=${__c#/proc/}; __p=${__p%/environ}
+    grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
+  done
   if [ -n "${KEEP_WORK:-}" ]; then echo "work dir kept: $WORK" >&2; else rm -rf "$WORK"; fi
 }
 trap cleanup EXIT
@@ -70,7 +116,6 @@ rows = "".join(f'<p style="font-size:22px">scroll fps line {i}</p>' for i in ran
 open(sys.argv[1], "w").write('<html><body style="background:#fff">' + rows + "</body></html>")
 PY
 
-tb shutdown >/dev/null 2>&1
 
 # The pane inherits the herdr SERVER's environment, not this script's, so anything the browser must
 # see has to be written into the launcher. -f follows the daemon the CLI hands the page to, which is
@@ -83,7 +128,7 @@ exec $S -f -o $WORK/trace.txt -e trace=write -s 120 "$TB" open file://$WORK/tall
 EOF
 chmod +x "$WORK/run.sh"
 
-PANE=$(timeout 30 "$HERDR" pane split --pane "$HERDR_PANE_ID" --direction down --ratio 0.35 --no-focus 2>/dev/null \
+PANE=$(timeout 30 "$HERDR" pane split --pane "$PARENT_PANE" --direction down --ratio 0.35 --no-focus 2>/dev/null \
   | grep -v "^mise " | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['pane']['pane_id'])" 2>/dev/null)
 [ -n "${PANE:-}" ] || { echo "could not split a pane" >&2; exit 3; }
 timeout 30 "$HERDR" pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
@@ -98,7 +143,7 @@ done
 
 # Which transport is this pane on? A rate measured on the pty fallback answers a different question,
 # so say which path was timed rather than reporting a bare number.
-TRANSPORT=$(python3 - "${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" "$HERDR_PANE_ID" <<'PYX' 2>/dev/null || true
+TRANSPORT=$(python3 - "${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" "$PANE" <<'PYX' 2>/dev/null || true
 import json, socket, sys
 try:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(5); s.connect(sys.argv[1])
