@@ -54,8 +54,17 @@ S=$(ls -d /nix/store/*-strace-[0-9]*/bin/strace 2>/dev/null | head -1)
 
 WORK=$(mktemp -d); PANE=""
 
-# A PRIVATE DAEMON. The socket is $XDG_RUNTIME_DIR/terminal-browser/daemon.sock, so relocating that
-# one variable gives this gate a daemon nobody else can serve and it need not kill anyone else's.
+# A PRIVATE DAEMON -- PARTIALLY. Relocating XDG_RUNTIME_DIR is necessary and NOT sufficient, so
+# treat the isolation below as best-effort rather than as a guarantee this gate measures its own
+# browser. Measured 2026-09-22, launching the CLI with XDG_RUNTIME_DIR=$PRIV:
+#   - the CLI itself does honour it (store/src/paths.ts: RUNTIME_HOME = XDG_RUNTIME_DIR ?? STATE),
+#   - but it EXITS after handing the page off, and the daemon that then serves it reported a socket
+#     under the REAL /run/user/1000/terminal-browser-<hash>/, with no private dir ever created,
+#   - so a scan for processes carrying XDG_RUNTIME_DIR=$PRIV found ZERO after the handoff.
+# Two consequences for anything written against that scan: it cannot establish daemon ownership,
+# and the cleanup keyed on it was reaping nothing. Redirecting XDG_DATA_HOME as well DID produce a
+# private terminal-browser.db, so DATA_DIR/DB_FILE are the other half of the identity -- untested
+# end to end here and deliberately not changed, because it alters what daemon this gate measures.
 # Without it the gate had to seize the SHARED daemon: destructive to the user's open pages, and
 # corruptible by any other process that raced one up -- which is what exit 3 caught on 2026-09-21.
 # The rest of the real runtime dir is symlinked through, so the wayland socket stays reachable.
@@ -81,6 +90,15 @@ cleanup() {
     grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$__c" 2>/dev/null || continue
     __p=${__c#/proc/}; __p=${__p%/environ}
     grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
+  done
+  # ADDITIVE, because the scan above finds nothing once the CLI has handed off (see the header).
+  # $WORK is a mktemp -d path carried in our own invocation's command line and nowhere else, so
+  # this reaps the processes actually opened for this run instead of leaking them.
+  for __c in /proc/[0-9]*/cmdline; do
+    grep -qa -- "$WORK" "$__c" 2>/dev/null || continue
+    __p=${__c#/proc/}; __p=${__p%/cmdline}
+    [ "$__p" = "$$" ] && continue
+    kill "$__p" 2>/dev/null
   done
   rm -rf "$WORK"
 }
