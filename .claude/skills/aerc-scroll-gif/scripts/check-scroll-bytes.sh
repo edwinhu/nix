@@ -13,6 +13,16 @@
 # the pipeline was ASKED to move.
 #
 # Exit 0 met (under the budget), 1 unmet, 3 could-not-run.
+#
+# DO NOT REACH FOR A RENDER-SCALE KNOB. All five variables the daemon reads were measured on
+# 2026-09-21 with arrival proven in /proc/<daemon>/environ, and every one is inert on announced
+# bytes: RENDER_SCALE (0.5 and 1 alike -- it is on the RECORDING path, not the live transmit),
+# DISPLAY_SCALE, SHM, and FPS, which bought 8% for a 4x frame-rate cut because transmits are
+# scroll-event driven at ~100px each, not clock driven. The surface tracks the PANE under every
+# knob. The amplification is inside terminal-browser's transmit, and it ships here as a binary:
+# paint.ts computes a damage rect and the only format string in pixel.node is the full-surface one.
+# So this gate is RED for a reason nothing available here can fix. Do not raise the budget to make
+# it green. See .craft/scrollmeasure/07-knob-sweep.md for the table.
 set -uo pipefail
 
 # The budget is a RATIO, not a byte rate: bytes scale with the surface and the scroll
@@ -33,9 +43,26 @@ S=$(ls -d /nix/store/*-strace-[0-9]*/bin/strace 2>/dev/null | head -1)
 [ -n "${HERDR_PANE_ID:-}" ] || { echo "no HERDR_PANE_ID: this gate needs a herdr pane to split" >&2; exit 3; }
 
 WORK=$(mktemp -d); PANE=""
+
+# A PRIVATE DAEMON. The socket is $XDG_RUNTIME_DIR/terminal-browser/daemon.sock, so relocating that
+# one variable gives this gate a daemon nobody else can serve and it need not kill anyone else's.
+# Without it the gate had to seize the SHARED daemon: destructive to the user's open pages, and
+# corruptible by any other process that raced one up -- which is what exit 3 caught on 2026-09-21.
+# The rest of the real runtime dir is symlinked through, so the wayland socket stays reachable.
+PRIV="$WORK/xdg"
+mkdir -p "$PRIV/terminal-browser"
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
+  for e in "$XDG_RUNTIME_DIR"/*; do
+    [ -e "$e" ] || continue
+    case "${e##*/}" in terminal-browser) continue ;; esac
+    ln -sfn "$e" "$PRIV/${e##*/}" 2>/dev/null
+  done
+fi
+tb() { env XDG_RUNTIME_DIR="$PRIV" timeout 20 "$TB" "$@"; }
+
 cleanup() {
   [ -n "${PANE:-}" ] && timeout 20 "$HERDR" pane close "$PANE" >/dev/null 2>&1
-  timeout 20 "$TB" shutdown >/dev/null 2>&1
+  tb shutdown >/dev/null 2>&1
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -46,12 +73,13 @@ rows = "".join(f'<p style="font-size:22px">scroll byte budget line {i}</p>' for 
 open(sys.argv[1], "w").write('<html><body style="background:#fff">' + rows + "</body></html>")
 PY
 
-# Own the daemon: the transport is fixed when it starts, and it is shared.
-timeout 20 "$TB" shutdown >/dev/null 2>&1
+# Own the daemon outright: private socket, so this is ours and only ours.
+tb shutdown >/dev/null 2>&1
 # The pane inherits the herdr SERVER's environment, not this script's, so anything the browser must
 # see has to be written into the launcher. SCROLL_ENV carries experiments: SCROLL_ENV="GDK_SCALE=1"
 cat > "$WORK/run.sh" <<EOF
 #!/usr/bin/env bash
+export XDG_RUNTIME_DIR=$PRIV
 ${SCROLL_ENV:+export $SCROLL_ENV}
 exec $S -f -o $WORK/trace.txt -e trace=write -s 80 "$TB" open file://$WORK/tall.html
 EOF
@@ -63,7 +91,7 @@ PANE=$(timeout 30 "$HERDR" pane split --pane "$HERDR_PANE_ID" --direction down -
 timeout 30 "$HERDR" pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
 
 for _ in $(seq 1 30); do
-  PORT=$(timeout 20 "$TB" ls --json 2>/dev/null \
+  PORT=$(tb ls --json 2>/dev/null \
     | python3 -c "import sys,json; b=json.load(sys.stdin).get('browsers',[]); print(b[0]['cdpPort'] if b else '')" 2>/dev/null)
   [ -n "${PORT:-}" ] && break
   sleep 1
@@ -76,8 +104,16 @@ done
 # reports the default while looking like a verdict. That produced three identical readings on
 # 2026-09-21 and nearly a false "this knob is inert". Exit 3 rather than measure the wrong thing.
 if [ -n "${SCROLL_ENV:-}" ]; then
-  DPID=$(pgrep -f "[t]erminal-browser/app/electron.*--daemon" | head -1)
-  [ -n "${DPID:-}" ] || { echo "no daemon to verify the environment on" >&2; exit 3; }
+  # Match on OUR private runtime dir. A cmdline pattern cannot tell our daemon from another
+  # process's, and "terminal-browser" appears in the command line of anything MEASURING it.
+  DPID=""
+  for c in /proc/[0-9]*/environ; do
+    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$c" 2>/dev/null || continue
+    pid=${c#/proc/}; pid=${pid%/environ}
+    grep -qa "electron" /proc/"$pid"/cmdline 2>/dev/null || continue
+    DPID=$pid; break
+  done
+  [ -n "${DPID:-}" ] || { echo "no daemon of our own to verify the environment on" >&2; exit 3; }
   for kv in $SCROLL_ENV; do
     k=${kv%%=*}
     if ! tr '\0' '\n' < /proc/"$DPID"/environ 2>/dev/null | grep -qx "$kv"; then
