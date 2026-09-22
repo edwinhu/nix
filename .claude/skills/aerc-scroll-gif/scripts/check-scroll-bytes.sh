@@ -140,6 +140,28 @@ sleep 4
 # grep -c EXITS 1 when the count is zero while still printing 0, so `|| echo 0` appended a second
 # line and the python arg became "0\n0". Zero is the expected count once the direct-kitty file
 # transport is live, so the failure mode was reachable only on a WORKING pipeline.
+# Is this pane on the direct-kitty FILE transport? If it is, zero a=T writes is the CORRECT
+# outcome, not a broken measurement -- the browser hands herdr frame files and puts nothing on the
+# pty. Without this the gate answers a perfectly healthy pipeline with exit 3, could-not-run, which
+# is the contract's word for "the instrument failed" and reads to the next person as a bug in the
+# gate rather than the absence of one in the product.
+TRANSPORT=$(python3 - "${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" "$HERDR_PANE_ID" <<'PYX' 2>/dev/null || true
+import json, socket, sys
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); s.settimeout(5); s.connect(sys.argv[1])
+    s.sendall((json.dumps({"id": "i", "method": "pane.graphics.info",
+                           "params": {"pane_id": sys.argv[2]}}) + "\n").encode())
+    b = b""
+    while b"\n" not in b:
+        d = s.recv(65536)
+        if not d: break
+        b += d
+    print(json.loads(b.decode().split("\n")[0])["result"].get("file_frame_transport") or "")
+except Exception:
+    print("")
+PYX
+)
+
 BEFORE=$(grep -c "a=T" "$WORK/trace.txt" 2>/dev/null); BEFORE=${BEFORE:-0}
 T0=$(date +%s.%N)
 timeout 120 bun "$SCRIPTS/wheel-probe.ts" --ticks "$TICKS" --gap 50 --port "$PORT" > "$WORK/wheel.txt" 2>&1
@@ -150,9 +172,10 @@ T1=$(date +%s.%N)
 SCROLLED=$(grep -oE "scrolled [0-9]+px" "$WORK/wheel.txt" | grep -oE "[0-9]+" | tail -1)
 [ -n "${SCROLLED:-}" ] || { echo "the wheel driver reported no scroll distance" >&2; exit 3; }
 
-python3 - "$WORK/trace.txt" "$BEFORE" "$T0" "$T1" "$MAX_AMPLIFICATION" "$SCROLLED" <<'PY'
+python3 - "$WORK/trace.txt" "$BEFORE" "$T0" "$T1" "$MAX_AMPLIFICATION" "$SCROLLED" "${TRANSPORT:-}" <<'PY'
 import re, sys
 trace, before, t0, t1, budget, scrolled = sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4]), float(sys.argv[5]), int(sys.argv[6])
+transport = sys.argv[7] if len(sys.argv) > 7 else ""
 seen = 0
 px = 0
 dims = None
@@ -172,7 +195,13 @@ secs = max(0.001, t1 - t0)
 mb = px / 1048576
 rate = mb / secs
 if not dims or not frames:
-    print("no full-surface transmits seen; cannot compute amplification")
+    if transport == "direct-kitty":
+        print(f"0 full-surface pty transmits in {secs:.2f}s, and the pane is on the direct-kitty")
+        print("file transport -- frames went to herdr as files. That is the intended state: there")
+        print("is no amplification to measure because nothing was announced on the pty.")
+        sys.exit(0)
+    print("no full-surface transmits seen, and the pane is NOT on direct-kitty")
+    print(f"(file_frame_transport={transport!r}) -- so nothing painted and this measured nothing")
     sys.exit(3)
 w, h = dims
 # What a damage-rect scheme would have had to send: the band of pixels that actually moved, at the
