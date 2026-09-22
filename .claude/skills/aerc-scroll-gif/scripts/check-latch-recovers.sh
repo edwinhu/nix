@@ -36,7 +36,22 @@ HERDR_BIN=${HERDR_LATCH_BIN:-/home/eh/.local/share/mise/installs/herdr/latest/he
 TB="$HOME/.local/share/terminal-browser/app/bin/terminal-browser"
 GH="$HOME/.nix-profile/bin/ghostty"
 SESSION=${LATCH_SESSION:-latchgate}
-STALL_SECONDS=${LATCH_STALL_SECONDS:-12}      # > DIRECT_OUTER_TIMEOUT (9s)
+# One stall must outlast the deadline that is actually armed. That is DIRECT_DELIVERY_TIMEOUT (5s)
+# from the server's send, or DIRECT_RESPONSE_TIMEOUT (3s) once the client has begun writing, both
+# capped by DIRECT_OUTER_TIMEOUT (9s). 8s clears the two that fire in practice with margin, and a
+# SHORTER stall is safer here rather than weaker: the freeze is repeated below until the suspension
+# is observed, and every second frozen is a second in which the client may lose its connection and
+# reconnect -- which restores the transport and voids the run.
+STALL_SECONDS=${LATCH_STALL_SECONDS:-8}
+# A STALL ONLY COSTS SOMETHING IF A TRANSFER IS IN FLIGHT WHEN IT LANDS, and nothing observable
+# from outside says when that is. The gate exists only between the server's send and the client's
+# completion, so a client stopped between frames has no armed deadline to blow -- and, being
+# stopped, it will not ask for the next one either. Measured 2026-09-22 with the correct process
+# frozen and the transport confirmed direct-kitty immediately before: one run in three still logged
+# no suspension. So do not take a single shot at it. Stall, let the client run long enough to pull
+# another transfer, and stall again, stopping the moment the server reports the suspension.
+STALL_CYCLES=${LATCH_STALL_CYCLES:-4}
+RUN_WINDOW=${LATCH_RUN_WINDOW:-1.5}
 # DIRECT_GRAPHICS_COOLDOWN is 60s, so a fixed binary needs a minute plus slack before it restores.
 RECOVER_SECONDS=${LATCH_RECOVER_SECONDS:-100}
 # A RECONNECT ALSO RESTORES THE TRANSPORT, and counting it as recovery inverts this gate: the
@@ -102,10 +117,14 @@ SOCK_REL="$HOME/.config/herdr/sessions/$SESSION/herdr.sock"
 SOCK_DEV="$HOME/.config/herdr-dev/sessions/$SESSION/herdr.sock"
 SOCK="$SOCK_REL"
 cleanup() {
-  for c in /proc/[0-9]*/environ; do
-    grep -qz "^XDG_RUNTIME_DIR=$PRIV\$" "$c" 2>/dev/null || continue
-    __p=${c#/proc/}; __p=${__p%/environ}
-    grep -qa "electron" /proc/"$__p"/cmdline 2>/dev/null && kill "$__p" 2>/dev/null
+  # REAP BY THE PAGE PATH, not by XDG_RUNTIME_DIR=$PRIV, which matches nothing (see the note at the
+  # stall). That inert match is why this gate leaked electron processes on every run. $WORK is a
+  # mktemp -d path and appears in our CLI invocation's command line and nowhere else.
+  for c in /proc/[0-9]*/cmdline; do
+    grep -qa -- "$WORK" "$c" 2>/dev/null || continue
+    __p=${c#/proc/}; __p=${__p%/cmdline}
+    [ "$__p" = "$$" ] && continue
+    kill "$__p" 2>/dev/null
   done
   env HERDR_SOCKET_PATH="$SOCK" timeout 20 "$HERDR_BIN" server stop >/dev/null 2>&1
   for z in $(ps -eo pid=,args= | awk '/[d]ev\.latchgate/ && !/awk/ {print $1}'); do kill -CONT "$z" 2>/dev/null; kill "$z" 2>/dev/null; done
@@ -219,6 +238,9 @@ client_pids() {
 }
 PIDS=$(client_pids)
 [ -n "${PIDS:-}" ] || { echo "could not find the client process to stall" >&2; exit 3; }
+# Say WHAT is being stalled. When this gate reports "no suspension" the first question is always
+# whether it froze the right process, and without this line that cannot be answered after the fact.
+for p in $PIDS; do echo "  will stall pid $p: $(tr '\0' ' ' < /proc/$p/cmdline 2>/dev/null | cut -c1-90)"; done
 
 # ORDER MATTERS. The deadline is armed only while a transfer is IN FLIGHT, so stalling a client
 # that has nothing pending costs nothing -- the first attempt stopped it after a static page had
@@ -234,11 +256,25 @@ if [ "$STALL_SECONDS" -gt 0 ]; then
     sleep 1
   done
   sleep "${LATCH_SETTLE:-6}"
+  # NO READINESS PROBE KEYED ON $PRIV. Measured 2026-09-22: XDG_RUNTIME_DIR=$PRIV does NOT isolate
+  # terminal-browser -- its socket still lands in /run/user/1000/terminal-browser-<hash>/ and its
+  # electron processes carry no XDG_RUNTIME_DIR at all. Any check matching on that variable matches
+  # nothing, which is also why cleanup() below reaps by the page path instead. A CPU-based paint
+  # probe was written against $PRIV, could never match, and was removed rather than loosened.
+  # pane.graphics.info carries no frame counter either, so the server offers no paint signal.
+  # What remains is the duty cycle below, which retries instead of asserting readiness.
+  echo "  transport immediately before the stall: $(transport "$PANE")"
   CONNECTS_BEFORE=$(connects); SUSPENDS_BEFORE=$(suspends); RESTORES_BEFORE=$(restores)
-  for p in $PIDS; do kill -STOP "$p" 2>/dev/null; done
-  sleep "$STALL_SECONDS"
-  for p in $PIDS; do kill -CONT "$p" 2>/dev/null; done
-  echo "stalled the client ${STALL_SECONDS}s across the browser's first transfer, then resumed it"
+  CYCLES_USED=0
+  for _c in $(seq 1 "$STALL_CYCLES"); do
+    CYCLES_USED=$_c
+    for p in $PIDS; do kill -STOP "$p" 2>/dev/null; done
+    sleep "$STALL_SECONDS"
+    for p in $PIDS; do kill -CONT "$p" 2>/dev/null; done
+    [ "$(suspends)" -gt "${SUSPENDS_BEFORE:-0}" ] && break
+    sleep "$RUN_WINDOW"
+  done
+  echo "stalled the client ${STALL_SECONDS}s x${CYCLES_USED} across live transfers, then resumed it"
 else
   # LATCH_STALL_SECONDS=0: no stall at all. The question is whether the real fixture's own first
   # transfer misses the deadline, which is what a user actually hits.
