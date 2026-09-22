@@ -123,6 +123,15 @@ PANE=$(h pane split --pane "$SHELL_PANE" --direction down --ratio 0.6 \
 # (pane_graphics.rs:402), not the foreground rule, and this gate does not reproduce it.
 
 BEFORE=$(transport "$PANE")
+# ERR IS NOT A VERDICT. transport() prints ERR when the socket query itself fails -- no session, a
+# ghostty that segfaulted on both attempts, a timeout -- which says nothing about the transport.
+# Observed 2026-09-22: a run whose window never came up read ERR and was reported as
+# "UNMET: a remote client attached ... This is herdr #3138", blaming the product for a measurement
+# that never happened. A failed query is could-not-run, and could-not-run is exit 3.
+if [ "$BEFORE" = "ERR" ] || [ -z "${BEFORE:-}" ]; then
+  echo "the graphics query failed (read '${BEFORE:-empty}'), so nothing was measured -- not a verdict" >&2
+  exit 3
+fi
 if [ "$BEFORE" != "direct-kitty" ]; then
   if [ "${PAINT_WITH_REMOTE:-1}" = "1" ]; then
     # This is the defect, not a broken measurement: a REMOTE client attaching removes direct-kitty
@@ -147,7 +156,14 @@ h pane run "$PANE" "$WORK/run.sh" >/dev/null 2>&1
 # suspended direct graphics and when the client is simply not answering yet. So a reading alone is
 # not a loss. Where the herdr under test logs the suspension (992172b9), the server's own account
 # decides; where it does not, an ABSENT reading is reported as unattributed rather than explained.
-SUSPENDS_BEFORE=$(cat "$HOME/.config/herdr/herdr-server.log" "$HOME/.config/herdr-dev/herdr-server.log" 2>/dev/null | grep -c "direct graphics suspended")
+# THE GATE'S OWN SESSION LOG. `herdr --session <name>` puts data_dir at config_dir/sessions/<name>
+# (session.rs data_dir_for), so the server this gate starts writes nowhere near the two GLOBAL
+# paths this used to read: the count was always 0 and the UNMET branch below could only ever take
+# its "no suspension was logged" arm, whatever the server actually did. The same defect was found
+# and fixed in check-latch-recovers.sh, where it made every verdict impossible.
+plogs() { cat "$HOME/.config/herdr/sessions/$SESSION/herdr-server.log" \
+              "$HOME/.config/herdr-dev/sessions/$SESSION/herdr-server.log" 2>/dev/null; }
+SUSPENDS_BEFORE=$(plogs | grep -c "direct graphics suspended")
 
 LOST=""
 for i in $(seq 1 "$HOLD_SECONDS"); do
@@ -157,7 +173,7 @@ for i in $(seq 1 "$HOLD_SECONDS"); do
 done
 
 if [ -n "$LOST" ]; then
-  SUSPENDS_AFTER=$(cat "$HOME/.config/herdr/herdr-server.log" "$HOME/.config/herdr-dev/herdr-server.log" 2>/dev/null | grep -c "direct graphics suspended")
+  SUSPENDS_AFTER=$(plogs | grep -c "direct graphics suspended")
   echo "UNMET: the transport read $LOST while painting"
   if [ "${SUSPENDS_AFTER:-0}" -gt "${SUSPENDS_BEFORE:-0}" ]; then
     echo "  The server logged a direct-graphics suspension, so this is the expiry path in"
