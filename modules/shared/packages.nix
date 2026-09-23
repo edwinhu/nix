@@ -142,6 +142,7 @@ let
       rustfmt
 
       tuicr  # code-review TUI (in nixpkgs); replaces revdiff, driven by the tuicr Claude skill
+      (import ./upmd.nix { inherit pkgs; })  # runnable Markdown runbooks; not in nixpkgs
     ];
 
     # Heavyweight cloud SDKs. The everyday remote-storage CLIs (rclone, gws)
