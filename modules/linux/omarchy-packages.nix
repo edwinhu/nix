@@ -182,6 +182,11 @@ let
       doublecmd
       ueberzugpp
 
+      # Proton VPN GTK client. NetworkManager's built-in WireGuard backend
+      # carries the tunnel, so no distro daemon is required; Arch's separate
+      # proton-vpn-daemon is only for split tunneling, which this drops.
+      proton-vpn
+
       # Fonts / math typesetting extras
       lmmath
       maple-mono.NF
