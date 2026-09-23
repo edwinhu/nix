@@ -851,6 +851,146 @@ def test_strike_state_is_keyed_by_pid_and_starttime(reaper, tmp_path):
         cleanup(proc)
 
 
+# ── a tinymist preview detached from its launcher, as typst-session leaves it ─
+
+# ~/.local/bin/typst-session starts `tinymist preview` with `nohup ... &` and
+# returns, so the preview is reparented to `systemd --user` the instant its
+# launcher exits -- WHILE it is serving a document to a browser. This launcher
+# reproduces that: spawn the shim, record its pid, exit at once.
+_DETACHED_LAUNCHER = (
+    "import subprocess, sys\n"
+    "shim, codefile, port, marker, pidfile = sys.argv[1:6]\n"
+    "p = subprocess.Popen(\n"
+    "    [shim, '-c', open(codefile).read(), 'preview', port, marker])\n"
+    "open(pidfile, 'w').write(str(p.pid))\n"
+)
+
+
+def ppid_of(pid):
+    with open(f"/proc/{pid}/stat") as fh:
+        return int(fh.read().rsplit(")", 1)[1].split()[1])
+
+
+def _await_reparent(pid, launcher_pid, timeout=10.0):
+    """Wait until the launcher is gone and the kernel has moved the child."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if ppid_of(pid) != launcher_pid:
+            return ppid_of(pid)
+        time.sleep(0.05)
+    raise AssertionError(f"pid {pid} was never reparented away from {launcher_pid}")
+
+
+def spawn_detached_tinymist(tmp_path, port, attach_client=True):
+    """A `tinymist preview` whose parent is `systemd --user`, not nvim.
+
+    Same shape as spawn_nvim_parented_tinymist, minus the surviving editor: the
+    launcher exits immediately, so the preview is reparented exactly as
+    typst-session's `nohup ... &` leaves it. `attach_client` decides whether a
+    browser is holding it open -- the whole difference between a live detached
+    preview and a genuinely abandoned one.
+    """
+    shim = tmp_path / "tinymist"
+    if not shim.exists():
+        shim.symlink_to(_real_interpreter())
+    codefile = tmp_path / "child.py"
+    codefile.write_text(_TINYMIST_CHILD)
+    pidfile = tmp_path / "detached.pid"
+    marker = tmp_path / "accepted"
+
+    launcher = subprocess.Popen(
+        [sys.executable, "-c", _DETACHED_LAUNCHER, str(shim), str(codefile),
+         str(port), str(marker), str(pidfile)],
+        start_new_session=True,
+    )
+    launcher.wait(timeout=10)
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        if pidfile.exists() and pidfile.read_text().strip():
+            break
+        time.sleep(0.05)
+    child_pid = int(pidfile.read_text().strip())
+    _await_comm(child_pid, "tinymist")
+    parent_comm = load_reaper().comm_of(_await_reparent(child_pid, launcher.pid))
+    assert parent_comm not in (None, "nvim"), (
+        f"the detached preview's parent reads {parent_comm!r}; the fixture "
+        "stages nothing")
+
+    if not attach_client:
+        return child_pid, parent_comm, None
+
+    deadline = time.time() + 5.0
+    while True:
+        try:
+            client = socket.create_connection(("127.0.0.1", port), 0.2)
+            break
+        except OSError:
+            if time.time() > deadline:
+                raise AssertionError(f"preview on {port} never came up")
+            time.sleep(0.05)
+    while time.time() < deadline + 5.0:
+        if marker.exists() and marker.read_text():
+            return child_pid, parent_comm, client
+        time.sleep(0.05)
+    client.close()
+    raise AssertionError("the preview never accepted the client connection")
+
+
+def test_detached_tinymist_preview_with_a_live_client_survives(reaper, tmp_path):
+    """The reported bug: a serving preview reparented to systemd was killed on sight.
+
+    typst-session launches `tinymist preview` with `nohup ... &`, so the process
+    is reparented to `systemd --user` immediately -- a parent that is readable
+    and is not nvim. On the parent signal alone that is the orphan rule's
+    kill-on-sight case, and previews started at 10:56 died four seconds after
+    the 13:30:16 timer run while a browser was still attached. The ESTABLISHED
+    client is what separates this from an abandoned one, and it has to outrank
+    the parent.
+    """
+    port = free_port()
+    # `client` is the browser end, held open for the whole test
+    child_pid, parent_comm, client = spawn_detached_tinymist(tmp_path, port)
+    try:
+        assert pid_running(child_pid), "the preview died before the reaper ran"
+        run_reaper(reaper, 3)
+        time.sleep(1.0)
+        assert pid_running(child_pid), (
+            "reaped a detached preview that was serving a client; its parent "
+            f"is {parent_comm!r}")
+    finally:
+        client.close()
+        try:
+            os.kill(child_pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
+def test_detached_tinymist_preview_with_no_client_is_still_reaped(reaper, tmp_path):
+    """The reaper must still do its job: no editor, no client -> ~5.5 GiB freed.
+
+    The abandoned case the orphan rule exists for. Like the abandoned origin
+    proxy, this one is not socket-less -- it sits in accept() on a LISTENING
+    socket -- and only an ESTABLISHED socket counts as a client, so it must die.
+    """
+    port = free_port()
+    child_pid, _, _ = spawn_detached_tinymist(tmp_path, port, attach_client=False)
+    try:
+        assert pid_running(child_pid), "the preview died on its own; this proves nothing"
+        run_reaper(reaper, 3)
+        deadline = time.time() + 2.0
+        while time.time() < deadline and pid_running(child_pid):
+            time.sleep(0.05)
+        assert not pid_running(child_pid), (
+            "an abandoned detached preview survived; a LISTENING socket was "
+            "read as a client, or the orphan rule stopped reaping")
+    finally:
+        try:
+            os.kill(child_pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+
 def test_origin_proxy_not_spawned_by_preview_sh_survives(reaper, tmp_path):
     """Matching argv is not provenance: the reaper must own what it kills.
 

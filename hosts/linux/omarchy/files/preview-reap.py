@@ -11,13 +11,24 @@ listener. This is the sweep, on a clock, for all three.
 
 Each process class is a rule in RULES: a `name`, a `match(proc)` that selects
 it, and an `idle(proc, ctx)` that says whether it looked unused on this run.
-A rule may also carry `orphan(proc)` for a signal strong enough to kill on
+A rule may also carry `orphan(proc, ctx)` for a signal strong enough to kill on
 sight. Every rule shares one strike file, one kill loop and SIGTERM, and needs
 STRIKES_TO_KILL consecutive idle observations before it kills.
 
   tinymist        comm is `tinymist` with `preview` among its argv.
-                  ORPHAN: parent is readable and is not nvim -> the editor is
-                  gone, kill immediately.
+                  ORPHAN: parent is readable, is not nvim, AND the process has
+                  no ESTABLISHED client -> the editor is gone and nobody is
+                  reading it, kill immediately.
+                  The client half of that conjunct is not optional. `nohup ... &`
+                  from typst-session detaches the preview at birth, so it is
+                  reparented to `systemd --user` while it is still serving a
+                  browser; on the parent signal alone it is indistinguishable
+                  from a preview whose nvim exited, and was SIGTERMed in use on
+                  the next timer run. An ESTABLISHED socket is proof of life
+                  that outranks the parent: a detached preview someone is
+                  watching falls through to the idle rule below, where the
+                  STRIKES_TO_KILL machinery decides it, and is reaped only once
+                  its client really is gone.
                   IDLE: no ESTABLISHED client AND no CPU burned since the last
                   run. Both are needed: closing a tab does NOT promptly drop
                   the socket (chromium holds it for hours) so "no client" alone
@@ -222,13 +233,18 @@ class Rule:
         self.orphan = orphan
 
 
-def _tinymist_orphan(proc):
+def _tinymist_orphan(proc, ctx):
     # Only ever on a POSITIVE read. An unreadable parent tells us nothing, and
     # "not nvim" on a failed read would kill a live preview.
     parent = comm_of(proc["ppid"])
-    if parent is not None and parent != "nvim":
-        return "orphan (editor gone)"
-    return None
+    if parent is None or parent == "nvim":
+        return None
+    # A detached-at-birth preview (typst-session's `nohup ... &`, reparented to
+    # `systemd --user`) has the same parent as an abandoned one. Only the client
+    # tells them apart, and has_client fails safe towards "in use".
+    if has_client(proc["pid"], ctx["estab"]):
+        return None
+    return "orphan (editor gone, no client)"
 
 
 # Shared by tinymist and origin-proxy: both are judged by a live client plus a
@@ -305,7 +321,7 @@ def main():
             continue
         pid, key = p["pid"], f"{p['pid']}:{p['start']}"
 
-        reason = rule.orphan(p) if rule.orphan else None
+        reason = rule.orphan(p, ctx) if rule.orphan else None
         if reason is None:
             prev = state.get(key)
             ctx["prev"] = prev
