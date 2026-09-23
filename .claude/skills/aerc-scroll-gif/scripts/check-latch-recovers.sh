@@ -372,6 +372,9 @@ for i in $(seq 1 "$RECOVER_SECONDS"); do
   sleep 1
 done
 
+# Keep the server's own account: cleanup deletes the session dir, and an UNMET against a build that
+# HAS the restore path is otherwise undiagnosable.
+logs | grep -a "direct graphics\|client connected\|client disconnected" | tail -20 | sed 's/^/  server: /' >&2
 echo "UNMET: the server suspended direct graphics and never logged a restore in ${RECOVER_SECONDS}s"
 echo "  -- it is a ONE-WAY LATCH. expire_direct_graphics clears client.direct_graphics and only the"
 echo "  handshake sets it true, so this connection is on the pty fallback for good: every frame from"
