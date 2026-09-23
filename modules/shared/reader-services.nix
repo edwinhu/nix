@@ -112,7 +112,7 @@ let
     systemctl --user is-active --quiet graphical-session.target || exit 0
 
     worst=0
-    for app in pinpoint notebooklm scholar; do
+    for app in pinpoint notebooklm scholar pe2; do
       # stdout is the state JSON, which carries cookie names; only the exit code
       # is wanted here, and nothing cookie-shaped may reach the log.
       crumb refresh "$app" >/dev/null
