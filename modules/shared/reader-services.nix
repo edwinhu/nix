@@ -101,29 +101,34 @@ let
   '';
 
   # crumb session refresh (Linux). Google rotates __Secure-*PSIDTS only for a real
-  # browser session, so the jar goes stale on its own; `crumb refresh` copies the
-  # app-scoped cookies out of the everyday chromium on CDP :9222. Exit 77 means
-  # that browser is itself signed out — no retry can fix it, so notify and let the
-  # unit fail. `crumb`, `systemctl` and `notify-send` all resolve from the unit's
-  # PATH (linuxPath + libnotify).
+  # browser session, so the jar goes stale on its own; `crumb refresh --all` copies
+  # each app's scoped cookies out of the everyday chromium on CDP :9222 — the
+  # page-state built-ins plus every app registered with `crumb add` — and exits
+  # with the worst code. A 77 means that browser is itself signed out of some app —
+  # no retry can fix it, so notify per app and let the unit fail. `crumb`,
+  # `systemctl` and `notify-send` all resolve from the unit's PATH (linuxPath +
+  # libnotify).
   crumbRefreshScript = pkgs.writeShellScript "crumb-refresh" ''
     set -u
     # No desktop session -> no everyday browser on :9222 to borrow from.
     systemctl --user is-active --quiet graphical-session.target || exit 0
 
-    worst=0
-    for app in pinpoint notebooklm scholar pe2; do
-      # stdout is the state JSON, which carries cookie names; only the exit code
-      # is wanted here, and nothing cookie-shaped may reach the log.
-      crumb refresh "$app" >/dev/null
-      code=$?
-      if [ "$code" -eq 77 ]; then
+    err=$(mktemp)
+    trap 'rm -f "$err"' EXIT
+    # stdout is one state JSON per app, which carries cookie names; only the exit
+    # code is wanted here, and nothing cookie-shaped may reach the log. stderr is
+    # one labelled line per failing app (never a value), kept for the log.
+    crumb refresh --all >/dev/null 2>"$err"
+    code=$?
+    cat "$err" >&2
+    if [ "$code" -eq 77 ]; then
+      # A signed-out app's line is "crumb refresh <app>: Not signed in to <app>: …".
+      sed -n 's/^crumb refresh \([a-z0-9_]*\): Not signed in to .*/\1/p' "$err" | while read -r app; do
         notify-send -u critical "crumb: $app signed out" \
           "crumb refresh could not borrow a live session from the browser on :9222 — run 'crumb login $app'"
-      fi
-      if [ "$code" -gt "$worst" ]; then worst=$code; fi
-    done
-    exit "$worst"
+      done
+    fi
+    exit "$code"
   '';
 
   # pixi (nix-profile) + user local bin + system dirs. curl/python3 live in /usr/bin.
