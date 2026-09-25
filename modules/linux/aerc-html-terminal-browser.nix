@@ -525,6 +525,23 @@ PYEOF
     PRELOAD="${pagerKeys}"
     [ -n "''${AERC_MAIL_FPS:-}" ] && PRELOAD="${pagerKeysFps}"
 
+    # NUDGE THE ENGINE AWAKE. The first open after the daemon starts could sit blank until a
+    # keypress: the engine loop swallowed the wake for the startup registerFont op and slept with it
+    # unread (fixed upstream in zenbu-labs/pixel#19, not yet in a release). SIGWINCH to the CLI
+    # makes it forward a resize, which queues an op and wakes the loop; a spurious one costs one
+    # repaint. The browser has to stay the FOREGROUND child, so it cannot be backgrounded for its
+    # pid -- this helper finds it as our child instead, and never signals itself.
+    (
+      for _ in $(seq 12); do
+        sleep 0.5
+        kids=$(< "/proc/$$/task/$$/children") || continue
+        for kid in $kids; do
+          [ "$kid" = "$BASHPID" ] || kill -WINCH "$kid" 2>/dev/null
+        done
+      done
+    ) &
+    NUDGER=$!
+
     env TERMINAL_BROWSER_NO_MERGE=1 ''${FRAMES:+TERMINAL_BROWSER_FRAMES=$FRAMES} \
       ''${SCALE:+TERMINAL_BROWSER_RENDER_SCALE=$SCALE} \
       ''${DISPLAY_SCALE:+TERMINAL_BROWSER_DISPLAY_SCALE=$DISPLAY_SCALE} \
@@ -533,6 +550,7 @@ PYEOF
       --no-toolbar --no-frame --no-overlays --no-context-menu \
       --preload="$PRELOAD"
     status=$?
+    kill "$NUDGER" 2>/dev/null
     exit "$status"
   '';
 

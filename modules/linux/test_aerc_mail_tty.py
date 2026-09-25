@@ -541,6 +541,44 @@ def test_launcher_reaps_when_the_browser_exits_non_zero(script, sandbox):
     assert not sandbox["urlfile"].exists(), "the url record was left behind"
 
 
+# Stands in for the engine race fixed upstream in zenbu-labs/pixel#19: a wake
+# swallowed by a zero-timeout poll leaves the page blank until something else
+# wakes the engine. SIGWINCH to the CLI is that something -- it forwards a
+# resize, which queues an op and wakes the loop. Exits 0 once nudged, 3 if
+# nothing ever does.
+WAKE_STARVED_BROWSER = """#!/usr/bin/env bash
+nudged=0
+trap 'nudged=1' WINCH
+for _ in $(seq 80); do
+  if [ "$nudged" = 1 ]; then echo nudged > "$NUDGE_OUT"; exit 0; fi
+  sleep 0.1
+done
+exit 3
+"""
+
+
+def test_launcher_wakes_a_browser_that_lost_its_first_wake(script, sandbox):
+    """A cold browser must not sit blank until the user presses a key."""
+    assert script, "module defines no aerc-mail-tty script"
+    browser = sandbox["home"] / ".local/share/terminal-browser/app/bin/terminal-browser"
+    browser.write_text(WAKE_STARVED_BROWSER)
+    nudge = sandbox["root"] / "nudge.txt"
+    result = subprocess.run(
+        ["bash", "-c", runnable(script, sandbox), "aerc-mail-tty",
+         str(sandbox["message"])],
+        env=dict(sandbox["env"], NUDGE_OUT=str(nudge)),
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    print(result.stdout.decode(errors="replace"), flush=True)
+    print(result.stderr.decode(errors="replace"), flush=True)
+    assert result.returncode == 0, (
+        f"the browser was never sent SIGWINCH (exit {result.returncode}): "
+        "a lost first wake would leave the pane blank until a keypress")
+    assert nudge.read_text().strip() == "nudged"
+
+
 def test_serve_alone_leaves_its_server_running(sandbox):
     """The detached launchers depend on the server OUTLIVING the serve step.
 
