@@ -3661,7 +3661,7 @@ in
     IMAPAccount work-bridge
     Host 127.0.0.1
     Port 1143
-    SSLType None
+    TLSType None
     User mbsync
     Pass mbsync
 
@@ -3699,7 +3699,7 @@ in
     IMAPAccount personal-gmail
     Host imap.gmail.com
     Port 993
-    SSLType IMAPS
+    TLSType IMAPS
     User eddyhu@gmail.com
     AuthMechs XOAUTH2
     # Same broker and same grant as himalaya's gmail backend above — ortie holds
