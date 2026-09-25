@@ -1961,9 +1961,12 @@ in
       # flock-guarded mbsync the timer runs, narrowed to the `work` channel.
       # Same lock file as mbsync-pull, so a notification arriving mid-timer is
       # dropped (`-n -E 0`) rather than racing it. Spawned directly, no shell.
+      # Through the same guard as the timer, which also runs `notmuch new`
+      # inside the lock -- without it this refresh left renames unindexed.
       refreshCommand =
         "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
-        + "${pkgs.isync}/bin/mbsync --config /home/eh/.mbsyncrc work";
+        + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch work";
     };
   };
 
@@ -3619,6 +3622,13 @@ in
   # deletion back to Graph. Nothing may write upstream until a complete
   # enumeration is distinguishable from a partial one.
   #
+  # FLAGS ARE THE EXCEPTION: `Sync Pull PushFlags`, so reading mail in aerc marks
+  # it read upstream. A flag push adds nothing and removes nothing; the bridge
+  # maps it to IsRead/Flag and holds \Deleted locally, and `Expunge None` never
+  # redeems it. Every run goes through files/mbsync-guarded.py, which pulls
+  # only when too many local copies of read mail have lost Seen (a tag write
+  # racing an unindexed rename strips it, and that reads as "mark unread").
+  #
   # CopyArrivalDate yes so a copied message keeps its internal date and the
   # date sort does not collapse to the copy time.
   #
@@ -3674,8 +3684,8 @@ in
     # thinned imapd stops serving them, at which point these exclusions match
     # nothing and are harmless — so this is correct before and after that lands.
     Patterns * "!Focused" "!Other" "!Invoice" "!Marketing" "!Meeting" "!News" "!Pitch" "!Respond" "!Waiting"
-    # One-way pull only — nothing this channel does reaches Graph.
-    Sync Pull
+    # Pull everything; push only flag changes (see the note above).
+    Sync Pull PushFlags
     Expunge None
     Remove None
     Create Near
@@ -3715,8 +3725,8 @@ in
     # Important/Starred are views over the same store; mirroring them multiplies
     # the pull for no local benefit.
     Patterns * "![Gmail]/All Mail" "![Gmail]/Important" "![Gmail]/Starred"
-    # One-way pull only — nothing this channel does reaches Gmail.
-    Sync Pull
+    # Pull everything; push only flag changes (see the note above).
+    Sync Pull PushFlags
     Expunge None
     Remove None
     Create Near
@@ -4336,7 +4346,7 @@ in
     # channels, so this unit cannot alter anything on Graph or Gmail.
     { mbsync-pull = {
       Unit = {
-        Description = "mbsync — one-way pull of both mailboxes into ~/areas/mail";
+        Description = "mbsync — pull both mailboxes into ~/areas/mail, push flag changes";
         # Work goes through the loopback bridge, so that unit has to be up;
         # personal goes to Gmail, so the network does. `Wants` rather than
         # `Requires`: one channel being unreachable should not cancel the other.
@@ -4371,27 +4381,30 @@ in
         # error status — SuccessExitStatus=1 would have hidden real failures.
         ExecStart =
           "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
-          + "${pkgs.isync}/bin/mbsync --config %h/.mbsyncrc mail";
+          + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
+          + "${pkgs.isync}/bin/mbsync %h/.mbsyncrc ${pkgs.notmuch}/bin/notmuch mail";
         # INDEX, then TAG, and in that order: the tagger addresses messages by
         # `id:`, so a message notmuch has not indexed yet cannot be tagged.
         #
         # Both are ExecStartPost rather than part of the flock'd command, so a
         # skipped tick (flock -n bails when a slow pull is still running) still
-        # re-indexes and re-tags what the PREVIOUS run pulled.
+        # re-indexes and re-tags what the PREVIOUS run pulled. The taggers WAIT
+        # for the lock: a tag write between an mbsync rename and its `notmuch
+        # new` rewrites the file from a stale `unread` tag, stripping Seen.
         #
         # `-` prefix on the tagger: a failure there costs the sidebar's
         # Focused/Other rows until the next tick, and must not mark the pull
         # itself failed -- the mail is already on disk by then.
         ExecStartPost = [
           "${pkgs.notmuch}/bin/notmuch new --quiet"
-          ("-${pkgs.python3}/bin/python3 "
-            + "${./files/notmuch-tag-bridge.py}")
+          ("-${pkgs.util-linux}/bin/flock -w 120 /home/eh/areas/mail/.mbsync.lock "
+            + "${pkgs.python3}/bin/python3 ${./files/notmuch-tag-bridge.py}")
           # Personal's half of the same idea, and a different source: Work's
           # verdicts come from mail-bridge's UID map, Gmail's from a server-side
           # search. Also `-`: a failed tagging costs the split-inbox rows until
           # the next tick and must not fail the pull.
-          ("-${pkgs.python3}/bin/python3 "
-            + "${./files/notmuch-tag-gmail.py}")
+          ("-${pkgs.util-linux}/bin/flock -w 120 /home/eh/areas/mail/.mbsync.lock "
+            + "${pkgs.python3}/bin/python3 ${./files/notmuch-tag-gmail.py}")
         ];
         # A transient network fault or an unrefreshed token should retry on the
         # next tick, not immediately; the timer is the retry loop, so no
