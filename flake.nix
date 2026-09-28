@@ -154,6 +154,8 @@
           # Was the primary; now mostly a terminal for ssh'ing to omarchy, so
           # it gets the same treatment as alarm.
           profile = "client";
+          # Flip once on macOS 26: selects OmniWM 0.7.x (modules/shared/omniwm.nix).
+          macosTahoe = false;
           fullName = "Edwin Hu";
           email = "eddyhu@gmail.com";
         };
@@ -462,7 +464,8 @@
                   pinpoint = prev.callPackage ./modules/shared/pinpoint.nix {};
                   crumb = prev.callPackage ./modules/shared/crumb.nix {};
                   rv = prev.callPackage ./modules/shared/rv.nix {};
-                  omniwm = prev.callPackage ./modules/shared/omniwm.nix {};
+                  omniwm = prev.callPackage ./modules/shared/omniwm.nix { tahoe = info.macosTahoe or false; };
+                  voxtype = prev.callPackage ./modules/darwin/voxtype.nix {};
                   tinymist-lsp = prev.callPackage ./modules/shared/tinymist-lsp.nix {};
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.

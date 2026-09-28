@@ -1,7 +1,6 @@
 # OmniWM — tiling window manager for macOS, fetched straight from GitHub
-# releases. The barutsrb Homebrew tap lags upstream by weeks (was pinned at
-# 0.4.8.1 while upstream shipped 0.5.x), so we self-manage the version here:
-# bump `version` + `hash`, then `nix run .#build-switch`.
+# releases so the version is ours to pick: bump the release below + `hash`,
+# then `nix run .#build-switch`.
 #
 # OmniWM is ad-hoc signed (no Developer ID), so macOS re-prompts for
 # Accessibility on every version bump regardless of install method — same
@@ -9,29 +8,41 @@
 # /Applications/OmniWM.app path via modules/darwin/defaults.nix postActivation
 # (not the churning /Applications/Nix Apps symlink), so Finder/Spotlight stay
 # sane and grants persist if OmniWM ever ships proper signing.
-{ lib, stdenv, fetchzip }:
+#
+# `tahoe` selects the release: 0.6+ requires macOS 26. Set it per host
+# (userInfo.macosTahoe in flake.nix) once that host is on Tahoe.
+{ lib, stdenv, fetchzip, tahoe ? false }:
 
+let
+  releases = {
+    # 0.7.x: settings.toml schema 1→2 migrates itself on first launch (backup
+    # at settings.toml.pre-v2); IPC 14, so omniwmctl must come from the same
+    # bundle.
+    tahoe = {
+      version = "0.7.3";
+      hash = "sha256-8Bwqy0hQRVaBqItn7EARmt+2DK2d6GmbgqziVlkAkKk=";
+    };
+    # Newest release that RUNS on macOS 15 (Sequoia):
+    #   - v0.5.3+ raised LSMinimumSystemVersion to macOS 26 (Tahoe).
+    #   - v0.5.2.1 links SLSWindowIteratorGetCornerRadii, absent on 15.7 → crash.
+    # Known bug: tiles non-standard AX windows (AXUnknown menubar items,
+    # AXDialog panels). Do NOT downgrade to 0.4.8.1: it lacks appRules
+    # assignToWorkspace/layout and rewrites settings.toml in its old schema.
+    sequoia = {
+      version = "0.5.2";
+      hash = "sha256-Xh6I18aJNBjWy4WdMFclTJFiIaI3/XV0J30/QJUYa+0=";
+    };
+  };
+  release = if tahoe then releases.tahoe else releases.sequoia;
+in
 stdenv.mkDerivation (finalAttrs: {
   pname = "omniwm";
-  # Pinned to the newest release that actually RUNS on macOS 15 (Sequoia):
-  #   - v0.5.3+ raised LSMinimumSystemVersion to macOS 26 (Tahoe): won't launch.
-  #   - v0.5.2.1 claims min-OS 15.0 but links a SkyLight symbol
-  #     (SLSWindowIteratorGetCornerRadii) absent on 15.7 → fatal crash at launch.
-  #   - v0.5.2 is the last build without that dependency.
-  # Revisit this ceiling after upgrading macOS to 26 (Tahoe).
-  #
-  # Known 0.5.2 bug (2026-07-08, report upstream / re-check on next bump):
-  # tiles non-standard AX windows (AXUnknown menubar status items, AXDialog
-  # panels) — e.g. cmux's "Item-0" menubar icon gets a tiling slot, breaking
-  # single-window centering. Do NOT chase it by downgrading: 0.4.8.1 lacks
-  # appRules assignToWorkspace/layout entirely and re-serializes settings.toml
-  # in its old schema on launch (drops those keys + resets hotkeys).
-  version = "0.5.2";
+  inherit (release) version;
 
   # The release zip contains OmniWM.app/ at top level; keep it (don't strip).
   src = fetchzip {
     url = "https://github.com/BarutSRB/OmniWM/releases/download/v${finalAttrs.version}/OmniWM-v${finalAttrs.version}.zip";
-    hash = "sha256-Xh6I18aJNBjWy4WdMFclTJFiIaI3/XV0J30/QJUYa+0=";
+    inherit (release) hash;
     stripRoot = false;
   };
 

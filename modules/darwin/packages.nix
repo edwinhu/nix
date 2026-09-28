@@ -21,7 +21,10 @@ let
   # like the other GUI packages; `moonlight` is also on PATH. Add the host by
   # its Tailscale IP (100.122.125.84) — Moonlight's automatic discovery is mDNS,
   # which does not cross the tailnet.
-  media = [ moonlight-qt ];
+  #
+  # voxtype — dictation + meeting transcription (replaced the granola cask);
+  # overlay package from modules/darwin/voxtype.nix.
+  media = [ moonlight-qt voxtype ];
 };
 
 inherit (import ../shared/profiles.nix) layersFor layerNames;

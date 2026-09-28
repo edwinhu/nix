@@ -46,7 +46,6 @@ let
     # Chat, meetings, transcription.
     media = [
       "beeper"
-      "granola"
       "macwhisper"
       "superwhisper"
       "blip"
