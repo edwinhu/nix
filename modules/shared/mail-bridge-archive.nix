@@ -126,12 +126,17 @@ let
         type = lib.types.enum [ "gmail" "msgraph" ];
         description = "Provider backend, stated explicitly on every command.";
       };
+      # port, liveUnit and budgets describe a bridge. An account that only runs a
+      # push receiver (Personal: mbsync reads imap.gmail.com directly) has none,
+      # so they are null by default and asserted present in archive mode.
       port = lib.mkOption {
-        type = lib.types.port;
+        type = lib.types.nullOr lib.types.port;
+        default = null;
         description = "The loopback port Aerc already points at.";
       };
       liveUnit = lib.mkOption {
-        type = lib.types.str;
+        type = lib.types.nullOr lib.types.str;
+        default = null;
         description = ''
           The systemd user unit running the live bridge for this account. It is
           enabled only while mode = "live", so the two implementations can never
@@ -173,7 +178,8 @@ let
         '';
       };
       budgets = lib.mkOption {
-        type = budgetsType;
+        type = lib.types.nullOr budgetsType;
+        default = null;
         description = "Cumulative finite ceilings for one cycle.";
       };
 
@@ -735,7 +741,15 @@ in
           }
         ] ++ [
           {
-            assertion = lib.all (o: cfg.accounts.${o}.port != a.port) (others name);
+            assertion = a.mode == "archive" -> (a.port != null && a.budgets != null);
+            message =
+              "services.mail-bridge.accounts.${name}: archive mode needs port and "
+              + "budgets; only a receiver-only live account may leave them null.";
+          }
+          {
+            assertion =
+              a.port == null
+              || lib.all (o: cfg.accounts.${o}.port != a.port) (others name);
             message =
               "services.mail-bridge.accounts.${name}: port ${toString a.port} is "
               + "claimed by more than one account; a port has exactly one owner.";

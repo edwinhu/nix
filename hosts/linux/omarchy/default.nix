@@ -1968,6 +1968,23 @@ in
         + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
         + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch work";
     };
+    # Receiver-only: mbsync reads imap.gmail.com directly, so there is no bridge,
+    # port or budget here -- just the Pub/Sub subscriber. It pulls (no public
+    # endpoint), re-calls users.watch before the seven-day lapse, and runs the
+    # same guarded pull as the timer, narrowed to the `personal` channel.
+    personal = {
+      address = "eddyhu@gmail.com";
+      provider = "gmail";
+      tokenEnvironmentVariable = "MAIL_BRIDGE_GMAIL_TOKEN_CMD";
+      tokenCommand = "${lib.getExe pkgs.ortie} -a google token show";
+      gmailPushEnabled = true;
+      gmailPushSubscription = "projects/eddyhu-gws-cli/subscriptions/gmail-push-mail-bridge";
+      gmailPushTopic = "projects/eddyhu-gws-cli/topics/gmail-push";
+      refreshCommand =
+        "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
+        + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal";
+    };
   };
 
   # Ships qemu + swtpm + xorriso + the VM provisioning kit (word-render-provision,
@@ -4344,6 +4361,12 @@ in
     # Oneshot driven by mbsync-pull.timer; nothing about it is long-running.
     # The config it reads is ~/.mbsyncrc (home.file above), pull-only on both
     # channels, so this unit cannot alter anything on Graph or Gmail.
+    # The Gmail Pub/Sub subscriber (services.mail-bridge.accounts.personal) runs
+    # the personal mbsync channel, which authenticates with XOAUTH2 -- a plugin
+    # cyrus-sasl finds only through SASL_PATH. Read from mbsync-pull rather than
+    # restated; the module's token Environment merges with this list.
+    { mail-bridge-gmail-push-personal.Service.Environment =
+        config.systemd.user.services.mbsync-pull.Service.Environment; }
     { mbsync-pull = {
       Unit = {
         Description = "mbsync — pull both mailboxes into ~/areas/mail, push flag changes";
