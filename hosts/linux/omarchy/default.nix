@@ -2877,6 +2877,17 @@ in
     # mbsync ran with `SubFolders Verbatim`, so `[Gmail]` is a real directory
     # containing Drafts/Sent Mail/Spam/Trash.
     personalFolderList = "INBOX,Bills,Bills/Paid,Work,Work/Travel,Research Budget,[Gmail]/Drafts,[Gmail]/Sent Mail,[Gmail]/Spam,[Gmail]/Trash";
+    # `:check-mail` (gm in binds.conf) runs the push receiver's own refresh for
+    # the account: one mbsync channel plus `notmuch new`, a few seconds, where
+    # mbsync-pull does both channels in 25-50 s. Two differences, both for a
+    # human waiting on it: flock WAITS for a running timer pull instead of
+    # returning 0 having synced nothing, and SASL_PATH comes from mbsync-pull
+    # because aerc's environment has no XOAUTH2 plugin.
+    checkMail = acct:
+      "${pkgs.coreutils}/bin/env "
+      + lib.escapeShellArgs config.systemd.user.services.mbsync-pull.Service.Environment + " "
+      + lib.replaceStrings [ "flock -n -E 0 " ] [ "flock -w 60 " ]
+          config.services.mail-bridge.accounts.${acct}.refreshCommand;
   in {
     force = true;
     text = ''
@@ -2942,6 +2953,10 @@ in
       # `:recall` refuses outright unless the selected message is in the
       # POSTPONE directory, so this has to be the real on-disk drafts maildir.
       postpone          = [Gmail]/Drafts
+      # Manual only: push and the 5-min timer do the rest, so no `check-mail`
+      # interval. Timeout covers a 60 s lock wait plus the pull itself.
+      check-mail-cmd = ${checkMail "personal"}
+      check-mail-timeout = 90s
 
       [Work]
       from          = Edwin Hu <ehu@law.virginia.edu>
@@ -2958,6 +2973,10 @@ in
       outgoing      = ${lib.getExe pkgs.mail-bridge} sendmail --account ehu@law.virginia.edu
       # See [Personal]: names a query-map row, not a folder.
       default       = Focused
+      # Manual only: push and the 5-min timer do the rest, so no `check-mail`
+      # interval. Timeout covers a 60 s lock wait plus the pull itself.
+      check-mail-cmd = ${checkMail "work"}
+      check-mail-timeout = 90s
 
     '';
   };
