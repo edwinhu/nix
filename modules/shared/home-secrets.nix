@@ -159,6 +159,10 @@ in
     # goal judge, which asks a small model for a structured verdict.
     file = "${nix-secrets}/openrouter-api-key.age";
     mode = "400";
+  } // optionalSecret "openai-api-key" {
+    # OpenAI API, used for the Decisions API (gpt-6-luna) head-to-head against Jev.
+    file = "${nix-secrets}/openai-api-key.age";
+    mode = "400";
   } // optionalSecret "artificial-analysis-api-key" {
     # Read by the workflows route.ts --refresh for the Artificial Analysis Intelligence Index.
     file = "${nix-secrets}/artificial-analysis-api-key.age";
