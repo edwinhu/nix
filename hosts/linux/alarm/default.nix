@@ -12,7 +12,6 @@ let
   desktop = has profile "desktop";  # hints
   media = has profile "media";      # beeper
   pkm = has profile "pkm";          # obsidian, the reader services
-  docs = has profile "docs";        # yazi previewers
 in
 {
   imports = [
@@ -24,7 +23,7 @@ in
     # chrome-cdp + readwise-reader-tools services. Cross-platform module: emits
     # systemd user services + a timer here (Linux) and launchd agents on macOS.
     ../../../modules/shared/reader-services.nix
-  ] ++ lib.optionals docs [
+  ] ++ lib.optionals desktop [
     # yazi previewers: duckdb for tabular files, rich-preview for notebooks.
     # This host does not import modules/linux/home-manager.nix, so it needs the
     # import of its own.

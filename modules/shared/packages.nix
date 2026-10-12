@@ -150,7 +150,6 @@ let
     # reads a Sheet is not thereby a host that needs a 570MB SDK.
     cloud = [
       google-cloud-sdk
-      postgresql
     ];
 
     # Data science and tabular work.
@@ -160,6 +159,7 @@ let
       rv   # R package manager (modules/shared/rv.nix); new_project.sh runs `rv init`
       xan
       tabiew
+      postgresql  # psql for WRDS; here, not `cloud`, so the server gets it without the SDK
     ];
 
     # Typesetting, document conversion, file preview.
@@ -174,16 +174,21 @@ let
       tinymist-lsp
       tectonic
       lmodern
-      hunspell
       elio
-      (import ./leaf { inherit pkgs; })  # terminal Markdown previewer (LaTeX/Mermaid/watch); not in nixpkgs
       onlyoffice-x2t  # lightweight OOXML converter; keep source-built docbuilder out of the base system
-      yazi
-      poppler-utils   # PDF previews for yazi
+      poppler-utils   # pdftotext, and PDF previews for yazi
       # duckdb drives duckdb.yazi (csv/tsv/parquet/xlsx). Here rather than in
       # yazi.nix because darwin does not import that module, so a Mac got the
       # plugin's engine nowhere -- it was being patched in by hand on mbp.
       duckdb
+    ];
+
+    # Things only someone looking at a screen uses: file manager, previewer,
+    # spell-check. Headless hosts skip them.
+    desktop = [
+      yazi
+      (import ./leaf { inherit pkgs; })  # terminal Markdown previewer (LaTeX/Mermaid/watch); not in nixpkgs
+      hunspell
     ];
 
     # Personal knowledge management and research CLIs.

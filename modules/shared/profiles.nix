@@ -31,8 +31,8 @@ rec {
     client = [ "core" "ai" "docs" "pkm" "media" "desktop" ];
 
     # Headless. Builds and serves; also renders documents. No mail, no desktop
-    # apps, no theming.
-    server = [ "core" "ai" "dev" "cloud" "data" "docs" ];
+    # apps, no theming, no cloud SDK.
+    server = [ "core" "ai" "dev" "data" "docs" ];
   };
 
   # `has "server" "docs"` -> true. Throws on an unknown profile rather than

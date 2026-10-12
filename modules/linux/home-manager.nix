@@ -3,11 +3,11 @@
 let
   profile = userInfo.profile or "full";
   inherit (import ../shared/profiles.nix) has;
-  # Theming and GUI toolkits follow the `desktop` layer; previewers follow the
-  # `docs` layer that ships yazi itself. A headless box renders documents but
-  # has no one looking at a styled terminal.
+  # Theming, GUI toolkits and the yazi previewers follow the `desktop` layer,
+  # which ships yazi itself. A headless box renders documents but has no one
+  # looking at a styled terminal.
   desktop = has profile "desktop";
-  docs = has profile "docs";
+  pkm = has profile "pkm";
 in
 {
   # Gated as blocks, not with mkIf: without ../shared/stylix.nix imported the
@@ -22,7 +22,6 @@ in
     #   programs.wordRender.enable = true;  (see ../shared/word-render/README.md)
     # Needs a local KVM guest, so it tracks `desktop`, not `docs`.
     ../shared/word-render.nix
-  ] ++ lib.optionals docs [
     # yazi previewers: duckdb for tabular files, rich-preview for notebooks.
     ../shared/yazi.nix
   ];
@@ -88,9 +87,9 @@ in
 
   # Linux-specific services
   services = {
-    # Syncthing - continuous file synchronization
+    # Syncthing: notes sync, so it follows `pkm`; the server has nothing to sync.
     syncthing = {
-      enable = true;
+      enable = pkm;
       tray.enable = false;  # No system tray on headless systems
     };
   };
