@@ -26,7 +26,7 @@ writeShellApplication {
     tinymist
   ];
   text = ''
-    script="$HOME/projects/typst/scripts/check-title-overflow.py"
+    script="$HOME/projects/typst/checks/_typst/render/check-title-overflow.py"
     if [ ! -f "$script" ]; then
       echo "check-title-overflow: $script not found (is ~/projects/typst checked out?)" >&2
       exit 2

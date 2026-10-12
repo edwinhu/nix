@@ -48,7 +48,8 @@ let
         tinymist
       ];
       text = ''
-        script="$HOME/projects/typst/scripts/${name}.py"
+        n="${name}"
+        script="$HOME/projects/typst/checks/workshop/constraints/''${n#check-}.py"
         if [ ! -f "$script" ]; then
           echo "${name}: $script not found (is ~/projects/typst checked out?)" >&2
           exit 2
