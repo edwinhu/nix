@@ -3915,11 +3915,33 @@ in
         # secret from its own config, so brokering the grant here replaces its
         # interactive flow and its bundled fallback OAuth client.
         "https://www.googleapis.com/auth/youtube.readonly",
+        # contacts.readonly: cardamum's gpeople backend, so mail can resolve a
+        # recipient's address from the personal address book. Read-only on
+        # purpose: nothing here writes contacts.
+        "https://www.googleapis.com/auth/contacts.readonly",
       ]
       auto-refresh = true
 
       storage.read.command = "cat ${config.xdg.stateHome}/ortie/google.token"
       storage.write.command = "install -D -m600 /dev/stdin ${config.xdg.stateHome}/ortie/google.token"
+    '';
+  };
+
+  # cardamum: contacts lookup for mail, over the same ortie tokens as himalaya.
+  # Work's saved Outlook contacts are empty; the useful work lookup is Graph's
+  # /me/people through `cardamum -a work msgraph request get`.
+  xdg.configFile."cardamum/config.toml" = {
+    force = true;
+    text = ''
+      [accounts.personal]
+      default = true
+      gpeople.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "google", "token", "show"]
+      addressbook.default = "myContacts"
+
+      [accounts.work]
+      msgraph.user-id = "me"
+      msgraph.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "msgraph", "token", "show"]
+      addressbook.default = "contacts"
     '';
   };
 
@@ -4615,6 +4637,19 @@ in
 
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
+    # herdr ships no .desktop entry (neither the Omarchy package nor the mise
+    # build), so the apps menu cannot find it without this one.
+    herdr = {
+      name = "Herdr";
+      genericName = "Agent multiplexer";
+      comment = "Attach to the persistent herdr session";
+      exec = "omarchy-launch-terminal-herdr";
+      terminal = false;
+      type = "Application";
+      icon = "utilities-terminal";
+      categories = [ "Development" "ConsoleOnly" ];
+    };
+
     # linecast's six terminal dashboards, so they are findable in the apps menu
     # (SUPER+ALT+SPACE), which reads XDG entries through Quickshell's
     # DesktopEntries. The package ships none of its own.

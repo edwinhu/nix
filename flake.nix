@@ -52,15 +52,6 @@
       url = "github:pimalaya/ortie";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # neverest: the mailbox synchronizer (himalaya's old `account sync`, split
-    # out). Pinned to the v0.2.0 tag and used as SOURCE, not as a release
-    # tarball, because the msgraph backend is behind a non-default cargo
-    # feature and upstream's published binaries are built without it — this
-    # host syncs a Microsoft Graph work mailbox.
-    neverest = {
-      url = "github:pimalaya/neverest/v0.2.0";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     # himalaya-tui: the TUI front end for himalaya v2. Source build because
     # upstream has cut no release at all — no version tag, no tarball — so it
     # is pinned to a master rev.
@@ -131,7 +122,7 @@
     };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-aerc, nixpkgs-cliamp, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, neverest, himalaya-tui, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, presmihaylov-taps, dimentium-autoraise, home-manager, nixpkgs, nixpkgs-aerc, nixpkgs-cliamp, nixpkgs-onlyoffice, nixpkgs-stremio, nixpkgs-pipewire, mml, ortie, himalaya-tui, stylix, agenix, nixGL, nix-secrets, zellij-switch-wasm, joycon-pad-src, mail-bridge-src } @inputs:
     let
       # Define user-host mappings.
       #
@@ -466,7 +457,9 @@
                   rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix { tahoe = info.macosTahoe or false; };
                   voxtype = prev.callPackage ./modules/darwin/voxtype.nix {};
-                  tinymist-lsp = prev.callPackage ./modules/shared/tinymist-lsp.nix {};
+                  # typst 0.15 doubles compile memory; see typst-pinned.nix.
+                  inherit (prev.callPackage ./modules/shared/typst-pinned.nix {}) typst tinymist;
+                  tinymist-lsp = final.callPackage ./modules/shared/tinymist-lsp.nix {};
                   # elio via newer nixpkgs: the main lock's cargo vendor fetcher
                   # sends no User-Agent and crates.io now 403s it.
                   elio = (import inputs.nixpkgs-onlyoffice { system = prev.stdenv.hostPlatform.system; }).callPackage ./modules/shared/elio.nix {};
@@ -544,7 +537,9 @@
                 # exposed under its own name rather than shadowing anything.
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
-                tinymist-lsp = prev.callPackage ./modules/shared/tinymist-lsp.nix {};
+                # typst 0.15 doubles compile memory; see typst-pinned.nix.
+                inherit (prev.callPackage ./modules/shared/typst-pinned.nix {}) typst tinymist;
+                tinymist-lsp = final.callPackage ./modules/shared/tinymist-lsp.nix {};
                 rv = prev.callPackage ./modules/shared/rv.nix {};
                 # pipewire ONLY as a source of libpipewire-module-raop-*, from a
                 # pin matching the Arch daemon's version. No nix PipeWire runs
@@ -562,17 +557,11 @@
                 himalaya = prev.callPackage ./modules/shared/himalaya-release.nix {};
                 mml = prev.callPackage ./modules/shared/mml-release.nix {};
                 ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
-                # neverest and himalaya-tui are built FROM SOURCE, unlike the
-                # three above. neverest's msgraph backend is a non-default
-                # cargo feature, so the published binary cannot talk to the
-                # work mailbox; himalaya-tui has no published binary at all.
-                neverest = prev.callPackage ./modules/shared/pimalaya-source.nix {
-                  src = inputs.neverest;
-                  cargoHash = "sha256-APC1GDVggdT8iMxP+fsNfGuzOiQ4OQbPbNefCVspLbE=";
-                  # defaults (rustls-ring, imap, smtp, dav) stay on; msgraph is
-                  # additive
-                  buildFeatures = [ "msgraph" ];
-                };
+                cardamum = prev.callPackage ./modules/shared/cardamum-release.nix {};
+                # 0.3.0 put msgraph and gmail in the default feature set, so the
+                # published binary reaches both accounts.
+                neverest = prev.callPackage ./modules/shared/neverest-release.nix {};
+                # himalaya-tui is built FROM SOURCE: it has no published binary.
                 himalaya-tui = prev.callPackage ./modules/shared/pimalaya-source.nix {
                   src = inputs.himalaya-tui;
                   cargoHash = "sha256-do+OaRQ8yOBXzfLWmRZZm6ymbHvy/T3OCDgnyMAuQEM=";

@@ -67,6 +67,9 @@ let
       # client profile reaches the main machine over the tailnet, so this is
       # part of its floor, not an extra.
       tsui
+
+      # adb/fastboot for the Pixel (wireless debugging over the tailnet).
+      android-tools
     ];
 
     # Mail. The UVA tenant refuses IMAP/SMTP but DOES issue Mail-scoped
@@ -94,10 +97,8 @@ let
       # Linux overlay: upstream has cut no release, so there is no tarball to
       # unpack.
       himalaya-tui
-      # neverest syncs the mailboxes (himalaya v1's `account sync`, split out).
-      # Also a source build, and for a different reason: its msgraph backend is
-      # behind a non-default cargo feature, so upstream's released binary cannot
-      # reach the work account.
+      # neverest syncs accounts into a pimdir store (himalaya v1's `account
+      # sync`, split out). Release build since 0.3.0 ships msgraph and gmail.
       neverest
       # isync/mbsync pulls both mailboxes down to Maildir under ~/areas/mail, so
       # himalaya reads local files instead of a network backend: work over
@@ -124,6 +125,10 @@ let
       # by store path from its config; this entry is for the bootstrap by hand
       # (`ortie -a msgraph auth get` / `auth resume`).
       ortie
+      # cardamum resolves a mail recipient's address: Google People on the
+      # personal account, Graph on work. Tokens come from ortie (see its config
+      # in the omarchy host).
+      cardamum
 
       # chawan renders aerc's text/html (see aercChawanHtml in the omarchy host).
       # w3m stays even though the filter no longer uses it: aerc's OWN shipped

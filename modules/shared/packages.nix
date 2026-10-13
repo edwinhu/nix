@@ -91,11 +91,12 @@ let
     ];
 
     # AI CLIs and the machinery that installs them.
-    ai = [
+    # mise is Darwin-only: Omarchy ships /usr/bin/mise and its migrations need that
+    # version; a nix copy earlier on PATH shadows it.
+    ai = lib.optional stdenv.isDarwin mise ++ [
       # claude, codex, opencode, agy, qmd, readwise: installed via
       # ~/nix/scripts/setup-ai-tools.sh, which writes mise stubs into ~/.local/bin
       # (no nix-tracked version pins; each tool self-updates on run).
-      mise
       # bun is not optional here: setup-ai-tools.sh installs qmd, readwise and
       # zg with `bun install -g`, so a profile with `ai` but no bun bootstraps
       # a broken tool set. bun-pinned, not stock bun: nixpkgs' 1.3.13 makes
