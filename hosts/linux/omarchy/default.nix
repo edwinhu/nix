@@ -4499,6 +4499,26 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
+    # obsidian-sync: Obsidian Sync for ~/notes via obsidian-headless, so the vault
+    # syncs whether or not the Obsidian app is open (the app's Sync core plugin is
+    # OFF here; never run both on one folder). Same client as the Android devices.
+    # Installed with npm under a pinned Node 22 (better-sqlite3 is a native module,
+    # so runtime and install Node must share an ABI):
+    #   cd ~/.local/share/obsidian-headless && nix shell nixpkgs#nodejs_22 -c npm i obsidian-headless@0.0.14
+    # Login and `sync-setup --path ~/notes` are one-time and stateful (~/.config/obsidian-headless).
+    { obsidian-sync = {
+      Unit = {
+        Description = "Obsidian Sync (headless) for ~/notes";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStart = "${pkgs.nodejs_22}/bin/node %h/.local/share/obsidian-headless/node_modules/obsidian-headless/cli.js sync --continuous --path %h/notes";
+        Restart = "always";
+        RestartSec = 30;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     # joycon-pad: Bluetooth Joy-Con (L) as a macro pad — stick→pointer,
     # ZL→voxtype dictation, SL/SR→tab switch, Capture-hold→Alt-Tab. Reads the
     # hid-nintendo evdev node + drives ydotool/voxtype; `input` group grants
