@@ -4632,9 +4632,7 @@ in
         OnUnitActiveSec = "5min";
         Persistent = false;
       };
-      # NOT enabled in this generation — the brief is prepare-and-build only.
-      # Uncomment to wire it in, then `systemctl --user start mbsync-pull.timer`.
-      # Install.WantedBy = [ "timers.target" ];
+      Install.WantedBy = [ "timers.target" ];
     }; }
     { aerc-addressbook = {
       Unit.Description = "Rebuild the aerc address book a few times a day";
