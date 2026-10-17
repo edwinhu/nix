@@ -2819,9 +2819,11 @@ in
   # message and gets no row; starred and the user labels need nothing from it,
   # since Gmail sends starred as \Flagged and every user label as its own
   # folder.
+  # Date bounds on the big views keep aerc's notmuch thread load fast (Sent was 16K msgs, ~3-6 s);
+  # older mail is still reachable with :query.
   xdg.configFile."aerc/queries-work".text = ''
     Focused=folder:work/INBOX and tag:focused
-    Other=folder:work/INBOX and tag:other
+    Other=folder:work/INBOX and tag:other and date:90d..
     Respond=folder:work/INBOX and tag:respond
     Waiting=folder:work/INBOX and tag:waiting
     Meeting=folder:work/INBOX and tag:meeting
@@ -2834,11 +2836,11 @@ in
   xdg.configFile."aerc/queries-personal".text = ''
     Important=folder:personal/INBOX and tag:important
     Primary=folder:personal/INBOX and tag:primary
-    Updates=folder:personal/INBOX and tag:updates
-    Promotions=folder:personal/INBOX and tag:promotions
+    Updates=folder:personal/INBOX and tag:updates and date:90d..
+    Promotions=folder:personal/INBOX and tag:promotions and date:90d..
     Social=folder:personal/INBOX and tag:social
     Drafts=folder:"personal/[Gmail]/Drafts"
-    Sent=folder:"personal/[Gmail]/Sent Mail"
+    Sent=folder:"personal/[Gmail]/Sent Mail" and date:1y..
   '';
 
   xdg.configFile."notmuch/default/config".text = ''
