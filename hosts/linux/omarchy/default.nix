@@ -3,7 +3,7 @@
 # Modeled on hosts/linux/alarm (the aarch64/Asahi Omarchy host); the two share
 # the same Omarchy desktop-entry + package set and differ only by architecture,
 # which is handled in flake.nix (userHosts + the doublecmd/beeper overlays).
-{ config, pkgs, lib, user, userInfo, self, ... }:
+{ config, pkgs, lib, user, userInfo, self, agenix, ... }:
 
 let
   iconDir = ../../../modules/linux/desktop-icons;
@@ -2063,6 +2063,8 @@ in
       # ships the binary only; the USB access rules are system-level on non-NixOS
       # and come from Arch's `zsa-udev` (extra).
         pkgs.ghostty pkgs.sunshine pkgs.zapp
+        # agenix CLI for editing ~/nix-secrets (`agenix -e x.age < value`).
+        agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
 
     # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
