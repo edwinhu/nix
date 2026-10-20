@@ -3,7 +3,7 @@
 { lib, stdenv, fetchurl }:
 
 let
-  version = "0.13.0";
+  version = "0.14.0";
 
   # Prebuilt Bun binaries per platform. The linux-x64 asset is a normal
   # dynamically-linked ELF; on FHS hosts (Omarchy/Arch) it runs against system
@@ -11,11 +11,11 @@ let
   platforms = {
     aarch64-darwin = {
       asset = "morgen-darwin-arm64";
-      hash = "sha256-g2nQwpC+GajRpZ7MGaDC0Pvn28RjAIH8P8V+p0lELQg=";
+      hash = "sha256-GzJ2l8qVj6YjQBzQR2YS+sF4z8ENqRd1GvMxVGaMj1k=";
     };
     x86_64-linux = {
       asset = "morgen-linux-x64";
-      hash = "sha256-1HDxIdRJSvE+GUGESQQkVCAMYTAG69SoxTSxbyrPU88=";
+      hash = "sha256-otpNZLXqdbjR/GNFYiEZR3tKJ4DMPtp1ceZSHHoUPHA=";
     };
   };
 
