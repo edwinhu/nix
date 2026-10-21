@@ -167,6 +167,10 @@ in
     # Dewey Data bulk API (deweypy / deweydatapy).
     file = "${nix-secrets}/dewey-api-key.age";
     mode = "400";
+  } // optionalSecret "torbox-api-key" {
+    # TorBox account API (api.torbox.app, Bearer auth).
+    file = "${nix-secrets}/torbox-api-key.age";
+    mode = "400";
   } // optionalSecret "artificial-analysis-api-key" {
     # Read by the workflows route.ts --refresh for the Artificial Analysis Intelligence Index.
     file = "${nix-secrets}/artificial-analysis-api-key.age";
@@ -193,6 +197,7 @@ in
     GEMINI_API_KEY_FILE = "${tempDir}/gemini-api-key";
     MORGEN_API_KEY_FILE = "${tempDir}/morgen-api-key";
     DEWEY_API_KEY_FILE = "${tempDir}/dewey-api-key";
+    TORBOX_API_KEY_FILE = "${tempDir}/torbox-api-key";
     CLAUDE_API_KEY_FILE = "${tempDir}/claude-api-key";
     READWISE_TOKEN_FILE = "${tempDir}/readwise-token";
     LSEG_CREDENTIALS_FILE = "${tempDir}/lseg-credentials";
@@ -273,6 +278,7 @@ in
     get-gemini-api-key = "cat $GEMINI_API_KEY_FILE";
     get-morgen-api-key = "cat $MORGEN_API_KEY_FILE";
     get-dewey-api-key = "cat $DEWEY_API_KEY_FILE";
+    get-torbox-api-key = "cat $TORBOX_API_KEY_FILE";
     get-claude-api-key = "cat $CLAUDE_API_KEY_FILE";
     get-readwise-token = "cat $READWISE_TOKEN_FILE";
     get-beeper-access-token = "cat $BEEPER_ACCESS_TOKEN_FILE";
