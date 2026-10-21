@@ -125,7 +125,10 @@
       # line with the two above. Verify: chrome://gpu shows "Video Decode:
       # Hardware accelerated", and playing an AV1 video spawns no dav1d
       # threads (ls /proc/<renderer>/task/*/comm | grep dav1d).
-      --enable-features=TouchpadOverscrollHistoryNavigation,WebRTCPipeWireCapturer,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL
+      # Glic is Gemini in Chrome (tab-strip button; signs in via the OAuth flags below).
+      --enable-features=TouchpadOverscrollHistoryNavigation,WebRTCPipeWireCapturer,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,Glic
+      # Gemini shortcut; Chromium leaves Alt+G unbound on Linux and Hyprland binds G only with Super.
+      --glic-default-hotkey=Alt+G
       # The features above are NOT sufficient on their own: Chromium's
       # gpu_driver_bug_list applies `disable_vaapi` to this Mesa/radeonsi combo,
       # which leaves chrome://gpu claiming "Video Decode: Hardware accelerated"
