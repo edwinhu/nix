@@ -47,26 +47,26 @@
 }:
 
 let
-  version = "1.4.0";
+  version = "1.4.4";
 
   # Asset names match nixpkgs' own per-system choice, including the
   # x86_64-darwin baseline build.
   assets = {
     "aarch64-darwin" = {
       asset = "bun-darwin-aarch64";
-      hash = "sha256-xmnpf2Fk4cluBwF0jbmN+ndJKQjL2DlMdVcTSnNd44E=";
+      hash = "sha256-wkDX8My5DCY6hJ/NsJt+5iYw2SE0jtaq/ahrnVd7xRA=";
     };
     "aarch64-linux" = {
       asset = "bun-linux-aarch64";
-      hash = "sha256-SxozLuhhmD65O8/m93D/+U4+MbLDiL2uo8jtNeWO7Q4=";
+      hash = "sha256-uqa7NvUdblhWHgK76oJQOKnfRU9nPW13bou/hvjHhQ4=";
     };
     "x86_64-darwin" = {
       asset = "bun-darwin-x64-baseline";
-      hash = "sha256-2pufG0unZsbymXEfON+qmGI+HtnECJaqU9uAPFLsH6A=";
+      hash = "sha256-1KFVrfv9CRVes7oFyeOlRPOSl9emhhbTx3WfZ6tcR9w=";
     };
     "x86_64-linux" = {
       asset = "bun-linux-x64";
-      hash = "sha256-LQP7X7g6yLVnrKCigbLOGhoZ1Ij1bClo2Iw/Jekv5FI=";
+      hash = "sha256-v4zL+ysLgBWeD5ptFcVTF63YB3U028YTCj7bUvzLOVw=";
     };
   };
 

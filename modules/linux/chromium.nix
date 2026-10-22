@@ -199,6 +199,9 @@
       # genuinely-hidden background tabs free to freeze AND discard normally, so
       # CPU/battery + RAM savings are preserved for tabs you're not looking at.
       --disable-backgrounding-occluded-windows
+      # Omarchy migration 1791935188 appends this with `>>` unless `grep -qxF`
+      # finds it; against this read-only file the append fails the update.
+      --no-default-browser-check
     '';
   };
 }
