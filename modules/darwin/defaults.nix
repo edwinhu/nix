@@ -57,6 +57,18 @@
     stateVersion = 4;
     primaryUser = user;
 
+    # Driver-free stand-in for Karabiner, whose DriverKit extension UVA's MDM
+    # forbids. Right option and right command both become F18, which
+    # ~/.hammerspoon/hyper.lua turns into ctrl+alt+cmd while held.
+    keyboard = {
+      enableKeyMapping = true;
+      remapCapsLockToEscape = true;
+      userKeyMapping = [
+        { HIDKeyboardModifierMappingSrc = 30064771302; HIDKeyboardModifierMappingDst = 30064771181; } # right option -> F18
+        { HIDKeyboardModifierMappingSrc = 30064771303; HIDKeyboardModifierMappingDst = 30064771181; } # right command -> F18
+      ];
+    };
+
     defaults = {
       NSGlobalDomain = {
         AppleShowAllExtensions = true;
@@ -203,6 +215,18 @@
       write_smartcard_default allowSmartCard true
       write_smartcard_default enforceSmartCard false
     '';
+  };
+
+  # nix-darwin applies the mapping above only at activation; hidutil state is
+  # lost on reboot, so reapply it at login.
+  launchd.user.agents.hidutil-keymap = {
+    serviceConfig = {
+      ProgramArguments = [
+        "/usr/bin/hidutil" "property" "--set"
+        (builtins.toJSON { UserKeyMapping = config.system.keyboard.userKeyMapping; })
+      ];
+      RunAtLoad = true;
+    };
   };
 
   # sudo: Touch ID first, then YubiKey FIDO2 (reads ~/.config/Yubico/u2f_keys).
