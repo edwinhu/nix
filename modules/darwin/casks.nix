@@ -4,7 +4,7 @@
 #
 # Dropping a cask here does NOT uninstall it: `onActivation.cleanup` is off in
 # modules/darwin/home-manager.nix, deliberately (it breaks accessibility
-# permissions for Karabiner/Hammerspoon). So this governs what gets INSTALLED
+# permissions for Hammerspoon). So this governs what gets INSTALLED
 # and managed, and an app already on disk stays until removed by hand.
 { lib, profile ? "full", ... }:
 
@@ -15,7 +15,6 @@ let
     core = [
       "1password"
       "1password-cli"  # `op`; must be the vendor binary for desktop-app integration
-      "karabiner-elements"
       "homerow"
       "hammerspoon"    # E2E testing / desktop automation
       "raycast"

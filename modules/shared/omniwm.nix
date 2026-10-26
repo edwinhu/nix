@@ -4,7 +4,7 @@
 #
 # OmniWM is ad-hoc signed (no Developer ID), so macOS re-prompts for
 # Accessibility on every version bump regardless of install method — same
-# behaviour as Karabiner/Hammerspoon. The .app is landed at a stable
+# behaviour as Hammerspoon. The .app is landed at a stable
 # /Applications/OmniWM.app path via modules/darwin/defaults.nix postActivation
 # (not the churning /Applications/Nix Apps symlink), so Finder/Spotlight stay
 # sane and grants persist if OmniWM ever ships proper signing.

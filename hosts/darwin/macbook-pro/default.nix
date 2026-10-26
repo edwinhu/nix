@@ -16,8 +16,6 @@
   # Fonts (needed for browser/GUI apps — stylix only configures terminal apps)
   fonts.packages = [ pkgs.maple-mono.NF ];
 
-  # Karabiner-Elements: managed via Homebrew cask (nix-darwin service is broken for v15.7+)
-
   # Set environment variables for GUI applications
   # This makes nix binaries (like direnv) available to apps launched from Finder/Dock
   launchd.user.envVariables = {
@@ -35,8 +33,8 @@
     echo "   Privacy & Security → Full Disk Access → Add Ghostty & WezTerm"
     echo "   This is required for zellij and other terminal tools to work properly"
     echo ""
-    echo "⚠️  If Karabiner-Elements or Hammerspoon stop working, re-grant Accessibility permissions:"
-    echo "   Privacy & Security → Accessibility → Re-enable Karabiner-Elements & Hammerspoon"
+    echo "⚠️  If Hammerspoon stops working, re-grant Accessibility permissions:"
+    echo "   Privacy & Security → Accessibility → Re-enable Hammerspoon"
   '';
 
   # Create SSH config for port 420

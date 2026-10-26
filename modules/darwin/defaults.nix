@@ -57,8 +57,8 @@
     stateVersion = 4;
     primaryUser = user;
 
-    # Driver-free stand-in for Karabiner, whose DriverKit extension UVA's MDM
-    # forbids. Right option and right command both become F18, which
+    # Driver-free key remaps (Karabiner's DriverKit extension is forbidden by
+    # UVA's MDM). Right option and right command both become F18, which
     # ~/.hammerspoon/hyper.lua turns into ctrl+alt+cmd while held.
     keyboard = {
       enableKeyMapping = true;
@@ -168,15 +168,6 @@
       cp -RL "${pkgs.omniwm}/Applications/OmniWM.app" "/Applications/OmniWM.app"
       chmod -R u+w "/Applications/OmniWM.app"
       echo "  Copied OmniWM.app"
-      # Disable Karabiner-Elements' built-in Sparkle auto-updater.
-      # Every auto-update replaces the .app and DriverKit extension, which
-      # forces re-approval of Input Monitoring, Accessibility, and the DEXT.
-      # Combined with homebrew `upgrade = false`, this pins the installed
-      # version until the user explicitly runs `brew upgrade karabiner-elements`.
-      for bundle in org.pqrs.Karabiner-Elements org.pqrs.Karabiner-EventViewer org.pqrs.Karabiner-Elements.Settings; do
-        sudo -u ${user} defaults write "$bundle" SUEnableAutomaticChecks -bool false 2>/dev/null || true
-        sudo -u ${user} defaults write "$bundle" SUAutomaticallyUpdate -bool false 2>/dev/null || true
-      done
 
       # ForkLift as default folder handler
       if ! sudo -u ${user} defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null | grep -q "com.binarynights.ForkLift"; then
