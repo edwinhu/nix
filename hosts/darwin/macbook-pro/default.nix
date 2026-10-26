@@ -10,7 +10,6 @@
     # ../../../modules/darwin/syncthing.nix  # Disabled: vault sync replaced by Obsidian CDP remote setup (2026-06-12)
     ../../../modules/darwin/wifi-autoswitch.nix
     ../../../modules/darwin/jankyborders.nix
-    ../../../modules/darwin/joycon-reconnect.nix
   ];
 
   # Fonts (needed for browser/GUI apps — stylix only configures terminal apps)
