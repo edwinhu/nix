@@ -19,6 +19,7 @@
     casks = pkgs.callPackage ./casks.nix { profile = userInfo.profile or "full"; };
     brews = [
       "doxx"
+      "mas"
       "presmihaylov/taps/ccagent"
     ];
     onActivation = {
@@ -38,14 +39,12 @@
     # you may receive an error message "Redownload Unavailable with This Apple ID".
     # This message is safe to ignore. (https://github.com/dustinlyons/nixos-config/issues/83)
 
-    # Nix is reinstalling these apps every time you run `darwin-rebuild switch`
-    # https://github.com/nix-darwin/nix-darwin/issues/1323
-    # run brew install mas to make sure you have > 2.0.0
-    # All entries currently disabled — nix-darwin issue #1323: brew bundle invokes
-    # `mas get <id>` on every switch, which mas 2.x no longer supports (renamed to
-    # `mas info`), so installs fail even when the app is already present. Re-enable
-    # individual lines once nix-darwin emits a compatible command.
+    # Needs mas >= 6: brew bundle installs with `mas get`, which mas 2.x dropped
+    # and 6.x restored. `upgrade = false` above means brew won't bump it for you.
     masApps = {
+      # App Store build, not the tailscale-app cask: its app-embedded network
+      # extension installs under UVA's MDM, which forbids the cask's system extension.
+      "tailscale" = 1475387142;
       # "bear" = 1091189122;
       # "microsoft to-do" = 1274495053;
       # "amazon kindle" = 302584613;

@@ -20,7 +20,8 @@ let
       "hammerspoon"    # E2E testing / desktop automation
       "raycast"
       "shottr"
-      "tailscale-app"
+      # tailscale-app: replaced by the Mac App Store build (homebrew.masApps in
+      # home-manager.nix); the cask's system extension is blocked by UVA's Jamf policy.
       "protonvpn"
       "forklift"
       "google-drive"
