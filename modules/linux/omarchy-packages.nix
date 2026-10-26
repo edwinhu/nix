@@ -67,9 +67,6 @@ let
       # client profile reaches the main machine over the tailnet, so this is
       # part of its floor, not an extra.
       tsui
-
-      # adb/fastboot for the Pixel (wireless debugging over the tailnet).
-      android-tools
     ];
 
     # Mail. The UVA tenant refuses IMAP/SMTP but DOES issue Mail-scoped

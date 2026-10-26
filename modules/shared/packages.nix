@@ -68,6 +68,7 @@ let
       # herdr is NOT here: mise via scripts/setup-ai-tools.sh, which also
       # regenerates its agent skill from the same binary. A client profile
       # exists mostly to run `herdr --remote`, so this layer is its floor.
+      android-tools  # adb for Android/Google TV debloat over the LAN
       croc  # fast P2P file transfer (direct over LAN when peers are local)
       websocat  # WebSocket client for Chrome DevTools Protocol
       # Remote storage and Google Workspace. Small, and wanted anywhere files
