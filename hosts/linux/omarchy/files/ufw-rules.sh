@@ -16,6 +16,8 @@ LAN=192.168.4.0/22
 # port-spec | proto | comment  (allowed FROM the LAN subnet)
 RULES=(
   "6002:6003|udp|owntone airplay"
+  "1883|tcp|mosquitto mqtt (nuki lock)"
+  "8123|tcp|home assistant (lan wall tablet)"
 )
 
 # iface | port | proto | comment  (allowed IN on a specific interface, any source).
@@ -23,6 +25,16 @@ RULES=(
 # exposed to the LAN or the internet.
 IFACE_RULES=(
   "tailscale0|22|tcp|ssh over tailscale"
+  "tailscale0|53|udp|adguard home dns over tailscale"
+  "tailscale0|53|tcp|adguard home dns over tailscale"
+)
+
+# iface | source prefix | proto | comment  (any port, from a non-routable source).
+# Matter devices advertise their own UDP ports, so Matter is scoped by source:
+# IPv6 link-local and ULA (incl. the Thread OMR prefix) on the wired LAN only.
+SRC_RULES=(
+  "enp191s0|fe80::/10|udp|matter (ipv6 link-local)"
+  "enp191s0|fc00::/7|udp|matter (ipv6 ula / thread)"
 )
 
 check() {
@@ -41,6 +53,15 @@ check() {
     # user.rules writes an interface rule as: -A ufw-user-input -i tailscale0 -p tcp --dport 22 ...
     if ! grep -qE -- "-i ${iface} -p ${proto} --dport ${port}\\b" /etc/ufw/user.rules 2>/dev/null; then
       echo "MISSING: ${port}/${proto} in on ${iface}  ($comment)"
+      missing=1
+    fi
+  done
+  local src
+  for rule in "${SRC_RULES[@]}"; do
+    IFS='|' read -r iface src proto comment <<<"$rule"
+    # user6.rules writes it as: -A ufw6-user-input -i enp191s0 -p udp -s fe80::/10 -j ACCEPT
+    if ! grep -qF -- "-i ${iface} -p ${proto} -s ${src} -j ACCEPT" /etc/ufw/user6.rules 2>/dev/null; then
+      echo "MISSING: ${proto} from ${src} in on ${iface}  ($comment)"
       missing=1
     fi
   done
@@ -87,4 +108,10 @@ for rule in "${IFACE_RULES[@]}"; do
   IFS='|' read -r iface port proto comment <<<"$rule"
   echo "ufw allow in on $iface to any port $port proto $proto"
   ufw allow in on "$iface" to any port "$port" proto "$proto" comment "$comment"
+done
+
+for rule in "${SRC_RULES[@]}"; do
+  IFS='|' read -r iface src proto comment <<<"$rule"
+  echo "ufw allow in on $iface from $src proto $proto"
+  ufw allow in on "$iface" from "$src" proto "$proto" comment "$comment"
 done

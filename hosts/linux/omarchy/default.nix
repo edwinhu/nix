@@ -4162,6 +4162,83 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
+    # Home Assistant (container). --network host so it can reach LAN devices
+    # (the Dyson's local MQTT, mDNS); UI on :8123. Config lives outside the
+    # repo in ~/.local/share/home-assistant.
+    { home-assistant = {
+      Unit = {
+        Description = "Home Assistant";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = "/usr/bin/mkdir -p %h/.local/share/home-assistant";
+        ExecStart = ''/usr/bin/docker run --rm --name home-assistant --network host -e TZ=America/New_York -v %h/.local/share/home-assistant:/config ghcr.io/home-assistant/home-assistant:stable'';
+        ExecStop = "/usr/bin/docker stop home-assistant";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # Mosquitto MQTT broker for Home Assistant (the Nuki lock publishes to it).
+    # LAN-reachable on :1883 via the ufw rule in files/ufw-rules.sh; auth only.
+    { mosquitto = {
+      Unit = {
+        Description = "Mosquitto MQTT broker";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStart = ''/usr/bin/docker run --rm --name mosquitto --network host -v %h/.local/share/mosquitto/config:/mosquitto/config -v %h/.local/share/mosquitto/data:/mosquitto/data eclipse-mosquitto:2'';
+        ExecStop = "/usr/bin/docker stop mosquitto";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # matter.js Matter server for Home Assistant (the Nest thermostats, shared
+    # from Google Home). Host networking for mDNS and IPv6 link-local; HA's
+    # Matter integration talks to it at ws://localhost:5580/ws. Inbound Matter
+    # UDP is allowed by source prefix in files/ufw-rules.sh, not by port.
+    { matter-server = {
+      Unit = {
+        Description = "Matter server (matter.js) for Home Assistant";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = "/usr/bin/mkdir -p %h/.local/share/matter-server";
+        ExecStart = ''/usr/bin/docker run --rm --name matter-server --network host -e PRIMARY_INTERFACE=enp191s0 -v %h/.local/share/matter-server:/data ghcr.io/matter-js/matterjs-server:stable'';
+        ExecStop = "/usr/bin/docker stop matter-server";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # AdGuard Home: the tailnet's DNS (Tailscale global nameserver, Override local
+    # DNS), so every device with Tailscale up gets ad-domain blocking without a
+    # second Android VPN. DNS binds only the tailnet IP (127.0.0.53/54 belong to
+    # resolved); admin UI on localhost:3080, login in 1Password "AdGuard Home
+    # (omarchy)". Needs the tailscale0:53 rules in files/ufw-rules.sh.
+    { adguardhome = {
+      Unit = {
+        Description = "AdGuard Home (tailnet DNS)";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = "/usr/bin/mkdir -p %h/.local/share/adguardhome/work %h/.local/share/adguardhome/conf";
+        ExecStart = ''/usr/bin/docker run --rm --name adguardhome --network host -v %h/.local/share/adguardhome/work:/opt/adguardhome/work -v %h/.local/share/adguardhome/conf:/opt/adguardhome/conf adguard/adguardhome:latest'';
+        ExecStop = "/usr/bin/docker stop adguardhome";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     { aerc-addressbook = {
       Unit.Description = "Rebuild the aerc frecency address book";
       Service = {
