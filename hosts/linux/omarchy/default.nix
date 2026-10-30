@@ -1569,7 +1569,7 @@ exit 0
     # RECLAIM OUR OWN NAME FIRST. `agent_name_taken` is PERSISTENT -- the retry loop below is
     # built for not-ready errors and cannot clear it, so a finished agent squatting the name
     # burns 15 tries and exits 1. Nothing else releases it: claude-assistant-shutdown closes
-    # only `assistant` and `nightly-wrapup`, so vault-compile's own Done pane from the previous
+    # only `nightly-wrapup` (it /clears `assistant`), so vault-compile's own Done pane from the previous
     # night blocked every subsequent run (failed 2026-09-20 and -21, same cause).
     #
     # Only a NOT-WORKING agent is reclaimed. Killing a run still in progress to start another
@@ -1637,14 +1637,78 @@ exit 0
     fi
     echo "spawned '$LABEL' in herdr (pane=$PANE tab=$TAB)"
   '';
+  # Deliver a prompt to a LIVE herdr agent by name, verified. Empty text only
+  # checks liveness. An exited claude drops out of `herdr agent list`, so
+  # `agent get` failing means "no live agent".
+  # usage: claude-herdr-deliver <agent-name> [text]
+  # exit: 0 delivered (or alive), 3 no live agent, 1 delivery failed
+  claudeHerdrDeliver = pkgs.writeShellScript "claude-herdr-deliver" ''
+    set -uo pipefail
+    NAME="$1"; TEXT="''${2:-}"
+    command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1 || exit 3
+    # stdout only: the mise banner goes to stderr and would break jq.
+    AGENT=$(herdr agent get "$NAME" 2>/dev/null) \
+      && printf '%s' "$AGENT" | jq -e '.result.agent.pane_id' >/dev/null 2>&1 || exit 3
+    [ -n "$TEXT" ] || exit 0
+    PANE=$(printf '%s' "$AGENT" | jq -r '.result.agent.pane_id')
+    STATUS=$(printf '%s' "$AGENT" | jq -r '.result.agent.agent_status')
+    session() { herdr agent get "$PANE" 2>/dev/null | jq -r '.result.agent.agent_session.value // empty'; }
+    status() { herdr agent get "$PANE" 2>/dev/null | jq -r '.result.agent.agent_status // empty'; }
+    case "$STATUS" in
+      # herdr rejects a prompt to a blocked agent before sending, and a bare
+      # Enter would answer whatever dialog is blocking it. Report, don't force.
+      blocked) echo "$NAME ($PANE) is blocked on a prompt; not sending $TEXT" >&2; exit 1 ;;
+      # /clear is not queued behind a running turn: it runs at once and cuts
+      # that turn short. Sent anyway; the log records what was interrupted.
+      working) echo "$NAME ($PANE) is busy; sending $TEXT anyway" >&2 ;;
+    esac
+
+    if [ "$TEXT" = /clear ]; then
+      # /clear never shows a working state, so `--wait` reports
+      # agent_prompt_stalled even when it ran. The proof is a new session id.
+      BEFORE=$(session)
+      POUT=$(herdr agent prompt "$PANE" /clear --wait --until idle --until done --timeout 30000 2>&1)
+      [ "$(session)" != "$BEFORE" ] || {
+        herdr pane send-keys "$PANE" enter >/dev/null 2>&1
+        echo "note: /clear did not take; sent enter" >&2
+        sleep 3
+      }
+      AFTER=$(session)
+      if [ -n "$AFTER" ] && [ "$AFTER" != "$BEFORE" ]; then
+        echo "cleared $NAME ($PANE): session $BEFORE -> $AFTER, status $(status)"
+        exit 0
+      fi
+      echo "/clear to $NAME ($PANE) did not take (session still $BEFORE): $POUT" >&2
+      exit 1
+    fi
+
+    # Same stall rule as claudeHerdrSpawn: `timeout` means it submitted and is
+    # still working; agent_prompt_stalled means Enter was eaten.
+    if POUT=$(herdr agent prompt "$PANE" "$TEXT" --wait --until working --timeout 15000 2>&1); then
+      echo "delivered $TEXT to $NAME ($PANE)"; exit 0
+    fi
+    case "$POUT" in
+      *'"code":"timeout"'*) echo "delivered $TEXT to $NAME ($PANE)"; exit 0 ;;
+      *agent_prompt_stalled*)
+        herdr pane send-keys "$PANE" enter >/dev/null 2>&1
+        echo "note: $TEXT stalled in the input box; sent enter" >&2
+        if herdr agent wait "$PANE" --until working --until blocked --timeout 10000 >/dev/null 2>&1; then
+          echo "delivered $TEXT to $NAME ($PANE)"; exit 0
+        fi ;;
+    esac
+    echo "delivery of $TEXT to $NAME ($PANE) failed: $POUT" >&2
+    exit 1
+  '';
   claudeRoutines = {
-    # Daily 07:00. Weekday: spawn the day's long-lived "🦞 assistant" session
-    # with the briefing. Weekend: spawn an idle session, no briefing.
+    # Daily 07:00. The long-lived "🦞 assistant" session (herdr agent
+    # `assistant`) survives the night, reset by claude-assistant-shutdown's
+    # /clear. Weekday: send it /morning-briefing; weekend: leave it idle. Only
+    # when no live session exists is one spawned (with the briefing on weekdays).
     # Planning is its own timer (below) rather than a detached sleep from here:
     # a `sleep 3600` dies with a suspend/reboot and leaves no trace, so planning
     # would silently not happen on exactly the mornings the machine was busy.
     "claude-morning-briefing" = {
-      desc = "Claude morning briefing — spawn the day's 🦞 assistant session";
+      desc = "Claude morning briefing — brief in the 🦞 assistant session, spawning it if absent";
       cwd = "%h/areas/assistant";
       onCalendar = "*-*-* 07:00:00";
       # A boot after 07:00 still spawns: the session is the day's workspace, and
@@ -1655,15 +1719,17 @@ exit 0
         set -uo pipefail
         cd "$HOME/areas/assistant" || exit 1
         DOW=$(date +%u)  # 1=Mon … 7=Sun
-        # NOT `|| true`: the spawn IS this unit's purpose, so its exit status has
-        # to become the unit's. Masking it is what let a failed 07:00 briefing
-        # record `Result=success` while leaving no session — the only trace was
-        # morning-planning saying "briefing likely did not run" an hour later.
-        if [ "$DOW" -le 5 ]; then
-          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "/morning-briefing" assistant
-        else
-          ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "" assistant
-        fi
+        # Delivery and spawn status become the unit's: masking them would record
+        # Result=success with no briefing.
+        PROMPT=""
+        [ "$DOW" -le 5 ] && PROMPT="/morning-briefing"
+        ${claudeHerdrDeliver} assistant "$PROMPT"
+        rc=$?
+        # Spawn ONLY when no agent exists (3). After a failed delivery the live
+        # session still holds the name, and the spawn's reclaim would close it.
+        [ "$rc" -eq 3 ] || exit "$rc"
+        echo "no live assistant session; spawning one"
+        ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "$PROMPT" assistant
       '';
     };
     # Mon–Fri 08:00, an hour after the briefing. Routes /morning-planning into
@@ -1770,10 +1836,13 @@ exit 0
         git --no-pager diff --shortstat HEAD~1 HEAD
       '';
     };
-    # Daily 02:45 — cleanly stop the day's 🦞 assistant before the 03:00 vault
-    # compile. Deliberate stop (not a crash), so it is not auto-respawned.
+    # Daily 02:45 — reset the 🦞 assistant with /clear (fresh context, same
+    # process, so the 07:00 briefing lands in it) and close a standalone
+    # nightly-wrapup. /clear does NOT pick up a new Claude Code version or
+    # plugin; that needs a restart (agent-restart, or close its tab and let
+    # 07:00 spawn a new one).
     "claude-assistant-shutdown" = {
-      desc = "Claude assistant shutdown — stop the day's 🦞 assistant session";
+      desc = "Claude assistant reset — /clear the 🦞 assistant, close nightly-wrapup";
       cwd = "%h/areas/assistant";
       onCalendar = "*-*-* 02:45:00";
       spawner = false;
@@ -1781,8 +1850,14 @@ exit 0
         set -uo pipefail
         stopped=0
         failed=0
-        # Herdr-hosted routines (the normal case since the --bg -> herdr move):
-        # closing the tab ends the foreground `claude --rc` that owns the pane.
+        ${claudeHerdrDeliver} assistant /clear
+        case $? in
+          0) stopped=$((stopped + 1)) ;;
+          3) echo "no live assistant session to clear" ;;
+          *) echo "FAILED to /clear the assistant session" >&2; failed=$((failed + 1)) ;;
+        esac
+        # A standalone nightly-wrapup (spawned when no assistant was live) is
+        # closed outright: closing the tab ends the `claude --rc` in the pane.
         if command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1; then
           # Match on .name -- the field `herdr agent start` checks for collisions --
           # NOT the terminal title. A herdr restart rewrites every title to
@@ -1793,7 +1868,7 @@ exit 0
           if printf '%s' "$agents_list" | jq -e . >/dev/null 2>&1; then
             tabs=$(printf '%s' "$agents_list" | jq -r '
               .result.agents[]
-              | select(.name == "assistant" or .name == "nightly-wrapup")
+              | select(.name == "nightly-wrapup")
               | .tab_id')
           else
             tabs=""
