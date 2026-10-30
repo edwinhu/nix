@@ -4337,6 +4337,28 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
+    # Copies one-time codes from Beeper's desktop notifications to the clipboard.
+    { beeper-code-copy = {
+      Unit = {
+        Description = "Copy one-time codes from Beeper notifications";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "/bin/bash -lc 'exec %h/.local/bin/beeper-code-copy'";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
+    # Replies STOP to Google Messages campaign texts ending in "Stop2End".
+    { beeper-stop2end = {
+      Unit.Description = "Reply STOP to Stop2End campaign texts";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "/bin/bash -lc 'exec %h/.local/bin/beeper-stop2end'";
+      };
+    }; }
     # Mosquitto MQTT broker for Home Assistant (the Nuki lock publishes to it).
     # LAN-reachable on :1883 via the ufw rule in files/ufw-rules.sh; auth only.
     { mosquitto = {
@@ -4798,6 +4820,15 @@ in
 
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
   systemd.user.timers = lib.mkMerge [
+    { beeper-stop2end = {
+      Unit.Description = "Check for Stop2End campaign texts (every 5min)";
+      Timer = {
+        OnStartupSec = "5min";
+        OnUnitActiveSec = "5min";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    }; }
     # 30min, matching preview-reap: often enough that a degraded session is caught within one
     # working stretch, rare enough that the check (one unix-socket round trip) costs nothing.
     { direct-kitty-watch = {
