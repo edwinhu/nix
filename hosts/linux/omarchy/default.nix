@@ -4181,6 +4181,87 @@ in
       };
       Install.WantedBy = [ "default.target" ];
     }; }
+    # Assist voice engines for Home Assistant, loopback only (HA is on the host network).
+    { wyoming-whisper = {
+      Unit = {
+        Description = "Wyoming Whisper speech-to-text";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = [ "/usr/bin/mkdir -p %h/.local/share/wyoming/whisper" "-/usr/bin/docker rm -f wyoming-whisper" ];
+        ExecStart = ''/usr/bin/docker run --rm --name wyoming-whisper --network host -v %h/.local/share/wyoming/whisper:/data rhasspy/wyoming-whisper --model base-int8 --language en --uri tcp://127.0.0.1:10300'';
+        ExecStop = "/usr/bin/docker stop wyoming-whisper";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    { wyoming-piper = {
+      Unit = {
+        Description = "Wyoming Piper text-to-speech";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = [ "/usr/bin/mkdir -p %h/.local/share/wyoming/piper" "-/usr/bin/docker rm -f wyoming-piper" ];
+        ExecStart = ''/usr/bin/docker run --rm --name wyoming-piper --network host -v %h/.local/share/wyoming/piper:/data rhasspy/wyoming-piper --voice en_US-lessac-medium --uri tcp://127.0.0.1:10200'';
+        ExecStop = "/usr/bin/docker stop wyoming-piper";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # Kokoro TTS behind a Wyoming proxy, and the bridge from HA conversation agents to the
+    # coding CLIs. All loopback; login shell so the bridge finds claude and the wrappers.
+    { kokoro = {
+      Unit = {
+        Description = "Kokoro TTS";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = "-/usr/bin/docker rm -f kokoro";
+        ExecStart = ''/usr/bin/docker run --rm --name kokoro -p 127.0.0.1:8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest'';
+        ExecStop = "/usr/bin/docker stop kokoro";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    { wyoming-kokoro = {
+      Unit = {
+        Description = "Wyoming proxy for Kokoro";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = "-/usr/bin/docker rm -f wyoming-kokoro";
+        ExecStart = ''/usr/bin/docker run --rm --name wyoming-kokoro --network host -e WYOMING_URI=tcp://127.0.0.1:10210 -e TTS_OPENAI_URL=http://127.0.0.1:8880/v1 -e TTS_OPENAI_KEY=none -e TTS_MODELS=kokoro -e TTS_BACKEND=KOKORO_FASTAPI ghcr.io/roryeckel/wyoming_openai:latest'';
+        ExecStop = "/usr/bin/docker stop wyoming-kokoro";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    { ha-agent-bridge = {
+      Unit = {
+        Description = "Home Assistant to coding-agent bridge";
+        After = [ "docker.service" "network-online.target" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStart = "/bin/bash -lc 'exec python3 %h/projects/ha-agent-bridge/bridge.py'";
+        Restart = "on-failure";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
     # Mosquitto MQTT broker for Home Assistant (the Nuki lock publishes to it).
     # LAN-reachable on :1883 via the ufw rule in files/ufw-rules.sh; auth only.
     { mosquitto = {
