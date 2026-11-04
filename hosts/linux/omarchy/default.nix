@@ -3439,8 +3439,8 @@ in
       application/pdf=hylo
 
       # No [hooks] block: aerc's new-mail hook only fired while aerc was
-      # running AND sitting in that folder. Nothing replaces it yet — see
-      # the git history for the retired aercMailNotify script.
+      # running AND sitting in that folder. The carillon user service
+      # replaces it — see the git history for the retired aercMailNotify script.
     '';
   };
 
@@ -4021,6 +4021,27 @@ in
       msgraph.user-id = "me"
       msgraph.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "msgraph", "token", "show"]
       addressbook.default = "contacts"
+    '';
+  };
+
+  # carillon: new-mail desktop notifications (service: systemd.user.services.carillon).
+  xdg.configFile."carillon/config.toml" = {
+    force = true;
+    text = ''
+      [accounts.personal]
+      default = true
+      gmail.mailbox = "INBOX"
+      gmail.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "google", "token", "show"]
+      gmail.watch.poll.interval = 60
+      gmail.hook.on-message-added.notify.summary = "Personal: $sender"
+      gmail.hook.on-message-added.notify.body = "$subject"
+
+      [accounts.work]
+      msgraph.mailbox = "inbox"
+      msgraph.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "msgraph", "token", "show"]
+      msgraph.watch.poll.interval = 60
+      msgraph.hook.on-message-added.notify.summary = "Work: $sender"
+      msgraph.hook.on-message-added.notify.body = "$subject"
     '';
   };
 
@@ -4736,6 +4757,21 @@ in
       };
       # No Install.WantedBy — the timer is what pulls this in, and per the
       # brief nothing is enabled or started in this generation.
+    }; }
+    # carillon: desktop notification on new mail. Replaces the retired
+    # aercMailNotify hook; config is xdg.configFile."carillon/config.toml".
+    { carillon = {
+      Unit = {
+        Description = "carillon — desktop notification on new mail (personal Gmail, work Graph)";
+        After = [ "network-online.target" ];
+        Wants = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStart = "${lib.getExe pkgs.carillon} watch";
+        Restart = "on-failure";
+        RestartSec = 30;
+      };
+      Install.WantedBy = [ "default.target" ];
     }; }
     # ydotoold: virtual uinput device daemon that `ydotool` talks to over
     # %t/.ydotool_socket. Runs as the user (not root) — /dev/uinput is reachable

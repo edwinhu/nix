@@ -558,6 +558,8 @@
                 mml = prev.callPackage ./modules/shared/mml-release.nix {};
                 ortie = prev.callPackage ./modules/shared/ortie-release.nix {};
                 cardamum = prev.callPackage ./modules/shared/cardamum-release.nix {};
+                # new-mail desktop notifier, from upstream's prebuilt release.
+                carillon = prev.callPackage ./modules/shared/carillon-release.nix {};
                 # 0.3.0 put msgraph and gmail in the default feature set, so the
                 # published binary reaches both accounts.
                 neverest = prev.callPackage ./modules/shared/neverest-release.nix {};
