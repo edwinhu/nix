@@ -3782,6 +3782,10 @@ in
     TLSType None
     User mbsync
     Pass mbsync
+    # The bridge answers a SELECT only after re-enumerating the folder when it
+    # owes one (cold start, resync debt): ~2,100 INBOX messages over Graph took
+    # longer than the 20 s default on 2026-11-04 and cost that sync run.
+    Timeout 120
 
     IMAPStore work-remote
     Account work-bridge
