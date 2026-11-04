@@ -197,6 +197,17 @@ let
           must degrade to the old cadence rather than to silence.
         '';
       };
+      graphWebhookStandalone = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Run the receiver as its own `mail-bridge-graph-webhook-<name>` unit.
+          False when the account's live `imapd` hosts it (`--notification-url`):
+          only in-process can a notification bring INBOX up to date before the
+          refresh's SELECT, which a separate process gets stale-served. The
+          clientState secret is still provisioned either way.
+        '';
+      };
       graphWebhookUrl = lib.mkOption {
         type = lib.types.str;
         default = "";
@@ -607,7 +618,7 @@ in
       # empty --notification-url: harmless while nothing starts it, and a trap
       # the first time somebody starts it by hand.
       // (lib.mapAttrs' graphWebhookUnit
-            (lib.filterAttrs (_: a: a.graphWebhookEnabled) cfg.accounts))
+            (lib.filterAttrs (_: a: a.graphWebhookEnabled && a.graphWebhookStandalone) cfg.accounts))
       // (lib.mapAttrs' gmailPushUnit
             (lib.filterAttrs (_: a: a.gmailPushEnabled) cfg.accounts));
 

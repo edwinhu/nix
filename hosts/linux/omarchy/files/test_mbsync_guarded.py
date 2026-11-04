@@ -60,3 +60,95 @@ def test_pulls_only_when_many_read_messages_lost_seen(tmp_path, monkeypatch):
     calls = run(tmp_path, monkeypatch, lost)
     assert calls[0] == "--config rc --pull work"
     assert calls[1] == "new --quiet"
+
+
+# --- locking: per-account mbsync, shared lock excludes the taggers ---------
+
+import fcntl
+import os
+import threading
+import time
+
+
+def lock_probe(path, lockfile, log):
+    """A fake mbsync that records whether an EXCLUSIVE lock on `lockfile` (what a
+    tagger's `flock -w 120` takes) could be had while it ran, then its argv."""
+    path.write_text(
+        "#!/bin/sh\n"
+        f'if flock -n -x {lockfile} true; then echo tagger-free >> {log}; '
+        f'else echo tagger-excluded >> {log}; fi\n'
+        f'echo "$@" >> {log}\n'
+    )
+    path.chmod(path.stat().st_mode | stat.S_IEXEC)
+    return str(path)
+
+
+def setup(tmp_path, monkeypatch):
+    root = tmp_path / "mail"
+    for acct in ("work", "personal"):
+        maildir(root, f"{acct}/INBOX", [(1, 1, "S", "S")])
+    monkeypatch.setattr(guarded, "ROOT", str(root))
+    log = tmp_path / "calls"
+    mbsync = lock_probe(tmp_path / "mbsync", root / ".mbsync.lock", log)
+    notmuch = fake(tmp_path / "notmuch", log)
+    return root, log, mbsync, notmuch
+
+
+def hold(path):
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    return fd
+
+
+def test_busy_personal_sync_does_not_stop_work(tmp_path, monkeypatch):
+    root, log, mbsync, notmuch = setup(tmp_path, monkeypatch)
+    fd = hold(root / ".mbsync-personal.lock")
+    try:
+        assert guarded.main(["x", mbsync, "rc", notmuch, "mail"]) == 0
+    finally:
+        os.close(fd)
+    calls = log.read_text().splitlines()
+    assert "--config rc work" in calls
+    assert not any(c.endswith(" personal") or c.endswith(" mail") for c in calls)
+
+
+def test_taggers_are_excluded_while_mbsync_runs(tmp_path, monkeypatch):
+    root, log, mbsync, notmuch = setup(tmp_path, monkeypatch)
+    assert guarded.main(["x", mbsync, "rc", notmuch, "work"]) == 0
+    calls = log.read_text().splitlines()
+    assert calls[0] == "tagger-excluded"
+    assert calls[1] == "--config rc work"
+    assert "new --quiet" in calls
+
+
+def test_two_accounts_can_sync_at_once(tmp_path, monkeypatch):
+    root, log, mbsync, notmuch = setup(tmp_path, monkeypatch)
+    # Another account's sync holds the shared lock in SHARED mode; this one must
+    # still get in rather than queue behind it.
+    fd = os.open(root / ".mbsync.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    try:
+        assert guarded.main(["x", mbsync, "rc", notmuch, "work", "--wait", "2"]) == 0
+    finally:
+        os.close(fd)
+    assert "--config rc work" in log.read_text().splitlines()
+
+
+def test_wait_queues_behind_a_busy_account_instead_of_dropping(tmp_path, monkeypatch):
+    root, log, mbsync, notmuch = setup(tmp_path, monkeypatch)
+    fd = hold(root / ".mbsync-work.lock")
+    threading.Timer(0.5, os.close, args=(fd,)).start()
+    started = time.monotonic()
+    assert guarded.main(["x", mbsync, "rc", notmuch, "work", "--wait", "10"]) == 0
+    assert time.monotonic() - started >= 0.4
+    assert "--config rc work" in log.read_text().splitlines()
+
+
+def test_without_wait_a_busy_account_is_skipped(tmp_path, monkeypatch):
+    root, log, mbsync, notmuch = setup(tmp_path, monkeypatch)
+    fd = hold(root / ".mbsync-work.lock")
+    try:
+        assert guarded.main(["x", mbsync, "rc", notmuch, "work"]) == 0
+    finally:
+        os.close(fd)
+    assert not log.exists() or "--config rc work" not in log.read_text().splitlines()

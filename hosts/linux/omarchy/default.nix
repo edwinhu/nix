@@ -2030,18 +2030,22 @@ in
       # synchronously at subscription creation, so the route has to be live
       # before the unit can succeed.
       graphWebhookEnabled = true;
+      # Hosted by the live `mail-bridge` unit (imapd --notification-url), not a
+      # unit of its own: in a separate process the refresh's SELECT was
+      # stale-served the pre-notification view, so no notification ever
+      # delivered mail (2026-11-04).
+      graphWebhookStandalone = false;
       graphWebhookUrl = "https://webhook.eddyhu.com/graph";
       # What a notification now runs. The archive is deleted, so there is no
       # in-process cycle left to trigger: the receiver spawns the same
-      # flock-guarded mbsync the timer runs, narrowed to the `work` channel.
-      # Same lock file as mbsync-pull, so a notification arriving mid-timer is
-      # dropped (`-n -E 0`) rather than racing it. Spawned directly, no shell.
-      # Through the same guard as the timer, which also runs `notmuch new`
-      # inside the lock -- without it this refresh left renames unindexed.
+      # guarded mbsync the timer runs, narrowed to the `work` channel. The guard
+      # locks per account, so a slow Gmail pull no longer drops this; `--wait`
+      # queues it behind an in-flight Work pull instead of skipping. Spawned
+      # directly, no shell. The guard also runs `notmuch new` under the lock the
+      # taggers wait on -- without it this refresh left renames unindexed.
       refreshCommand =
-        "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
-        + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
-        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch work";
+        "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch work --wait 360";
     };
     # Receiver-only: mbsync reads imap.gmail.com directly, so there is no bridge,
     # port or budget here -- just the Pub/Sub subscriber. It pulls (no public
@@ -2056,9 +2060,8 @@ in
       gmailPushSubscription = "projects/eddyhu-gws-cli/subscriptions/gmail-push-mail-bridge";
       gmailPushTopic = "projects/eddyhu-gws-cli/topics/gmail-push";
       refreshCommand =
-        "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
-        + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
-        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal";
+        "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal --wait 360";
     };
   };
 
@@ -4634,13 +4637,17 @@ in
     # SECURITY: binds 127.0.0.1:1143 and accepts ANY LOGIN credentials — the
     # real credential is the Graph token the process holds. startImapd refuses
     # to bind anything but loopback, so this cannot accidentally be exposed.
+    # It also hosts the Graph receiver on 127.0.0.1:8787, the one port the
+    # tunnel reaches; every notification must carry the clientState secret.
     { mail-bridge = {
       Unit = {
         Description = "mail-bridge — loopback IMAP bridge for the UVA mailbox";
-        # Graph is the only external dependency, so the network is the only
-        # precondition. Deliberately not tied to the graphical session: the
-        # bridge must serve mail on a headless boot or over SSH too.
-        After = [ "network-online.target" ];
+        # agenix.service for the clientState EnvironmentFile: systemd reads it
+        # before ExecStartPre, so it must be on disk when the unit is spawned
+        # (the receiver unit lost that race once, 2026-09-02). Deliberately not
+        # tied to the graphical session: the bridge must serve mail on a
+        # headless boot or over SSH too.
+        After = [ "network-online.target" "agenix.service" ];
         Wants = [ "network-online.target" ];
       };
       Service = {
@@ -4659,9 +4666,18 @@ in
         ];
         # The binary is self-contained (bun runtime embedded), so it needs no
         # PATH or working directory of its own.
+        # The Graph change-notification receiver runs in-process (see
+        # graphWebhookStandalone on the work account): a notification brings
+        # INBOX up to date here, then runs the guarded `mbsync work`. The
+        # clientState secret comes by EnvironmentFile, never argv.
+        EnvironmentFile = "%h/.config/mail-bridge/graph-client-state.env";
         ExecStart =
+          let w = config.services.mail-bridge.accounts.work; in
           "${pkgs.mail-bridge}/bin/mail-bridge imapd "
-          + "--account ehu@law.virginia.edu";
+          + "--account ehu@law.virginia.edu "
+          + "--notification-url ${w.graphWebhookUrl} "
+          + "--webhook-port ${toString w.graphWebhookPort} "
+          + ''--refresh-command "${w.refreshCommand}"'';
         # A revoked or unbootstrapped grant makes startup fail; back off rather
         # than spin, and give up for a while instead of hammering Graph.
         Restart = "on-failure";
@@ -4718,20 +4734,19 @@ in
         # per-folder cur/new/tmp trees are `Create Near`'s job.
         ExecStartPre =
           "${pkgs.coreutils}/bin/mkdir -p /home/eh/areas/mail/work /home/eh/areas/mail/personal";
-        # flock, non-blocking: a slow cold pull must not stack up behind the
-        # 5-minute timer. `-n` makes an overlapping run bail instead of queue,
-        # and `-E 0` makes that bail exit 0, so a skipped tick is not a failed
-        # unit. Without -E flock exits 1 on conflict, which is also mbsync's own
-        # error status — SuccessExitStatus=1 would have hidden real failures.
+        # The guard locks each account on its own (`.mbsync-<account>.lock`), so
+        # a slow Gmail pull no longer skips Work's tick; an account whose pull is
+        # still running is skipped (exit 0) rather than queued behind the timer.
+        # Each pull holds `.mbsync.lock` SHARED until it is indexed, which is
+        # what the taggers below wait on exclusively.
         ExecStart =
-          "${pkgs.util-linux}/bin/flock -n -E 0 /home/eh/areas/mail/.mbsync.lock "
-          + "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
+          "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
           + "${pkgs.isync}/bin/mbsync %h/.mbsyncrc ${pkgs.notmuch}/bin/notmuch mail";
         # INDEX, then TAG, and in that order: the tagger addresses messages by
         # `id:`, so a message notmuch has not indexed yet cannot be tagged.
         #
-        # Both are ExecStartPost rather than part of the flock'd command, so a
-        # skipped tick (flock -n bails when a slow pull is still running) still
+        # Both are ExecStartPost rather than part of the guarded command, so a
+        # skipped tick (the guard skips an account whose pull is still running) still
         # re-indexes and re-tags what the PREVIOUS run pulled. The taggers WAIT
         # for the lock: a tag write between an mbsync rename and its `notmuch
         # new` rewrites the file from a stale `unread` tag, stripping Seen.
