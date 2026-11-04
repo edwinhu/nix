@@ -4679,6 +4679,12 @@ in
           let w = config.services.mail-bridge.accounts.work; in
           "${pkgs.mail-bridge}/bin/mail-bridge imapd "
           + "--account ehu@law.virginia.edu "
+          # Capped at the pre-0.11 window: full-mailbox serving shipped against
+          # docs/investigations/2026-09-09_full-mailboxes.md's "do not deploy"
+          # (open silent-miss findings in the sync seam), and expanding a folder
+          # renumbers it, which mbsync cannot recover from. Narrowing keeps
+          # UIDVALIDITY (checked 2026-11-04). Lift only after that review.
+          + "--window 1000 "
           + "--notification-url ${w.graphWebhookUrl} "
           + "--webhook-port ${toString w.graphWebhookPort} "
           + ''--refresh-command "${w.refreshCommand}"'';
