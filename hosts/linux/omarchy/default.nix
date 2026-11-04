@@ -8,6 +8,13 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
+  # carillon's arrival hook, beside its notify hook: carillon logs nothing when
+  # it fires, so "did it notify?" had no evidence (2026-11-04). Sender and the
+  # provider id only, no subject. stdout lands in carillon.service's journal.
+  carillonArrivalLog = pkgs.writeShellScript "carillon-arrival-log" ''
+    printf 'arrival [%s] from %s id=%s\n' "$1" "''${sender:-?}" "''${id:-?}"
+  '';
+
   # Network-isolated Chawan text renderer for `mail-preview --text`. Shared with
   # packages.<system>.mail-preview in flake.nix; the rationale for every flag
   # lives next to the derivation.
@@ -4042,6 +4049,7 @@ in
       gmail.watch.poll.interval = 60
       gmail.hook.on-message-added.notify.summary = "Personal: $sender"
       gmail.hook.on-message-added.notify.body = "$subject"
+      gmail.hook.on-message-added.cmd = ["${carillonArrivalLog}", "personal"]
 
       [accounts.work]
       msgraph.mailbox = "inbox"
@@ -4049,6 +4057,7 @@ in
       msgraph.watch.poll.interval = 60
       msgraph.hook.on-message-added.notify.summary = "Work: $sender"
       msgraph.hook.on-message-added.notify.body = "$subject"
+      msgraph.hook.on-message-added.cmd = ["${carillonArrivalLog}", "work"]
     '';
   };
 
@@ -4792,6 +4801,10 @@ in
         Wants = [ "network-online.target" ];
       };
       Service = {
+        # Debug for carillon's own target only: a failed Graph or Gmail round is
+        # logged at debug and was otherwise invisible ("msgraph round failed,
+        # reconnecting"). Dependencies stay at the default.
+        Environment = [ "RUST_LOG=carillon=debug" ];
         ExecStart = "${lib.getExe pkgs.carillon} watch";
         Restart = "on-failure";
         RestartSec = 30;
