@@ -191,6 +191,10 @@ let
       # service and launcher entry are in the omarchy host.
       superwhisper
 
+      # Herdr desktop app + herdr-core/hc (modules/linux/herdr-app.nix); its
+      # launcher entry is in the omarchy host.
+      herdr-app
+
       # Fonts / math typesetting extras
       lmmath
       maple-mono.NF

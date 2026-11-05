@@ -5191,6 +5191,16 @@ in
       categories = [ "Utility" "Accessibility" ];
       settings.StartupWMClass = "com.superwhisper.Superwhisper";
     };
+    # Herdr desktop app: the vendor installer's entry.
+    herdr-app = {
+      name = "Herdr";
+      comment = "Terminals and coding agents that keep running";
+      exec = "herdr-app";
+      icon = "herdr-app";
+      terminal = false;
+      categories = [ "Development" ];
+      settings.StartupWMClass = "herdr-app";
+    };
     superwhisper-url = {
       name = "Superwhisper License Activation";
       exec = "superwhisper open-url %u";
