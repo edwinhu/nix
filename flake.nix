@@ -537,6 +537,7 @@
                 # exposed under its own name rather than shadowing anything.
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
+                superwhisper = prev.callPackage ./modules/linux/superwhisper.nix {};
                 # typst 0.15 doubles compile memory; see typst-pinned.nix.
                 inherit (prev.callPackage ./modules/shared/typst-pinned.nix {}) typst tinymist;
                 tinymist-lsp = final.callPackage ./modules/shared/tinymist-lsp.nix {};

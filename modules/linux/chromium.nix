@@ -126,7 +126,8 @@
       # Hardware accelerated", and playing an AV1 video spawns no dav1d
       # threads (ls /proc/<renderer>/task/*/comm | grep dav1d).
       # Glic is Gemini in Chrome (tab-strip button; signs in via the OAuth flags below).
-      --enable-features=TouchpadOverscrollHistoryNavigation,WebRTCPipeWireCapturer,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,Glic
+      # OverlayScrollbar: Omarchy 4.5 migration 1791376887 sed-appends it unless its grep finds it here.
+      --enable-features=TouchpadOverscrollHistoryNavigation,WebRTCPipeWireCapturer,AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,Glic,OverlayScrollbar
       # Gemini shortcut; Chromium leaves Alt+G unbound on Linux and Hyprland binds G only with Super.
       --glic-default-hotkey=Alt+G
       # The features above are NOT sufficient on their own: Chromium's

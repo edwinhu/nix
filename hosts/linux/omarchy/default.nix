@@ -1529,10 +1529,12 @@ exit 0
   # to `herdr agent list` — that visibility is the whole point of this helper.
   # Keeps `-n "$LABEL"` so `agent-msg`/`claude agents` still resolve the session
   # by name (the wrapup + shutdown routines below depend on that).
-  # usage: claude-herdr-spawn <dir> <tab-label> <agent-name> [prompt] [claude-agent]
+  # usage: claude-herdr-spawn <dir> <tab-label> <agent-name> [prompt] [claude-agent] [args-cmd]
+  # args-cmd: run once the pane exists, with HERDR_PANE_ID exported; each stdout
+  # line becomes an extra claude arg.
   claudeHerdrSpawn = pkgs.writeShellScript "claude-herdr-spawn" ''
     set -uo pipefail
-    DIR="$1"; LABEL="$2"; AGENT_NAME="$3"; PROMPT="''${4:-}"; CLAUDE_AGENT="''${5:-}"
+    DIR="$1"; LABEL="$2"; AGENT_NAME="$3"; PROMPT="''${4:-}"; CLAUDE_AGENT="''${5:-}"; ARGS_CMD="''${6:-}"
     cd "$DIR" || exit 1
     command -v herdr >/dev/null 2>&1 || { echo "no herdr on this host" >&2; exit 1; }
 
@@ -1637,6 +1639,19 @@ exit 0
     # session runs the assistant persona instead of the coding one.
     CLAUDE_AGENT_ARGS=()
     [ -n "$CLAUDE_AGENT" ] && CLAUDE_AGENT_ARGS=(--agent "$CLAUDE_AGENT")
+    EXTRA_ARGS=()
+    [ -n "$ARGS_CMD" ] && mapfile -t EXTRA_ARGS < <(HERDR_PANE_ID="$PANE" eval "$ARGS_CMD")
+    # --dangerously-load-development-channels stops on a confirm dialog that holds
+    # `agent start` at Blocked until it times out. Option 1 is preselected: answer it.
+    case " ''${EXTRA_ARGS[*]-} " in
+      *' --dangerously-load-development-channels '*)
+        ( for _ in $(seq 1 60); do
+            herdr pane read "$PANE" 2>/dev/null | grep -q 'I am using this for local development' \
+              && { herdr pane send-keys "$PANE" enter >/dev/null 2>&1; break; }
+            sleep 1
+          done ) >/dev/null 2>&1 &
+        ;;
+    esac
     # RETRY ON ANY ERROR, not just agent_pane_busy. `agent start` requires the pane to
     # already be at its interactive shell prompt and rejects synchronously if it is not --
     # but the rejection string is NOT always `agent_pane_busy`: on the cold/idle 03:00 box the
@@ -1648,7 +1663,8 @@ exit 0
     # stderr tempfile and left `outcome="error"` with no string in any log.
     for _ in $(seq 1 15); do
       if STARTED=$(herdr agent start "$AGENT_NAME" --kind claude --pane "$PANE" --timeout 60000 \
-                     -- --rc --effort medium -n "$LABEL" ''${CLAUDE_AGENT_ARGS[@]+"''${CLAUDE_AGENT_ARGS[@]}"} 2>"$ERR_FILE"); then
+                     -- --rc --effort medium -n "$LABEL" ''${CLAUDE_AGENT_ARGS[@]+"''${CLAUDE_AGENT_ARGS[@]}"} \
+                     ''${EXTRA_ARGS[@]+"''${EXTRA_ARGS[@]}"} 2>"$ERR_FILE"); then
         break
       fi
       STARTED=""
@@ -1683,15 +1699,24 @@ exit 0
   # Deliver a prompt to a LIVE herdr agent by name, verified. Empty text only
   # checks liveness. An exited claude drops out of `herdr agent list`, so
   # `agent get` failing means "no live agent".
-  # usage: claude-herdr-deliver <agent-name> [text]
+  # usage: claude-herdr-deliver <agent-name> [text] [title]
+  # title: if the name finds nothing, accept the one agent with this terminal title and cwd == $PWD
   # exit: 0 delivered (or alive), 3 no live agent, 1 delivery failed
   claudeHerdrDeliver = pkgs.writeShellScript "claude-herdr-deliver" ''
     set -uo pipefail
-    NAME="$1"; TEXT="''${2:-}"
+    NAME="$1"; TEXT="''${2:-}"; TITLE="''${3:-}"
     command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1 || exit 3
     # stdout only: the mise banner goes to stderr and would break jq.
-    AGENT=$(herdr agent get "$NAME" 2>/dev/null) \
-      && printf '%s' "$AGENT" | jq -e '.result.agent.pane_id' >/dev/null 2>&1 || exit 3
+    if ! { AGENT=$(herdr agent get "$NAME" 2>/dev/null) \
+        && printf '%s' "$AGENT" | jq -e '.result.agent.pane_id' >/dev/null 2>&1; }; then
+      # A session relaunched without its name is still ours if title and cwd match.
+      [ -n "$TITLE" ] || exit 3
+      MATCHES=$(herdr agent list 2>/dev/null | jq -r --arg t "$TITLE" --arg d "$PWD" \
+        '[.result.agents[] | select(.terminal_title_stripped == $t and .cwd == $d) | .pane_id] | .[]') || exit 3
+      [ -n "$MATCHES" ] && [ "$(printf '%s\n' "$MATCHES" | wc -l)" -eq 1 ] || exit 3
+      AGENT=$(herdr agent get "$MATCHES" 2>/dev/null) \
+        && printf '%s' "$AGENT" | jq -e '.result.agent.pane_id' >/dev/null 2>&1 || exit 3
+    fi
     [ -n "$TEXT" ] || exit 0
     PANE=$(printf '%s' "$AGENT" | jq -r '.result.agent.pane_id')
     STATUS=$(printf '%s' "$AGENT" | jq -r '.result.agent.agent_status')
@@ -1743,101 +1768,28 @@ exit 0
     exit 1
   '';
   claudeRoutines = {
-    # Daily 07:00. The long-lived "🦞 assistant" session (herdr agent
-    # `assistant`) survives the night, reset by claude-assistant-shutdown's
-    # /clear. Weekday: send it /morning-briefing; weekend: leave it idle. Only
-    # when no live session exists is one spawned (with the briefing on weekdays).
-    # Planning is its own timer (below) rather than a detached sleep from here:
-    # a `sleep 3600` dies with a suspend/reboot and leaves no trace, so planning
-    # would silently not happen on exactly the mornings the machine was busy.
-    "claude-morning-briefing" = {
-      desc = "Claude morning briefing — brief in the 🦞 assistant session, spawning it if absent";
+    # The briefing, planning and wrapup prompts come from Claude Duet routines
+    # messaging the live "Assistant"; this timer only keeps that session alive.
+    # Silent: no prompt is sent.
+    "claude-assistant-keepalive" = {
+      desc = "Claude assistant keepalive — restart the Assistant with the Duet bridge if absent";
       cwd = "%h/areas/assistant";
-      onCalendar = "*-*-* 07:00:00";
-      # A boot after 07:00 still spawns: the session is the day's workspace, and
-      # an outage across the timer otherwise leaves no assistant until tomorrow.
+      onCalendar = "*-*-* 06:45:00";
+      # A boot after 06:45 still spawns: an outage across the timer otherwise
+      # leaves no assistant until tomorrow.
       persistent = true;
       spawner = true;
-      script = pkgs.writeShellScript "claude-morning-briefing" ''
+      script = pkgs.writeShellScript "claude-assistant-keepalive" ''
         set -uo pipefail
         cd "$HOME/areas/assistant" || exit 1
-        DOW=$(date +%u)  # 1=Mon … 7=Sun
-        # Delivery and spawn status become the unit's: masking them would record
-        # Result=success with no briefing.
-        PROMPT=""
-        [ "$DOW" -le 5 ] && PROMPT="/morning-briefing"
-        ${claudeHerdrDeliver} assistant "$PROMPT"
+        ${claudeHerdrDeliver} assistant "" Assistant
         rc=$?
-        # Spawn ONLY when no agent exists (3). After a failed delivery the live
-        # session still holds the name, and the spawn's reclaim would close it.
+        # Spawn ONLY when no agent exists (3). After a failed check the live
+        # session may still hold the name, and the spawn's reclaim would close it.
         [ "$rc" -eq 3 ] || exit "$rc"
         echo "no live assistant session; spawning one"
-        ${claudeHerdrSpawn} "$HOME/areas/assistant" "🦞 assistant" assistant "$PROMPT" assistant
-      '';
-    };
-    # Mon–Fri 08:00, an hour after the briefing. Routes /morning-planning into
-    # the SAME 🦞 assistant session so it inherits the briefing's context and
-    # the /tmp/morning-briefing/*.json the planning skill reads.
-    #
-    # No standalone-session fallback, unlike the wrapup: planning consumes what
-    # the briefing cached, so a session spawned here after a failed briefing
-    # would plan the day off missing data. Better to skip and say so.
-    "claude-morning-planning" = {
-      desc = "Claude morning planning — route into the day's 🦞 assistant session";
-      cwd = "%h/areas/assistant";
-      onCalendar = "Mon-Fri 08:00:00";
-      spawner = true;
-      script = pkgs.writeShellScript "claude-morning-planning" ''
-        set -uo pipefail
-        cd "$HOME/areas/assistant" || exit 1
-        # Same resolution and --as-user rationale as the wrapup below: a peer
-        # send arrives with slash commands disabled, so "/morning-planning"
-        # would land as inert text and the skill would never load.
-        target=$(agent-msg list 2>/dev/null \
-          | sed -n '/LOCAL/,/CLOUD/p' \
-          | grep -F '🦞 assistant' \
-          | grep -oE 'cse_[A-Za-z0-9]+' | head -1)
-        if [ -n "''${target:-}" ] && agent-msg send --as-user "$target" "/morning-planning"; then
-          echo "planning routed into assistant session ($target)"
-          exit 0
-        fi
-        # Exit non-zero: with no session there is nothing to route into and the
-        # day's planning is silently lost. `echo` alone would exit 0 and record
-        # the miss as a success.
-        echo "no live assistant session — skipping planning (briefing likely did not run)" >&2
-        exit 75
-      '';
-    };
-    # Mon–Fri 22:00. Route /nightly-wrapup into the live 🦞 assistant session so
-    # it inherits the day's context; fall back to a standalone session if none.
-    "claude-nightly-wrapup" = {
-      desc = "Claude nightly wrapup — route into the day's 🦞 assistant session";
-      cwd = "%h/areas/assistant";
-      onCalendar = "Mon-Fri 22:00:00";
-      spawner = true;
-      script = pkgs.writeShellScript "claude-nightly-wrapup" ''
-        set -uo pipefail
-        cd "$HOME/areas/assistant" || exit 1
-        # Resolve the day's 🦞 assistant to a cloud control-plane id (cse_…) that
-        # `agent-msg send` accepts — the LOCAL section of `agent-msg list`.
-        #
-        # --as-user is REQUIRED, not cosmetic. A default (peer) send arrives
-        # wrapped in "Another Claude session sent a message" framing with SLASH
-        # COMMANDS DISABLED, so "/nightly-wrapup" lands as inert text and the
-        # skill never loads; worse, a peer send can be held by crossSessionInbound
-        # awaiting approval and never reach the model at all, while the sender
-        # still sees exit 0. This is a self-send of a slash command into the
-        # user's own session — exactly what --as-user is for.
-        target=$(agent-msg list 2>/dev/null \
-          | sed -n '/LOCAL/,/CLOUD/p' \
-          | grep -F '🦞 assistant' \
-          | grep -oE 'cse_[A-Za-z0-9]+' | head -1)
-        if [ -n "''${target:-}" ] && agent-msg send --as-user "$target" "/nightly-wrapup"; then
-          echo "wrapup routed into assistant session ($target)"
-          exit 0
-        fi
-        echo "no live assistant session — spawning standalone wrapup"
-        ${claudeHerdrSpawn} "$HOME/areas/assistant" nightly-wrapup nightly-wrapup "/nightly-wrapup" assistant
+        ${claudeHerdrSpawn} "$HOME/areas/assistant" "Assistant" assistant "" assistant \
+          "$HOME/.local/bin/duet-code --name 'Assistant' --print-args"
       '';
     };
     # Daily 03:00, in the Obsidian vault (~/notes on Linux).
@@ -1879,21 +1831,22 @@ exit 0
         git --no-pager diff --shortstat HEAD~1 HEAD
       '';
     };
-    # Daily 02:45 — reset the 🦞 assistant with /clear (fresh context, same
-    # process, so the 07:00 briefing lands in it) and close a standalone
+    # Daily 02:45 — reset the Assistant with /clear (fresh context, same
+    # process, so the Duet-driven briefing lands in it) and close a standalone
     # nightly-wrapup. /clear does NOT pick up a new Claude Code version or
     # plugin; that needs a restart (agent-restart, or close its tab and let
-    # 07:00 spawn a new one).
+    # the 06:45 keepalive spawn a new one).
     "claude-assistant-shutdown" = {
-      desc = "Claude assistant reset — /clear the 🦞 assistant, close nightly-wrapup";
+      desc = "Claude assistant reset — /clear the Assistant, close nightly-wrapup";
       cwd = "%h/areas/assistant";
       onCalendar = "*-*-* 02:45:00";
       spawner = false;
       script = pkgs.writeShellScript "claude-assistant-shutdown" ''
         set -uo pipefail
+        cd "$HOME/areas/assistant" || exit 1
         stopped=0
         failed=0
-        ${claudeHerdrDeliver} assistant /clear
+        ${claudeHerdrDeliver} assistant /clear Assistant
         case $? in
           0) stopped=$((stopped + 1)) ;;
           3) echo "no live assistant session to clear" ;;
@@ -1905,7 +1858,7 @@ exit 0
           # Match on .name -- the field `herdr agent start` checks for collisions --
           # NOT the terminal title. A herdr restart rewrites every title to
           # "omarchy:herdr-restart", so the old title regex matched nothing, this
-          # reported "nothing to stop", and the 07:00 briefing then died on
+          # reported "nothing to stop", and the briefing then died on
           # `agent_name_taken` (2026-09-14). Names come from claudeHerdrSpawn above.
           agents_list=$(herdr agent list 2>/dev/null)
           if printf '%s' "$agents_list" | jq -e . >/dev/null 2>&1; then
@@ -1935,7 +1888,7 @@ exit 0
         agents_json=$(claude agents --json 2>/dev/null)
         if printf '%s' "$agents_json" | jq -e . >/dev/null 2>&1; then
           ids=$(printf '%s' "$agents_json" \
-            | jq -r '.[] | select(.name == "🦞 assistant" or .name == "morning-briefing" or .name == "nightly-wrapup") | .id')
+            | jq -r '.[] | select(.name == "🦞 assistant" or .name == "Assistant" or .name == "morning-briefing" or .name == "nightly-wrapup") | .id')
         else
           ids=""
           echo "could not read 'claude agents --json' — not stopping daemon sessions" >&2
@@ -2226,6 +2179,12 @@ in
     activation.telHandler = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default google-voice.desktop \
         x-scheme-handler/tel || true
+    '';
+
+    # superwhisper:// (website license activation) -> the superwhisper-url entry.
+    activation.superwhisperHandler = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD ${pkgs.xdg-utils}/bin/xdg-mime default superwhisper-url.desktop \
+        x-scheme-handler/superwhisper || true
     '';
 
     # Office documents -> LibreOffice. openai-codex-desktop (pacman, not nix)
@@ -4922,6 +4881,43 @@ in
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }
+    # Superwhisper dictation daemon (modules/linux/superwhisper.nix): the vendor
+    # install.sh's unit, minus its 6-hourly superwhisper-update.timer, since the
+    # version is pinned in nix. Binds live in its generated shortcuts.lua —
+    # `superwhisper shortcuts show|set`. Its default hold-Right-Alt is a no-op
+    # on Omarchy 4.0.x: the generator leaves Right Alt to Omarchy's dictation
+    # routing, which this Omarchy lacks (no omarchy-default-dictation).
+    # Conflicts= is the vendor's, against a dev install.
+    { superwhisper = {
+      Unit = {
+        Description = "Superwhisper dictation";
+        After = [ "graphical-session.target" "pipewire.service" ];
+        PartOf = [ "graphical-session.target" ];
+        Conflicts = [ "superwhisper-dev.service" ];
+      };
+      Service = {
+        Type = "simple";
+        ExecStart = "${pkgs.superwhisper}/bin/superwhisper daemon";
+        # `shortcuts apply` writes ~/.config/superwhisper/shortcuts.lua (sourced
+        # from hypr/bindings.lua) with this store path baked in; regenerate it
+        # when the path moves, or the binds run a GC'd bridge. Not every start:
+        # each apply reloads Hyprland.
+        ExecStartPost = "-${pkgs.writeShellScript "superwhisper-shortcuts" ''
+          grep -qF ${pkgs.superwhisper} "''${XDG_CONFIG_HOME:-$HOME/.config}/superwhisper/shortcuts.lua" 2>/dev/null \
+            || ${pkgs.superwhisper}/bin/superwhisper shortcuts apply >/dev/null
+        ''}";
+        ExecStopPost = [
+          "${pkgs.superwhisper}/bin/superwhisper playback-restore"
+          "${pkgs.superwhisper}/bin/superwhisper desktop-release"
+        ];
+        Restart = "on-failure";
+        RestartSec = 2;
+        KillMode = "control-group";
+        TimeoutStopSec = 15;
+        UMask = "0077";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    }; }
   ];
 
   # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
@@ -5026,6 +5022,12 @@ in
     #   Install.WantedBy = [ "timers.target" ];
     # }; }
   ];
+
+  # Superwhisper's fcitx5 addon commits dictations as input-method text (no
+  # clipboard, no paste keystroke). fcitx5 loads addons only at start, so a new
+  # store path takes effect after `systemctl --user restart omarchy-fcitx5`.
+  xdg.dataFile."fcitx5/addon/superwhisper.conf".source =
+    "${pkgs.superwhisper}/share/superwhisper/fcitx5-addon.conf";
 
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
@@ -5171,6 +5173,27 @@ in
       type = "Application";
       icon = "${morgenIcon}";
       categories = [ "Utility" ];
+    };
+
+    # Superwhisper: the vendor installer's two entries. The id must be
+    # reverse-DNS (GNOME refuses global shortcuts otherwise) and matches the
+    # settings window's app_id. Exec opens Omarchy's settings window.
+    "com.superwhisper.Superwhisper" = {
+      name = "Superwhisper";
+      comment = "Fast local and cloud dictation";
+      exec = "superwhisper settings --window";
+      icon = "superwhisper";
+      terminal = false;
+      categories = [ "Utility" "Accessibility" ];
+      settings.StartupWMClass = "com.superwhisper.Superwhisper";
+    };
+    superwhisper-url = {
+      name = "Superwhisper License Activation";
+      exec = "superwhisper open-url %u";
+      icon = "superwhisper";
+      terminal = false;
+      noDisplay = true;
+      mimeType = [ "x-scheme-handler/superwhisper" ];
     };
 
     beepertexts = {

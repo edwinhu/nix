@@ -7,7 +7,6 @@ let
   # which ships yazi itself. A headless box renders documents but has no one
   # looking at a styled terminal.
   desktop = has profile "desktop";
-  pkm = has profile "pkm";
 in
 {
   # Gated as blocks, not with mkIf: without ../shared/stylix.nix imported the
@@ -84,13 +83,4 @@ in
 
   # Program configurations - shell config managed by dotfiles
   programs = import ../shared/home-manager.nix { inherit config pkgs lib user userInfo; };
-
-  # Linux-specific services
-  services = {
-    # Syncthing: notes sync, so it follows `pkm`; the server has nothing to sync.
-    syncthing = {
-      enable = pkm;
-      tray.enable = false;  # No system tray on headless systems
-    };
-  };
 }

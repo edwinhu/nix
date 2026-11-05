@@ -189,6 +189,10 @@ let
       # proton-vpn-daemon is only for split tunneling, which this drops.
       proton-vpn
 
+      # Superwhisper dictation (modules/linux/superwhisper.nix); its user
+      # service and launcher entry are in the omarchy host.
+      superwhisper
+
       # Fonts / math typesetting extras
       lmmath
       maple-mono.NF
