@@ -79,7 +79,11 @@ if [ ${#TOOLS[@]} -eq 0 ]; then
   fi
 fi
 
-MISE=$(command -v mise 2>/dev/null || true)
+# The distro mise first: on Omarchy, `mise use -g` copies the options of
+# /etc/mise/conf.d declarations into the user config, and the older nix mise
+# on the activation PATH writes `lazy = "true"` (a string), which every newer
+# mise then refuses to parse.
+if [ -x /usr/bin/mise ]; then MISE=/usr/bin/mise; else MISE=$(command -v mise 2>/dev/null || true); fi
 if [ -z "$MISE" ]; then
   # mise comes from modules/shared/packages.nix (and from the Arch package on
   # Omarchy). A switch that hasn't been applied yet is the usual reason it's
