@@ -175,6 +175,14 @@ in
     # Read by the workflows route.ts --refresh for the Artificial Analysis Intelligence Index.
     file = "${nix-secrets}/artificial-analysis-api-key.age";
     mode = "400";
+  } // optionalSecret "claude-api-key-uva" {
+    # Claude Console org on the UVA Ultra plan's monthly API credits; read by the workflows batch-router.
+    file = "${nix-secrets}/claude-api-key-uva.age";
+    mode = "400";
+  } // optionalSecret "claude-api-key-nyu" {
+    # Claude Console org on the NYU Ultra plan's monthly API credits; read by the workflows batch-router.
+    file = "${nix-secrets}/claude-api-key-nyu.age";
+    mode = "400";
   };
   
   # NOTE: nix-darwin home-manager activation runs without /dev/tty, so
