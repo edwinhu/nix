@@ -28,8 +28,12 @@ let
         ""|ehu@law.virginia.edu|eddyhu@gmail.com|vwh7mb@virginia.edu) reason="" ;;
         *)
           me='(from:ehu@law.virginia.edu or from:eddyhu@gmail.com or from:vwh7mb@virginia.edu)'
-          n=$(notmuch count "$me and (to:\"$addr\" or cc:\"$addr\")" 2>/dev/null || echo 0)
-          [ "''${n:-0}" -gt 0 ] && reason="known"
+          # Role mailboxes (a store's help@, GitHub's notifications@) are not
+          # people, even if Eddy once wrote to them.
+          if ! printf '%s' "''${addr%%@*}" | grep -qiE '^(help|support|customer(service|care)?|care|info|hello|hi|team|contact|news(letter)?|notifications?|notify|alerts?|updates?|marketing|sales|billing|orders?|receipts?|accounts?|service|mailer(-daemon)?|bounces?|do-?not-?reply|no-?reply)([-_.+].*)?$'; then
+            n=$(notmuch count "$me and (to:\"$addr\" or cc:\"$addr\")" 2>/dev/null || echo 0)
+            [ "''${n:-0}" -gt 0 ] && reason="known"
+          fi
           if [ -z "$reason" ] && [ -n "''${id:-}" ]; then
             if [ "$acct" = personal ]; then
               labels=$(himalaya gmail messages get -a personal --format minimal --json "$id" 2>/dev/null \
