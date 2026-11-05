@@ -184,10 +184,8 @@ let
       doublecmd
       ueberzugpp
 
-      # Proton VPN GTK client. NetworkManager's built-in WireGuard backend
-      # carries the tunnel, so no distro daemon is required; Arch's separate
-      # proton-vpn-daemon is only for split tunneling, which this drops.
-      proton-vpn
+      # No proton-vpn: it stores a multi-line secret in the plaintext
+      # gnome-keyring, which corrupts Default_keyring.keyring on its next write.
 
       # Superwhisper dictation (modules/linux/superwhisper.nix); its user
       # service and launcher entry are in the omarchy host.
