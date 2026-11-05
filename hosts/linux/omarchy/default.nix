@@ -8,12 +8,48 @@
 let
   iconDir = ../../../modules/linux/desktop-icons;
 
-  # carillon's arrival hook, beside its notify hook: carillon logs nothing when
-  # it fires, so "did it notify?" had no evidence (2026-11-04). Sender and the
-  # provider id only, no subject. stdout lands in carillon.service's journal.
-  carillonArrivalLog = pkgs.writeShellScript "carillon-arrival-log" ''
-    printf 'arrival [%s] from %s id=%s\n' "$1" "''${sender:-?}" "''${id:-?}"
-  '';
+  # carillon's only hook. carillon cannot filter, so this decides which arrivals
+  # notify: a sender Eddy has written to (local notmuch Sent history), Gmail
+  # IMPORTANT/STARRED, or a Graph flag / high importance. Everything else stays
+  # silent. One journal line per arrival (sender + id, no subject) records the
+  # decision; a failed lookup counts as no match.
+  carillonArrival = pkgs.writeShellApplication {
+    name = "carillon-arrival";
+    runtimeInputs = [ pkgs.notmuch pkgs.himalaya pkgs.jq pkgs.libnotify pkgs.gnugrep pkgs.coreutils ];
+    text = ''
+      acct=$1
+      addr=''${sender_address:-}
+      if [ -z "$addr" ]; then
+        addr=$(printf '%s' "''${sender:-}" | grep -oE '[^<> "]+@[^<> "]+' | tail -n1 || true)
+      fi
+      addr=$(printf '%s' "$addr" | tr '[:upper:]' '[:lower:]')
+      reason=""
+      case "$addr" in
+        ""|ehu@law.virginia.edu|eddyhu@gmail.com|vwh7mb@virginia.edu) reason="" ;;
+        *)
+          me='(from:ehu@law.virginia.edu or from:eddyhu@gmail.com or from:vwh7mb@virginia.edu)'
+          n=$(notmuch count "$me and (to:\"$addr\" or cc:\"$addr\")" 2>/dev/null || echo 0)
+          [ "''${n:-0}" -gt 0 ] && reason="known"
+          if [ -z "$reason" ] && [ -n "''${id:-}" ]; then
+            if [ "$acct" = personal ]; then
+              labels=$(himalaya gmail messages get -a personal --format minimal --json "$id" 2>/dev/null \
+                | jq -r '.["label-ids"] // [] | join(",")' || true)
+              case ",$labels," in *,IMPORTANT,*) reason="important" ;; *,STARRED,*) reason="starred" ;; esac
+            else
+              meta=$(himalaya msgraph message get -a work --json "$id" 2>/dev/null \
+                | jq -r '"\(.importance // "")/\(.flag.flagStatus // "")"' || true)
+              case "$meta" in high/*) reason="high-importance" ;; */flagged) reason="flagged" ;; esac
+            fi
+          fi
+          ;;
+      esac
+      printf 'arrival [%s] from %s id=%s notify=%s\n' "$acct" "''${sender:-?}" "''${id:-?}" "''${reason:-no}"
+      if [ -n "$reason" ]; then
+        label=Work; [ "$acct" = personal ] && label=Personal
+        notify-send -a carillon "$label: ''${sender:-?}" "''${subject:-}" || true
+      fi
+    '';
+  };
 
   # Network-isolated Chawan text renderer for `mail-preview --text`. Shared with
   # packages.<system>.mail-preview in flake.nix; the rationale for every flag
@@ -4047,17 +4083,13 @@ in
       gmail.mailbox = "INBOX"
       gmail.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "google", "token", "show"]
       gmail.watch.poll.interval = 60
-      gmail.hook.on-message-added.notify.summary = "Personal: $sender"
-      gmail.hook.on-message-added.notify.body = "$subject"
-      gmail.hook.on-message-added.cmd = ["${carillonArrivalLog}", "personal"]
+      gmail.hook.on-message-added.cmd = ["${lib.getExe carillonArrival}", "personal"]
 
       [accounts.work]
       msgraph.mailbox = "inbox"
       msgraph.auth.token.command = ["${lib.getExe pkgs.ortie}", "-a", "msgraph", "token", "show"]
       msgraph.watch.poll.interval = 60
-      msgraph.hook.on-message-added.notify.summary = "Work: $sender"
-      msgraph.hook.on-message-added.notify.body = "$subject"
-      msgraph.hook.on-message-added.cmd = ["${carillonArrivalLog}", "work"]
+      msgraph.hook.on-message-added.cmd = ["${lib.getExe carillonArrival}", "work"]
     '';
   };
 
