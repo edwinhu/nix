@@ -2358,11 +2358,6 @@ in
       # from the Linux overlay's nixGLIntel-wrapped override, not pacman — the
       # wrapper is also where GDK_SCALE gets unset, which the distro build would
       # need a hand-maintained desktop-entry override to do.
-      # sunshine: Moonlight streaming host (see the sunshine user service and
-      # xdg.configFile."sunshine/sunshine.conf" below). nixGLIntel-wrapped in
-      # the Linux overlay — the stock binary can't reach Mesa on non-NixOS.
-      # Only listed for this host: `alarm` shares omarchy-packages.nix but is
-      # a headless aarch64 box with nothing to stream.
       ++ [
         brscan brscanTui vimiumToggle mailPreview aercAddressBook aercCal aercInvite telGvoice
         checkWidows checkTitleOverflow
@@ -2372,7 +2367,7 @@ in
       # keyboard is plugged in here, not into the headless `alarm` box. Nix
       # ships the binary only; the USB access rules are system-level on non-NixOS
       # and come from Arch's `zsa-udev` (extra).
-        pkgs.ghostty pkgs.sunshine pkgs.zapp
+        pkgs.ghostty pkgs.zapp
         # agenix CLI for editing ~/nix-secrets (`agenix -e x.age < value`).
         agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
@@ -2931,96 +2926,6 @@ in
   # config). The shared font-size 14 is tuned for macOS Retina and renders too
   # big on this 32" 4K @ scale-2 panel, so shrink it here only — macOS/alarm keep their own size.
   xdg.configFile."ghostty/local.conf".text = "font-size = 10\n";
-
-  # Sunshine (Moonlight streaming host). Two settings here are load-bearing on
-  # Hyprland; both were found the hard way, so do not "simplify" them away:
-  #
-  #   capture = wlr
-  #     MANDATORY. Left on auto, Sunshine probes the xdg-desktop-portal
-  #     RemoteDesktop interface first. xdg-desktop-portal-hyprland (1.4.0 here)
-  #     does not implement RemoteDesktop, and instead of failing over, Sunshine
-  #     HANGS FOREVER: it logs "[portalgrab] Could not create RemoteDesktop
-  #     session ... No such interface" and then never finishes startup — no web
-  #     UI, nothing listening on 47984/47989/47990, main loop never reached.
-  #     Pinning wlr skips the portal path entirely and it uses
-  #     zwlr_screencopy_manager_v1, which Hyprland does export.
-  #
-  #   encoder = vaapi
-  #     The AMD Strix Halo iGPU. Verified to yield h264_vaapi + hevc_vaapi +
-  #     av1_vaapi. Pinning skips the futile nvenc/vulkan probes at startup;
-  #     Sunshine still falls back to auto-detection if vaapi ever stops working.
-  #
-  #   csrf_allowed_origins = <tailnet origins>
-  #     Sunshine's CSRF defaults only trust localhost (https://localhost,
-  #     https://127.0.0.1, https://[::1]). The whole point here is to reach the
-  #     web UI from the Mac ACROSS the tailnet, and any such origin is rejected
-  #     with "The request was blocked by CSRF protection" -- so pairing (a
-  #     state-changing POST) is impossible until the origin is listed. Covers
-  #     the Tailscale IP, the MagicDNS FQDN, and the bare hostname, since which
-  #     one you land on depends on how you typed the URL. Format is a bare
-  #     comma-separated list -- NOT a JSON/TOML array; brackets or quotes are
-  #     rejected as "Invalid 'csrf_allowed_origins' entry". Ports optional.
-  #
-  # This file is a read-only /nix/store symlink, so the web UI's Configuration
-  # page cannot save over it — change settings HERE and rebuild. The rest of
-  # ~/.config/sunshine (certs, credentials.json, apps.json, sunshine_state.json)
-  # is a normal writable dir, so pairing and app edits persist as usual.
-  # Sunshine's app list. Sunshine seeds this with sample entries that are all
-  # wrong for this box, and they surface in Moonlight as extra tiles that fail:
-  #
-  #   "Low Res Desktop"  a SECOND "Desktop"-looking tile whose prep-cmd is
-  #                      `xrandr --output HDMI-1 --mode 1920x1080`. xrandr is
-  #                      X11 (this is Wayland), and the output is DP-1, not
-  #                      HDMI-1. The prep-cmd fails, so Sunshine refuses the
-  #                      launch and Moonlight reports the useless "failed to
-  #                      start the specified application (desktop)".
-  #   "Steam Big Picture" there is no steam binary here.
-  #
-  # So: just Desktop. Note this is the app LIST only — the streamed resolution
-  # is negotiated by the CLIENT (set it in Moonlight's settings); Sunshine
-  # captures DP-1 at its native 3840x2160 regardless.
-  #
-  # Trade-off of declaring this: the file becomes a read-only store symlink, so
-  # the web UI's Applications editor can no longer save. Add apps HERE instead.
-  # (Pairing, certs and sunshine_state.json are separate writable files, so
-  # those still work normally.)
-  xdg.configFile."sunshine/apps.json" = {
-    force = true;
-    text = builtins.toJSON {
-      env = { PATH = "$(PATH):$(HOME)/.local/bin"; };
-      apps = [
-        { name = "Desktop"; image-path = "desktop.png"; }
-      ];
-    };
-  };
-
-  # force: Sunshine writes a default sunshine.conf itself on first run, which
-  # would make activation fail with "Existing file ... would be clobbered". This
-  # file is declaratively owned, so overwrite it (same reason hypridle.conf and
-  # monitors.conf above set force).
-  xdg.configFile."sunshine/sunshine.conf" = {
-    force = true;
-    text = ''
-      capture = wlr
-      encoder = vaapi
-      min_log_level = 2
-      csrf_allowed_origins = https://100.122.125.84,https://omarchy.tailc143b.ts.net,https://omarchy
-
-      # `sunshine --creds` FAILS SILENTLY without this. Unset, it resolves the
-      # credentials path somewhere unwritable, prints "New credentials have been
-      # created", exits 0, and writes nothing -- so the web UI has no account to
-      # authenticate against and every login is rejected. Point it at a real file.
-      credentials_file = ${config.home.homeDirectory}/.config/sunshine/credentials.json
-
-      # Sunshine gates the web UI and the pairing endpoint by ORIGIN, defaulting
-      # to `lan`. Tailscale addresses are 100.64.0.0/10 (CGNAT), not RFC1918, so
-      # a tailnet client is classified WAN and refused BEFORE the password is even
-      # checked -- which reads exactly like wrong credentials. Both keys are
-      # needed: web_ui to log in, pin to submit Moonlight's pairing code.
-      origin_web_ui_allowed = wan
-      origin_pin_allowed = wan
-    '';
-  };
 
   # Default terminal: Ghostty, not Omarchy's stock Alacritty. Everything that
   # opens a terminal here (SUPER+RETURN, SUPER ALT+RETURN, $TERMINAL, any app
@@ -4828,33 +4733,6 @@ in
         ExecStart = "/opt/brother/scanner/brscan-skey/brscan-skey-exe";
         Restart = "on-failure";
         RestartSec = 5;
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    }; }
-    # sunshine: Moonlight streaming host, so the Mac can drive this desktop
-    # remotely over Tailscale (connect Moonlight to 100.122.125.84 and pair with
-    # the PIN from https://localhost:47990). Must run INSIDE the graphical
-    # session — it captures via zwlr_screencopy_manager_v1 and injects input via
-    # zwlr_virtual_pointer_manager_v1 / zwp_virtual_keyboard_manager_v1, all of
-    # which need WAYLAND_DISPLAY (uwsm exports it into the user manager).
-    # /dev/uinput for gamepad emulation works because `eh` is in the `input`
-    # group (same reason ydotoold works). The binary is the nixGLIntel-wrapped
-    # override; `capture = wlr` comes from xdg.configFile above — see both for
-    # the startup-hang and GBM/EGL traps.
-    { sunshine = {
-      Unit = {
-        Description = "Sunshine — Moonlight game/desktop streaming host";
-        PartOf = [ "graphical-session.target" ];
-        After = [ "graphical-session.target" ];
-      };
-      Service = {
-        ExecStart = "${pkgs.sunshine}/bin/sunshine %h/.config/sunshine/sunshine.conf";
-        Restart = "on-failure";
-        RestartSec = 5;
-        # Sunshine's own shutdown path gives itself 10s before it force-aborts
-        # (and dumps core). Allow a little more than that so a normal `systemctl
-        # --user stop` records a clean exit rather than a spurious failure.
-        TimeoutStopSec = 20;
       };
       Install.WantedBy = [ "graphical-session.target" ];
     }; }

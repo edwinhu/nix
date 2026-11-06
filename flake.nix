@@ -751,46 +751,6 @@
                   meta = base.meta or {};
                   passthru = { unwrapped = base; inherit cli; };
                 };
-                # Sunshine — Moonlight streaming host (the remote-desktop path
-                # into this box from the Mac, over Tailscale). Same GL story as
-                # hylo/beeper on non-NixOS: the VAAPI encoder builds its frames
-                # through GBM+EGL, and without /run/opengl-driver the stock
-                # binary dies at startup with "Couldn't create GBM device: [No
-                # such file or directory]" + "Couldn't open EGL display:
-                # [0000300C]", so EVERY encoder (even software) fails and
-                # Sunshine exits "Unable to find display or encoder". Wrapping
-                # bin/sunshine in nixGLIntel resolves Mesa against the system
-                # GL (nixGLIntel drives AMD too) and the AMD iGPU then offers
-                # h264_vaapi + hevc_vaapi + av1_vaapi.
-                #
-                # NOTE the companion half of the fix is `capture = wlr` in
-                # sunshine.conf (hosts/linux/omarchy) — not something that can
-                # be set here. See that file for why it is mandatory.
-                sunshine = let
-                  base = prev.sunshine;
-                in prev.symlinkJoin {
-                  name = "sunshine-nixgl-${base.version or "unknown"}";
-                  paths = [
-                    (prev.writeShellScriptBin "sunshine" ''
-                      exec ${nixGL.packages.${info.system}.nixGLIntel}/bin/nixGLIntel ${base}/bin/sunshine "$@"
-                    '')
-                    base
-                  ];
-                  # The main entry uses a bare `Exec=sunshine` (so it hits the
-                  # wrapper on PATH), but the KWin screencast-permission helper
-                  # hard-codes ${base}/bin/sunshine and would bypass nixGL.
-                  # Inert on Hyprland (NoDisplay, KDE-only), repointed anyway.
-                  postBuild = ''
-                    k=$out/share/applications/dev.lizardbyte.app.Sunshine.kwin.desktop
-                    if [ -e "$k" ]; then
-                      rm -f "$k"
-                      sed "s|${base}/bin/sunshine|$out/bin/sunshine|g" \
-                        ${base}/share/applications/dev.lizardbyte.app.Sunshine.kwin.desktop > "$k"
-                    fi
-                  '';
-                  meta = base.meta or {};
-                  passthru = { unwrapped = base; };
-                };
                 # Zoom (proprietary Qt/CEF app, bwrap-sandboxed in nixpkgs).
                 # Same GL story as beeper/stremio/hylo on non-NixOS: wrap
                 # bin/zoom in nixGLIntel so Mesa/EGL resolve against system GL
