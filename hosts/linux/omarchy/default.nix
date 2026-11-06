@@ -5267,19 +5267,6 @@ in
 
   # Desktop entries - only the custom ones not provided by Omarchy
   xdg.desktopEntries = {
-    # herdr ships no .desktop entry (neither the Omarchy package nor the mise
-    # build), so the apps menu cannot find it without this one.
-    herdr = {
-      name = "Herdr";
-      genericName = "Agent multiplexer";
-      comment = "Attach to the persistent herdr session";
-      exec = "omarchy-launch-terminal-herdr";
-      terminal = false;
-      type = "Application";
-      icon = "utilities-terminal";
-      categories = [ "Development" "ConsoleOnly" ];
-    };
-
     # linecast's six terminal dashboards, so they are findable in the apps menu
     # (SUPER+ALT+SPACE), which reads XDG entries through Quickshell's
     # DesktopEntries. The package ships none of its own.
