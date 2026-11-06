@@ -99,6 +99,68 @@ closed=$(run_case vault-compile 'mise ~/.config/mise/config.toml tools: herdr@0.
   && pass "unparseable output closes nothing (the mise banner must not become a close)" \
   || fail "unparseable output closes nothing" "closed='$closed'"
 
+# ---- hc (Herdr app) path ------------------------------------------------------------------------
+# Taken from the built script when it already carries the hc path, else from default.nix with the
+# nix '' escapes undone. Stub hc/herdr-app record calls; nothing reaches the real window.
+HC_SRC="$SPAWNER"
+if ! grep -q 'hc run --bg' "$HC_SRC"; then
+  HC_SRC="$WORK/default.nix.sh"
+  sed "s/''\\\${/\${/g" "$(dirname "$0")/../default.nix" > "$HC_SRC"
+fi
+sed -n '/^    if command -v hc >\/dev\/null/,/^    command -v herdr >\/dev\/null/p' "$HC_SRC" | sed '$d' > "$WORK/hc-block.sh"
+grep -q 'hc run --bg' "$WORK/hc-block.sh" || { echo "could not extract the hc path" >&2; exit 2; }
+
+mkdir -p "$WORK/hcbin"
+cat > "$WORK/hcbin/hc" <<STUB
+#!/usr/bin/env bash
+echo "hc \$*" >> "$WORK/hc.log"
+case "\$1 \${2:-}" in
+  "server status") exit 0 ;;
+  "get vault-compile") [ -n "\${OLD_JSON:-}" ] && printf '%s' "\$OLD_JSON" || exit 1 ;;
+  "get t9") printf '{"state":"live","turn":1,"status":{"state":"working"}}' ;;
+  "run --bg") printf '{"address":"t9"}' ;;
+  "kill vault-compile") : ;;
+  *) exit 1 ;;
+esac
+STUB
+printf '#!/usr/bin/env bash\necho "herdr-app $*" >> "%s/hc.log"\n[ "$1" = ls ] && printf %%s "{\\"spaces\\":[{\\"id\\":\\"spR\\",\\"name\\":\\"Routines\\",\\"machine\\":null,\\"tabs\\":[]}]}"\nexit 0\n' "$WORK" > "$WORK/hcbin/herdr-app"
+chmod +x "$WORK/hcbin/hc" "$WORK/hcbin/herdr-app"
+
+run_hc() {   # old-json prompt -> exit code; log in hc.log
+  : > "$WORK/hc.log"
+  OLD_JSON="$1" PATH="$WORK/hcbin:$PATH" DIR=/tmp LABEL=vault-compile AGENT_NAME=vault-compile \
+    PROMPT="$2" CLAUDE_AGENT="" ARGS_CMD="" \
+    bash -c "set -uo pipefail; $(cat "$WORK/hc-block.sh"); echo FELL_THROUGH" >/dev/null 2>&1
+}
+old() { printf '{"state":"live","address":"t3","status":{"state":"%s"}}' "$1"; }
+
+echo "claude-herdr-spawn hc path"
+
+run_hc "" "/vault-compile"; rc=$?
+[ "$rc" -eq 0 ] && grep -q 'hc run --bg --json --name vault-compile --cwd /tmp --outlive-parent' "$WORK/hc.log" \
+  && grep -q -- '-- claude --remote-control vault-compile --effort medium -n vault-compile /vault-compile$' "$WORK/hc.log" \
+  && pass "starts via hc run --bg --outlive-parent with --remote-control <name> and the prompt last" \
+  || fail "starts via hc run --bg --outlive-parent" "rc=$rc log: $(cat "$WORK/hc.log")"
+
+grep -q -- '--label herdr.space=spR' "$WORK/hc.log" && grep -q -- '--label herdr.tab=tb' "$WORK/hc.log" \
+  && pass "lands in the existing Routines space with a fresh tab label" \
+  || fail "lands in the existing Routines space" "$(cat "$WORK/hc.log")"
+
+grep -q 'herdr-app do tab.rename --id tb.* --name vault-compile' "$WORK/hc.log" \
+  && pass "tab is renamed to the routine label" || fail "tab rename" "$(cat "$WORK/hc.log")"
+
+run_hc "$(old done)" ""; grep -q '^hc kill vault-compile' "$WORK/hc.log" \
+  && pass "a finished live agent holding the name is killed" || fail "finished agent reclaimed" "$(cat "$WORK/hc.log")"
+
+run_hc "$(old idle)" ""; grep -q '^hc kill vault-compile' "$WORK/hc.log" \
+  && pass "an idle agent is killed too" || fail "idle agent reclaimed" "$(cat "$WORK/hc.log")"
+
+run_hc "$(old working)" ""; grep -q '^hc kill' "$WORK/hc.log" \
+  && fail "a WORKING agent is never killed" "$(cat "$WORK/hc.log")" || pass "a WORKING agent is never killed"
+
+run_hc "$(old blocked)" ""; grep -q '^hc kill' "$WORK/hc.log" \
+  && fail "a blocked agent is left alone" "$(cat "$WORK/hc.log")" || pass "a blocked agent is left alone"
+
 if [ "$FAILED" -eq 0 ]; then
   echo "claude-herdr-spawn: all reclaim assertions pass"
   exit 0

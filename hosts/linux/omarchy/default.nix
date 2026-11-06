@@ -350,7 +350,7 @@ if __name__ == "__main__":
   '';
 
   aercPdfPreview = pkgs.writeShellScript "aerc-pdf-preview" ''
-    export PATH=${lib.makeBinPath [ pkgs.poppler-utils pkgs.python3 pkgs.coreutils pkgs.gawk pkgs.ncurses ]}:$PATH
+    export PATH=${lib.makeBinPath [ pkgs.poppler-utils pkgs.python3 pkgs.coreutils pkgs.gawk pkgs.ncurses pkgs.libsixel ]}:$PATH
     export AERC_PDF_HELPER=${aercPdfHelper}
 # aerc `!` filter: inline PDF page preview, rendered by herdr's pane-graphics
 # API rather than by anything aerc can see.
@@ -484,6 +484,74 @@ notice() {
   fi
   exit 0
 }
+
+# ------------------------------------------------------------------- hc / sixel
+# Inside a Herdr-app (hc) terminal there is no herdr TUI socket to composite
+# through, so draw the page as SIXEL: aerc's embedded terminal decodes sixel and
+# re-encodes it for the outer terminal (the same path the text/html filter
+# uses). The pane-graphics path below stays for HERDR_PANE_ID.
+#
+# MEASURED 2026-11-05: the Herdr app does NOT render sixel (DA1 there is
+# `62;22`, no `4`; a direct img2sixel dump in an hc terminal paints nothing),
+# and aerc drops the kitty APC it does render. So this branch only paints when
+# the outer terminal really takes sixel, opted into with AERC_PDF_SIXEL=1;
+# otherwise the notice (page count, `o` to open) holds the pane instead of a
+# silent blank.
+if [ -z "''${HERDR_PANE_ID:-}" ] && [ -n "''${HC_TERMINAL_ID:-}" ]; then
+  [ "''${AERC_PDF_SIXEL:-}" = 1 ] || notice "no inline graphics in Herdr-app terminals"
+  command -v pdfinfo  >/dev/null 2>&1 || notice "pdfinfo missing"
+  command -v pdftoppm >/dev/null 2>&1 || notice "pdftoppm missing"
+  SIXELER=""
+  if command -v img2sixel >/dev/null 2>&1; then SIXELER="img2sixel"
+  elif command -v chafa >/dev/null 2>&1; then SIXELER="chafa"
+  else notice "no sixel encoder"; fi
+  INFO_PDF=$(pdfinfo "$TMP/in.pdf" 2>/dev/null) || notice "unreadable PDF"
+  NPAGES=$(printf '%s\n' "$INFO_PDF" | awk '/^Pages:/{print $2}')
+  [ -n "''${NPAGES:-}" ] || notice "unreadable PDF"
+  ASPECT=$(printf '%s\n' "$INFO_PDF" | awk '/^Page size:/{if ($5>0) printf "%.6f", $3/$5}')
+  [ -n "''${ASPECT:-}" ] || ASPECT=0.772727
+  # No socket to ask for the cell size, and aerc's terminal reports no pixel
+  # size (xpixel=0), so take it from AERC_CELL_PX ("WxH") or the 16x36 of this
+  # host's ghostty.
+  CW=16; CH=36
+  case "''${AERC_CELL_PX:-}" in
+    [0-9]*x[0-9]*) CW=''${AERC_CELL_PX%x*}; CH=''${AERC_CELL_PX#*x} ;;
+  esac
+  COLS=''${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
+  ROWS=''${LINES:-$(tput lines 2>/dev/null || echo 24)}
+  # Row 0 is the page indicator; leave one spare row and column so the image
+  # never scrolls the viewer.
+  read -r PX_W PX_H <<< "$(awk -v c="$COLS" -v r="$ROWS" -v cw="$CW" -v ch="$CH" -v a="$ASPECT" 'BEGIN {
+    aw = (c - 2) * cw; ah = (r - 3) * ch
+    if (aw < 50 || ah < 50) { print 0, 0; exit }
+    h = ah; w = h * a
+    if (w > aw) { w = aw; h = w / a }
+    printf "%d %d", w, h }')"
+  [ "''${PX_W:-0}" -gt 0 ] || notice "pane too small"
+  hc_page=1
+  hc_show() {
+    local n="$1" out="$TMP/pg-$1.png"
+    if [ ! -f "$out" ]; then
+      pdftoppm -png -f "$n" -l "$n" -scale-to-x "$PX_W" -scale-to-y "$PX_H" \
+        "$TMP/in.pdf" "$TMP/raw-$n" 2>/dev/null || return 1
+      mv "$TMP/raw-$n"*.png "$out" 2>/dev/null || return 1
+    fi
+    printf '\033[2J\033[H  page %s/%s\n' "$n" "$NPAGES"
+    if [ "$SIXELER" = "img2sixel" ]; then img2sixel "$out" 2>/dev/null
+    else chafa -f sixel -s "$((COLS - 2))x$((ROWS - 3))" "$out" 2>/dev/null; fi
+  }
+  hc_show "$hc_page" || printf '  page %s: render failed\n' "$hc_page"
+  if [ -r /dev/tty ]; then
+    while IFS= read -r -N1 key < /dev/tty; do
+      case "$key" in
+        j|n) [ "$hc_page" -lt "$NPAGES" ] && { hc_page=$((hc_page + 1)); hc_show "$hc_page"; } ;;
+        k|p) [ "$hc_page" -gt 1 ] && { hc_page=$((hc_page - 1)); hc_show "$hc_page"; } ;;
+        q) break ;;
+      esac
+    done
+  fi
+  exit 0
+fi
 
 # ---------------------------------------------------------------------- gate
 HELPER="''${AERC_PDF_HELPER:-}"
@@ -1018,6 +1086,11 @@ exit 0
       PANE=$("$HERDR_BIN_PATH" pane read "$HERDR_PANE_ID" 2>/dev/null \
              | awk '{ if (length > m) m = length } END { print m+0 }')
       [ "''${PANE:-0}" -gt 60 ] && COLS=$(( PANE - 21 ))
+    elif [ -n "''${HC_TERMINAL_ID:-}" ] && command -v hc >/dev/null 2>&1; then
+      # Herdr-app terminal: the same widest-line measure, via hc.
+      PANE=$(hc read "$HC_TERMINAL_ID" --lines 200 2>/dev/null \
+             | awk '{ if (length > m) m = length } END { print m+0 }')
+      [ "''${PANE:-0}" -gt 60 ] && COLS=$(( PANE - 21 ))
     fi
 
     # LINEARISE THE COLUMNS. This is the one rule that is not styling: a
@@ -1325,6 +1398,11 @@ exit 0
         "''${HERDR_SOCKET_PATH:-$HOME/.config/herdr/herdr.sock}" \
         "$HERDR_PANE_ID" 2>/dev/null) || INFO=""
       [ -n "$INFO" ] && read -r CW CH _ _ <<<"$INFO"
+    elif [ -n "''${HC_TERMINAL_ID:-}" ]; then
+      # Herdr-app terminal: no socket to ask; AERC_CELL_PX="WxH" overrides.
+      case "''${AERC_CELL_PX:-}" in
+        [0-9]*x[0-9]*) CW=''${AERC_CELL_PX%x*}; CH=''${AERC_CELL_PX#*x} ;;
+      esac
     fi
     COLS=''${COLUMNS:-80}; ROWS=''${LINES:-24}
     # -4 rows: aerc draws the parts list and status line under the viewer.
@@ -1540,6 +1618,78 @@ exit 0
     set -uo pipefail
     DIR="$1"; LABEL="$2"; AGENT_NAME="$3"; PROMPT="''${4:-}"; CLAUDE_AGENT="''${5:-}"; ARGS_CMD="''${6:-}"
     cd "$DIR" || exit 1
+
+    # Herdr app path (herdr-core, `hc`): preferred whenever hc exists. The agent lands in ONE
+    # dedicated "Routines" space, a tab per routine, so scheduled agents never accrete spaces.
+    # --outlive-parent keeps it alive after this oneshot unit exits. `--remote-control` takes an
+    # optional NAME, so `--rc "task"` would swallow the task: always pass the name.
+    if command -v hc >/dev/null 2>&1 && { hc server status >/dev/null 2>&1 || hc server start >/dev/null 2>&1; }; then
+      HC_NAME=$(printf '%s' "$AGENT_NAME" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_-' '-' | cut -c1-32)
+
+      # Reclaim our own name from a finished agent; never kill a working or blocked one.
+      if HC_OLD=$(hc get "$HC_NAME" 2>/dev/null) && [ "$(printf '%s' "$HC_OLD" | jq -r .state)" = live ]; then
+        case "$(printf '%s' "$HC_OLD" | jq -r '.status.state // ""')" in
+          idle|done)
+            echo "reclaiming the name $HC_NAME from a finished agent $(printf '%s' "$HC_OLD" | jq -r .address)" >&2
+            hc kill "$HC_NAME" >/dev/null 2>&1 || true
+            for _ in $(seq 1 10); do
+              [ "$(hc get "$HC_NAME" 2>/dev/null | jq -r '.state // "gone"')" = live ] || break
+              sleep 0.5
+            done ;;
+        esac
+      fi
+
+      HC_SPACE=""; HC_NEW_SPACE=0
+      if HC_LS=$(herdr-app ls 2>/dev/null) && [ -n "$HC_LS" ]; then
+        HC_SPACE=$(printf '%s' "$HC_LS" | jq -r '[.spaces[] | select(.machine == null and .name == "Routines")][0].id // empty')
+      fi
+      [ -n "$HC_SPACE" ] || { HC_SPACE="sp$(openssl rand -hex 16)"; HC_NEW_SPACE=1; }
+      HC_TAB="tb$(openssl rand -hex 16)"
+
+      CLAUDE_AGENT_ARGS=()
+      [ -n "$CLAUDE_AGENT" ] && CLAUDE_AGENT_ARGS=(--agent "$CLAUDE_AGENT")
+      # No pane exists yet, so HERDR_PANE_ID is deliberately unset for args-cmd.
+      EXTRA_ARGS=()
+      [ -n "$ARGS_CMD" ] && mapfile -t EXTRA_ARGS < <(env -u HERDR_PANE_ID bash -c "$ARGS_CMD")
+      ARGV=(claude --remote-control "$LABEL" --effort medium -n "$LABEL" ''${CLAUDE_AGENT_ARGS[@]+"''${CLAUDE_AGENT_ARGS[@]}"} ''${EXTRA_ARGS[@]+"''${EXTRA_ARGS[@]}"})
+      [ -n "$PROMPT" ] && ARGV+=("$PROMPT")
+
+      HC_ERR=$(mktemp "''${TMPDIR:-/tmp}/claude-herdr-spawn.XXXXXX")
+      if ! HC_OUT=$(hc run --bg --json --name "$HC_NAME" --cwd "$DIR" --outlive-parent \
+            --label "herdr.space=$HC_SPACE" --label "herdr.tab=$HC_TAB" \
+            --label "routine=$AGENT_NAME" -- "''${ARGV[@]}" 2>"$HC_ERR"); then
+        echo "hc run failed: $(cat "$HC_ERR")" >&2; rm -f "$HC_ERR"; exit 1
+      fi
+      rm -f "$HC_ERR"
+      HC_T=$(printf '%s' "$HC_OUT" | jq -r .address)
+
+      # The app adopts the labelled terminal asynchronously; name the tab/space once it has.
+      if [ -n "''${HC_LS:-}" ]; then
+        for _ in $(seq 1 20); do
+          herdr-app do tab.rename --id "$HC_TAB" --name "$LABEL" >/dev/null 2>&1 && break
+          sleep 0.5
+        done
+        [ "$HC_NEW_SPACE" = 1 ] && herdr-app do space.rename --id "$HC_SPACE" --name Routines >/dev/null 2>&1
+      fi
+
+      # Verify the prompt was taken up (turn advanced or working), not merely typed.
+      if [ -n "$PROMPT" ]; then
+        HC_OK=0
+        for _ in $(seq 1 60); do
+          HC_G=$(hc get "$HC_T" 2>/dev/null) || break
+          [ "$(printf '%s' "$HC_G" | jq -r .state)" = live ] || break
+          if [ "$(printf '%s' "$HC_G" | jq -r '.turn // 0')" -ge 1 ] \
+             || [ "$(printf '%s' "$HC_G" | jq -r '.status.state // ""')" = working ]; then
+            HC_OK=1; break
+          fi
+          sleep 1
+        done
+        [ "$HC_OK" = 1 ] || { echo "agent $HC_T did not start working on the prompt" >&2; exit 1; }
+      fi
+      echo "spawned '$LABEL' in herdr app (terminal=$HC_T space=$HC_SPACE tab=$HC_TAB)"
+      exit 0
+    fi
+
     command -v herdr >/dev/null 2>&1 || { echo "no herdr on this host" >&2; exit 1; }
 
     # `herdr server` runs headless in the FOREGROUND — detach and poll for the
@@ -1709,6 +1859,76 @@ exit 0
   claudeHerdrDeliver = pkgs.writeShellScript "claude-herdr-deliver" ''
     set -uo pipefail
     NAME="$1"; TEXT="''${2:-}"; TITLE="''${3:-}"
+
+    # Herdr app path (`hc`): preferred whenever hc exists. The terminal is found by hc name (same
+    # derivation as claudeHerdrSpawn), else by Claude session name (TITLE) among live terminals in
+    # $PWD -- so an assistant started by hand (`duet-code --name Assistant`) is still the live one.
+    # Nothing found falls through to the herdr TUI path. Never interrupts: only an idle terminal
+    # is typed into.
+    # HC-BEGIN
+    if command -v hc >/dev/null 2>&1 && hc server status >/dev/null 2>&1; then
+      HC_NAME=$(printf '%s' "$NAME" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_-' '-' | cut -c1-32)
+      SESS_DIR="''${CLAUDE_CONFIG_DIR:-$HOME/.claude}/sessions"
+      HC_T=""
+      if HC_G=$(hc get "$HC_NAME" 2>/dev/null) && [ "$(printf '%s' "$HC_G" | jq -r '.state // ""')" = live ]; then
+        HC_T=$(printf '%s' "$HC_G" | jq -r .address)
+      elif [ -n "$TITLE" ]; then
+        HC_CANDS=""
+        for A in $(hc ls 2>/dev/null | jq -r --arg d "$PWD" '.terminals[]? | select(.state == "live" and .cwd == $d) | .address'); do
+          PID=$(hc get "$A" 2>/dev/null | jq -r '.foreground.pid // empty')
+          [ -n "$PID" ] && [ -r "$SESS_DIR/$PID.json" ] || continue
+          [ "$(jq -r '.name // ""' "$SESS_DIR/$PID.json" 2>/dev/null)" = "$TITLE" ] && HC_CANDS="$HC_CANDS $A"
+        done
+        set -- $HC_CANDS
+        [ "$#" -eq 1 ] && HC_T="$1"
+      fi
+      if [ -n "$HC_T" ]; then
+        [ -n "$TEXT" ] || exit 0
+        hc_get() { hc get "$HC_T" 2>/dev/null; }
+        hc_session() {
+          local pid; pid=$(hc_get | jq -r '.foreground.pid // empty')
+          [ -n "$pid" ] && jq -r '.sessionId // empty' "$SESS_DIR/$pid.json" 2>/dev/null
+        }
+        HC_STATE=$(hc_get | jq -r '.status.state // ""')
+        case "$HC_STATE" in
+          idle|done) ;;
+          *) echo "$NAME ($HC_T) is $HC_STATE; not sending $TEXT" >&2; exit 1 ;;
+        esac
+        if [ "$TEXT" = /clear ]; then
+          BEFORE=$(hc_session)
+          hc send --if idle "$HC_T" /clear >/dev/null 2>&1
+          AFTER=""
+          for _ in $(seq 1 20); do
+            AFTER=$(hc_session)
+            [ -n "$AFTER" ] && [ "$AFTER" != "$BEFORE" ] && break
+            sleep 0.5
+          done
+          if [ -z "$AFTER" ] || [ "$AFTER" = "$BEFORE" ]; then
+            hc keys "$HC_T" enter >/dev/null 2>&1
+            echo "note: /clear did not take; sent enter" >&2
+            sleep 3
+            AFTER=$(hc_session)
+          fi
+          if [ -n "$AFTER" ] && [ "$AFTER" != "$BEFORE" ]; then
+            echo "cleared $NAME ($HC_T): session $BEFORE -> $AFTER"; exit 0
+          fi
+          echo "/clear to $NAME ($HC_T) did not take (session still $BEFORE)" >&2; exit 1
+        fi
+        TURN0=$(hc_get | jq -r '.turn // 0')
+        hc send --if idle "$HC_T" "$TEXT" >/dev/null 2>&1 || { echo "hc send to $NAME ($HC_T) failed" >&2; exit 1; }
+        for _ in $(seq 1 30); do
+          G=$(hc_get) || break
+          if [ "$(printf '%s' "$G" | jq -r '.turn // 0')" -gt "$TURN0" ] \
+             || [ "$(printf '%s' "$G" | jq -r '.status.state // ""')" = working ]; then
+            echo "delivered $TEXT to $NAME ($HC_T)"; exit 0
+          fi
+          sleep 0.5
+        done
+        echo "delivery of $TEXT to $NAME ($HC_T) not confirmed" >&2; exit 1
+      fi
+    fi
+    # HC-END
+
     command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1 || exit 3
     # stdout only: the mise banner goes to stderr and would break jq.
     if ! { AGENT=$(herdr agent get "$NAME" 2>/dev/null) \
@@ -1858,7 +2078,19 @@ exit 0
         esac
         # A standalone nightly-wrapup (spawned when no assistant was live) is
         # closed outright: closing the tab ends the `claude --rc` in the pane.
-        if command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1; then
+        # HC-SHUTDOWN-BEGIN
+        if command -v hc >/dev/null 2>&1 && hc server status >/dev/null 2>&1; then
+          # Herdr app: the routine's terminal is named by claudeHerdrSpawn. Only a live terminal
+          # by that exact name is ended; kill, then remove the finished record.
+          if hc_w=$(hc get nightly-wrapup 2>/dev/null) && [ "$(printf '%s' "$hc_w" | jq -r '.state // ""')" = live ]; then
+            if hc kill nightly-wrapup >/dev/null 2>&1; then
+              hc rm nightly-wrapup >/dev/null 2>&1 || true
+              echo "closed hc terminal nightly-wrapup"; stopped=$((stopped + 1))
+            else
+              echo "FAILED to close hc terminal nightly-wrapup" >&2; failed=$((failed + 1))
+            fi
+          fi
+        elif command -v herdr >/dev/null 2>&1 && herdr status server >/dev/null 2>&1; then
           # Match on .name -- the field `herdr agent start` checks for collisions --
           # NOT the terminal title. A herdr restart rewrites every title to
           # "omarchy:herdr-restart", so the old title regex matched nothing, this
