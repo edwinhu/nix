@@ -2372,14 +2372,6 @@ in
         agenix.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
 
-    # host-dispatch agent dir (ensure.sh + system-prompt.md) lives in dotfiles
-    # but ~/.claude is not stow-managed here, so link it in out-of-store (live-
-    # editable, matches the macOS ~/.claude/agents/host-dispatch layout that
-    # ensure.sh's AGENT_DIR/PROMPT_FILE expect). Consumed by the host-dispatch
-    # systemd service above.
-    file.".claude/agents/host-dispatch".source =
-      config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/.claude/agents/host-dispatch";
-
     # Install the AI CLIs idempotently on every build-switch, as mise stubs in
     # ~/.local/bin (mirrors the macOS installAITools). Same mechanism as
     # Omarchy's own install/user/mise.sh, so the two agree on any tool they
@@ -4344,12 +4336,6 @@ in
     };
     Install.WantedBy = [ "graphical-session.target" ];
     }; }
-    # host-dispatch: keep exactly one always-on `claude --rc --bg` dispatcher
-    # session ("omarchy:host-dispatch") alive so the Mac can route work here via
-    # agent-msg. The ensure.sh + system-prompt live in dotfiles
-    # (~/.claude/agents/host-dispatch/, stow-linked); ~/.config/systemd/user is
-    # home-manager-managed here, so the unit is declared in nix rather than
-    # dropped alongside the dotfiles copy. Mirrors dotfiles' host-dispatch.service.
     # Keep aerc's completion cache warm out of band. The query path deliberately
     # never indexes inline (a full index is four IMAP fetches, ~75s), so without
     # this the first completion after a cold cache returns nothing.
@@ -4684,16 +4670,11 @@ in
     }; }
     # claude-remote-control: keep this machine reachable as a Claude Code
     # "environment", so the phone and claude.ai can CREATE sessions here rather
-    # than only driving ones already started at the terminal. Replaces the
-    # host-dispatch ensure.sh loop retired 2026-09-02 — that existed solely
-    # because nothing else could originate a local session remotely, which
-    # `remote-control` server mode now does natively (Dispatch, via the Desktop
-    # app, is the other route; this one needs no GUI).
+    # than only driving ones already started at the terminal. Dispatch, via the
+    # Desktop app, is the other route; this one needs no GUI.
     #
-    # A long-running server, not a 5-minute ensure tick: it holds one
-    # pre-created session and spawns more on demand up to --capacity (32 by
-    # default), so the whole spawn-and-die failure class the old script was
-    # shaped around does not arise.
+    # A long-running server: it holds one pre-created session and spawns more
+    # on demand up to --capacity (32 by default).
     #
     # StandardOutput=null is NOT laziness: remote-control renders a live TUI and
     # repaints it about once a second even with no terminal attached (~1.2 MB of
@@ -5034,7 +5015,7 @@ in
     }; }
   ];
 
-  # Timers for the Claude scheduled routines (see claudeRoutines) + host-dispatch.
+  # Timers for the Claude scheduled routines (see claudeRoutines).
   systemd.user.timers = lib.mkMerge [
     { beeper-stop2end = {
       Unit.Description = "Check for Stop2End campaign texts (every 5min)";
@@ -5125,16 +5106,6 @@ in
       };
       Install.WantedBy = [ "timers.target" ];
     }; }
-    # RETIRED 2026-09-02 — host-dispatch is gone; claude-remote-control in
-    # systemd.user.services covers it, and needs no timer (it is long-running).
-    # { host-dispatch = {
-    #   Unit.Description = "Periodically ensure host-dispatch Claude session is running";
-    #   Timer = {
-    #     OnBootSec = "30s";
-    #     OnUnitActiveSec = "5min";
-    #   };
-    #   Install.WantedBy = [ "timers.target" ];
-    # }; }
   ];
 
   # Superwhisper's fcitx5 addon commits dictations as input-method text (no
