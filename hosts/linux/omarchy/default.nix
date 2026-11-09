@@ -4404,7 +4404,7 @@ in
       };
       Service = {
         ExecStartPre = "/usr/bin/mkdir -p %h/.local/share/home-assistant";
-        ExecStart = ''/usr/bin/docker run --rm --name home-assistant --network host -e TZ=America/New_York -v %h/.local/share/home-assistant:/config ghcr.io/home-assistant/home-assistant:stable'';
+        ExecStart = ''/usr/bin/docker run --rm --name home-assistant --network host -e TZ=America/New_York -v %h/.local/share/home-assistant:/config -v /run/dbus:/run/dbus:ro ghcr.io/home-assistant/home-assistant:stable'';
         ExecStop = "/usr/bin/docker stop home-assistant";
         Restart = "on-failure";
         RestartSec = 10;
@@ -4528,6 +4528,42 @@ in
         ExecStop = "/usr/bin/docker stop mosquitto";
         Restart = "on-failure";
         RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    }; }
+    # Typhur cloud → local MQTT bridge (oleost/typhurHA run.py, pinned) for the Sync One Pro.
+    # options.json holds the Typhur and MQTT logins, so it is written from 1Password into
+    # tmpfs at each start rather than kept on disk.
+    { typhur-bridge = {
+      Unit = {
+        Description = "Typhur Sync to MQTT bridge";
+        After = [ "docker.service" "network-online.target" "mosquitto.service" ];
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 10;
+      };
+      Service = {
+        ExecStartPre = [
+          "/usr/bin/docker build -q -t typhur-bridge:13240d9 %h/.local/share/typhur-bridge/build"
+          "${pkgs.writeShellScript "typhur-bridge-options" ''
+            set -euo pipefail
+            export OP_SERVICE_ACCOUNT_TOKEN="$(tr -d '\n' < "$XDG_RUNTIME_DIR/agenix/op-service-account-token")"
+            d="$XDG_RUNTIME_DIR/typhur-bridge"
+            mkdir -p "$d"; chmod 700 "$d"; umask 077
+            v="op://Shared with Agents"
+            # MQTT item by id: op read rejects the parentheses in its title.
+            e="$(/usr/bin/op read "$v/Typhur/username")"
+            p="$(/usr/bin/op read "$v/Typhur/password")"
+            mu="$(/usr/bin/op read "$v/et7l36ueorteqkz3uodvbem2xu/username")"
+            mp="$(/usr/bin/op read "$v/et7l36ueorteqkz3uodvbem2xu/password")"
+            /usr/bin/jq -n --arg e "$e" --arg p "$p" --arg mu "$mu" --arg mp "$mp" \
+              '{typhur_email:$e, typhur_password:$p, typhur_token:"", typhur_region:"us", typhur_country:"US",
+                mqtt_host:"127.0.0.1", mqtt_port:1883, mqtt_username:$mu, mqtt_password:$mp}' > "$d/options.json"
+          ''}"
+        ];
+        ExecStart = ''/usr/bin/docker run --rm --name typhur-bridge --network host -v %t/typhur-bridge:/data typhur-bridge:13240d9'';
+        ExecStop = "/usr/bin/docker stop typhur-bridge";
+        Restart = "on-failure";
+        RestartSec = 30;
       };
       Install.WantedBy = [ "default.target" ];
     }; }
