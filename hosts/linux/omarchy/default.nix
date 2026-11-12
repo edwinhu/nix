@@ -1862,7 +1862,7 @@ exit 0
 
     # Herdr app path (`hc`): preferred whenever hc exists. The terminal is found by hc name (same
     # derivation as claudeHerdrSpawn), else by Claude session name (TITLE) among live terminals in
-    # $PWD -- so an assistant started by hand (`duet-code --name Assistant`) is still the live one.
+    # $PWD -- so an assistant started by hand (`bridge-code --name Assistant`) is still the live one.
     # Nothing found falls through to the herdr TUI path. Never interrupts: only an idle terminal
     # is typed into.
     # HC-BEGIN
@@ -1996,7 +1996,7 @@ exit 0
     # messaging the live "Assistant"; this timer only keeps that session alive.
     # Silent: no prompt is sent.
     "claude-assistant-keepalive" = {
-      desc = "Claude assistant keepalive — restart the Assistant with the Duet bridge if absent";
+      desc = "Claude assistant keepalive — restart the Assistant with Claude Bridge if absent";
       cwd = "%h/areas/assistant";
       onCalendar = "*-*-* 06:45:00";
       # A boot after 06:45 still spawns: an outage across the timer otherwise
@@ -2013,7 +2013,7 @@ exit 0
         [ "$rc" -eq 3 ] || exit "$rc"
         echo "no live assistant session; spawning one"
         ${claudeHerdrSpawn} "$HOME/areas/assistant" "Assistant" assistant "" assistant \
-          "$HOME/.local/bin/duet-code --name 'Assistant' --print-args"
+          "$HOME/.local/bin/bridge-code --name 'Assistant' --print-args"
       '';
     };
     # Daily 03:00, in the Obsidian vault (~/notes on Linux).
@@ -5406,6 +5406,20 @@ in
       icon = "call-start";
       categories = [ "Network" "Telephony" ];
       mimeType = [ "x-scheme-handler/tel" ];
+      startupNotify = true;
+    };
+
+    # Google Fi calling in the browser (Messages for web). A launcher only: tel:
+    # links still go to Google Voice above. Personal profile pinned for the same
+    # profile-picker reason as tel-gvoice.
+    google-fi-calls = {
+      name = "Google Fi Calls";
+      comment = "Place calls on the Google Fi number via Messages for web";
+      exec = "/usr/bin/omarchy-launch-webapp https://messages.google.com/fiwebcalls/calls --profile-directory=Default";
+      terminal = false;
+      type = "Application";
+      icon = "call-start";
+      categories = [ "Network" "Telephony" ];
       startupNotify = true;
     };
 
