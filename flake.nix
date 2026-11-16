@@ -457,6 +457,7 @@
                   rv = prev.callPackage ./modules/shared/rv.nix {};
                   omniwm = prev.callPackage ./modules/shared/omniwm.nix { tahoe = info.macosTahoe or false; };
                   voxtype = prev.callPackage ./modules/darwin/voxtype.nix {};
+                  herdr-app = prev.callPackage ./modules/shared/herdr-app.nix {};
                   # typst 0.15 doubles compile memory; see typst-pinned.nix.
                   inherit (prev.callPackage ./modules/shared/typst-pinned.nix {}) typst tinymist;
                   tinymist-lsp = final.callPackage ./modules/shared/tinymist-lsp.nix {};
@@ -538,7 +539,7 @@
                 obsidian-cli = prev.callPackage ./modules/shared/obsidian-cli.nix {};
                 tsui = prev.callPackage ./modules/shared/tsui.nix {};
                 superwhisper = prev.callPackage ./modules/linux/superwhisper.nix {};
-                herdr-app = prev.callPackage ./modules/linux/herdr-app.nix {};
+                herdr-app = prev.callPackage ./modules/shared/herdr-app.nix {};
                 # typst 0.15 doubles compile memory; see typst-pinned.nix.
                 inherit (prev.callPackage ./modules/shared/typst-pinned.nix {}) typst tinymist;
                 tinymist-lsp = final.callPackage ./modules/shared/tinymist-lsp.nix {};

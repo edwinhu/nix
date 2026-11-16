@@ -8,8 +8,10 @@ let
   # macOS status bar, borders, dock management.
   # libreoffice-bin  # Moved to homebrew cask to reduce rsync time (783 MB app bundle)
   # aerospace  # Disabled: trying omniwm
+  # herdr-app: Herdr desktop app + herdr-core/hc (modules/shared/herdr-app.nix).
   desktop = [
     dockutil
+    herdr-app
     jankyborders
     sketchybar
   ];

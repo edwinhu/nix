@@ -7,9 +7,14 @@
 # both versions + hashes, from releases.herdr.dev/{app,core}/latest.json
 # (`nix hash convert --to sri <sha256>`). Keep core >= the app's core_min.
 #
-# herdr-app links the Arch system libs (gpui: vulkan, wayland, xkbcommon,
-# fontconfig), so it is installed unpatched (dontFixup). herdr-core is static.
-# The launcher entry is in hosts/linux/omarchy/default.nix.
+# Linux: herdr-app links the Arch system libs (gpui: vulkan, wayland,
+# xkbcommon, fontconfig), so it is installed unpatched (dontFixup); herdr-core
+# is static. The launcher entry is in hosts/linux/omarchy/default.nix.
+#
+# macOS: both tarballs are signed .app bundles (Herdr.app, Herdr Core.app),
+# installed as-is so the signatures hold. bin/herdr-core and hc point INTO
+# Herdr Core.app: Full Disk Access is granted to that bundle, and the app finds
+# its core on PATH.
 { lib, stdenvNoCC, fetchurl }:
 
 let
@@ -25,14 +30,20 @@ let
       app = "sha256-LluwXEfP+60BitNCF+pMgWR21+uEJpL3QHmMkCDwKB4=";
       core = "sha256-zzM5PPlQu3Y3NNw+FmEKudr4SSORpO8N5WAmzX91KFM=";
     };
+    aarch64-darwin = {
+      app = "sha256-9d0LyBqp72HPv7bvn9v0/n9mTU7Gdu4NyI8TzJdZ0NA=";
+      core = "sha256-d9ivCS4lrmUPRCTW2tJ1FPaRahHYB/sHUoWM0nwh5Pw=";
+    };
   };
 
+  isDarwin = stdenvNoCC.hostPlatform.isDarwin;
+  os = if isDarwin then "macos" else "linux";
   arch = stdenvNoCC.hostPlatform.parsed.cpu.name;
   hashes = platforms.${stdenvNoCC.hostPlatform.system}
     or (throw "herdr-app: unsupported platform ${stdenvNoCC.hostPlatform.system}");
 
   core = fetchurl {
-    url = "https://releases.herdr.dev/core/${coreVersion}/herdr-core-linux-${arch}.tar.gz";
+    url = "https://releases.herdr.dev/core/${coreVersion}/herdr-core-${os}-${arch}.tar.gz";
     hash = hashes.core;
   };
 
@@ -41,7 +52,7 @@ in stdenvNoCC.mkDerivation {
   version = appVersion;
 
   src = fetchurl {
-    url = "https://releases.herdr.dev/app/${appVersion}/herdr-app-linux-${arch}.tar.gz";
+    url = "https://releases.herdr.dev/app/${appVersion}/herdr-app-${os}-${arch}.tar.gz";
     hash = hashes.app;
   };
 
@@ -51,11 +62,19 @@ in stdenvNoCC.mkDerivation {
 
   installPhase = ''
     runHook preInstall
+    mkdir core && tar -xzf ${core} -C core
+  '' + (if isDarwin then ''
+    mkdir -p $out/Applications $out/bin
+    cp -R Herdr.app "core/Herdr Core.app" $out/Applications/
+    ln -s "$out/Applications/Herdr.app/Contents/MacOS/Herdr" $out/bin/herdr-app
+    ln -s "$out/Applications/Herdr Core.app/Contents/MacOS/herdr-core" $out/bin/herdr-core
+    ln -s herdr-core $out/bin/hc
+  '' else ''
     install -Dm0755 herdr-app/herdr-app $out/bin/herdr-app
     install -Dm0644 herdr-app/herdr-app.svg $out/share/icons/hicolor/scalable/apps/herdr-app.svg
-    mkdir core && tar -xzf ${core} -C core
     install -Dm0755 core/herdr-core $out/bin/herdr-core
     ln -s herdr-core $out/bin/hc
+  '') + ''
     runHook postInstall
   '';
 
