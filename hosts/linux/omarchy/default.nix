@@ -2270,14 +2270,16 @@ in
       graphWebhookUrl = "https://webhook.eddyhu.com/graph";
       # What a notification now runs. The archive is deleted, so there is no
       # in-process cycle left to trigger: the receiver spawns the same
-      # guarded mbsync the timer runs, narrowed to the `work` channel. The guard
+      # guarded mbsync the timer runs, narrowed to the `work` channel's INBOX (the timer syncs every folder). The guard
       # locks per account, so a slow Gmail pull no longer drops this; `--wait`
       # queues it behind an in-flight Work pull instead of skipping. Spawned
       # directly, no shell. The guard also runs `notmuch new` under the lock the
       # taggers wait on -- without it this refresh left renames unindexed.
       refreshCommand =
         "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
-        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch work --wait 360";
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch work:INBOX --wait 360 "
+        # --tagger takes all remaining argv: this string is whitespace-split with no shell, so no quotes.
+        + "--tagger ${pkgs.python3}/bin/python3 ${./files/notmuch-tag-bridge.py}";
     };
     # Receiver-only: mbsync reads imap.gmail.com directly, so there is no bridge,
     # port or budget here -- just the Pub/Sub subscriber. It pulls (no public
@@ -2293,7 +2295,9 @@ in
       gmailPushTopic = "projects/eddyhu-gws-cli/topics/gmail-push";
       refreshCommand =
         "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
-        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal --wait 360";
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal --wait 360 "
+        # Same --tagger form; --recent scopes the Gmail pass to 2 days (the timer runs the full one).
+        + "--tagger ${pkgs.python3}/bin/python3 ${./files/notmuch-tag-gmail.py} --recent";
     };
   };
 

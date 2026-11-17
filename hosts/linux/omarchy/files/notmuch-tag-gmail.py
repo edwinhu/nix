@@ -54,12 +54,14 @@ def connect():
     return m
 
 
-def main():
+def main(recent=False):
     m = connect()
     try:
         # 1. one server-side search per view: sequence numbers, not messages.
         seqs = {}
         for tag, q in QUERIES.items():
+            if recent:
+                q += " newer_than:2d"   # push path: only fresh mail; the timer runs the full pass
             typ, d = m.search(None, "X-GM-RAW", f'"{q}"')
             if typ != "OK":
                 print(f"search failed for {q}: {typ}", file=sys.stderr)
@@ -125,4 +127,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(recent="--recent" in sys.argv[1:]))

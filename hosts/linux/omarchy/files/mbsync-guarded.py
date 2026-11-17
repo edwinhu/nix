@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Run mbsync per account, then index, refusing a suspicious push.
 
-Usage: mbsync-guarded.py <mbsync> <mbsyncrc> <notmuch> <channel|group> [--wait SECONDS]
+Usage: mbsync-guarded.py <mbsync> <mbsyncrc> <notmuch> <channel[:box]|group> [--wait SECONDS] [--tagger CMD...]
+
+--tagger takes ALL remaining argv (the refresh command is whitespace-split, no shell, so
+no quoting) and runs it under the exclusive `.mbsync.lock` after the sync releases it.
 
 The channels push flags (`Sync Pull PushFlags`). A message whose Seen flag was
 lost LOCALLY -- a tag write racing an unindexed rename strips it -- looks to
@@ -77,7 +80,7 @@ def lock(name, mode, wait_s):
             time.sleep(0.2)
 
 
-def sync(mbsync, rc, notmuch, account, wait_s):
+def sync(mbsync, rc, notmuch, account, wait_s, spec=None):
     own = lock(f".mbsync-{account}.lock", fcntl.LOCK_EX, wait_s)
     if own is None:
         print(f"mbsync-guarded: {account} sync already running; skipped", file=sys.stderr)
@@ -95,7 +98,7 @@ def sync(mbsync, rc, notmuch, account, wait_s):
                 print(f"mbsync-guarded: HOLDING flag push, {pending} pending unread pushes "
                       f"in {account} exceed {UNREAD_PUSH_LIMIT}; pulling only", file=sys.stderr)
                 cmd.append("--pull")
-            status = subprocess.run(cmd + [account], check=False).returncode
+            status = subprocess.run(cmd + [spec or account], check=False).returncode
             indexer = lock(".notmuch.lock", fcntl.LOCK_EX, SHARED_WAIT_S)
             try:
                 subprocess.run([notmuch, "new", "--quiet"], check=False)
@@ -109,13 +112,37 @@ def sync(mbsync, rc, notmuch, account, wait_s):
         os.close(own)
 
 
+def tag(tagger):
+    """Run the tagger under the exclusive tag lock; a failure never changes the sync status."""
+    excl = lock(".mbsync.lock", fcntl.LOCK_EX, SHARED_WAIT_S)
+    if excl is None:
+        print(f"mbsync-guarded: tag lock busy {SHARED_WAIT_S}s; tagging skipped (timer re-tags)",
+              file=sys.stderr)
+        return
+    try:
+        subprocess.run(tagger, check=False)
+    finally:
+        os.close(excl)
+
+
 def main(argv):
     mbsync, rc, notmuch, target = argv[1:5]
     rest = argv[5:]
+    tagger = None
+    if "--tagger" in rest:
+        i = rest.index("--tagger")
+        tagger, rest = rest[i + 1:], rest[:i]
     wait_s = float(rest[rest.index("--wait") + 1]) if "--wait" in rest else 0.0
     status = 0
-    for account in CHANNELS.get(target, [target]):
-        status = sync(mbsync, rc, notmuch, account, wait_s) or status
+    # `channel:box` is isync's own syntax: the account is the channel, mbsync gets the whole spec.
+    if target in CHANNELS:
+        jobs = [(a, None) for a in CHANNELS[target]]
+    else:
+        jobs = [(target.split(":", 1)[0], target)]
+    for account, spec in jobs:
+        status = sync(mbsync, rc, notmuch, account, wait_s, spec) or status
+        if tagger:
+            tag(tagger)
     return status
 
 
