@@ -2295,9 +2295,7 @@ in
       gmailPushTopic = "projects/eddyhu-gws-cli/topics/gmail-push";
       refreshCommand =
         "${pkgs.python3}/bin/python3 ${./files/mbsync-guarded.py} "
-        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal --wait 360 "
-        # Same --tagger form; --recent scopes the Gmail pass to 2 days (the timer runs the full one).
-        + "--tagger ${pkgs.python3}/bin/python3 ${./files/notmuch-tag-gmail.py} --recent";
+        + "${pkgs.isync}/bin/mbsync /home/eh/.mbsyncrc ${pkgs.notmuch}/bin/notmuch personal --wait 360";
     };
   };
 
@@ -3052,8 +3050,9 @@ in
     Archive=folder:work/Archive
   '';
 
+  # Important's second clause shows mail Gmail has not categorised yet: only the 5-min timer runs the Gmail tagger.
   xdg.configFile."aerc/queries-personal".text = ''
-    Important=folder:personal/INBOX and tag:important
+    Important=folder:personal/INBOX and (tag:important or not (tag:primary or tag:updates or tag:promotions or tag:social or tag:forums or tag:important))
     Primary=folder:personal/INBOX and tag:primary
     Updates=folder:personal/INBOX and tag:updates and date:90d..
     Promotions=folder:personal/INBOX and tag:promotions and date:90d..

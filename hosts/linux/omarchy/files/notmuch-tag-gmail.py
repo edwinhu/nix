@@ -48,7 +48,7 @@ def connect():
     tok = subprocess.run(TOKEN_CMD, capture_output=True, text=True).stdout.strip()
     if not tok:
         sys.exit("no Google token from ortie")
-    m = imaplib.IMAP4_SSL("imap.gmail.com")
+    m = imaplib.IMAP4_SSL("imap.gmail.com", timeout=60)
     m.authenticate("XOAUTH2", lambda _=None: f"user={ACCOUNT}\1auth=Bearer {tok}\1\1".encode())
     m.select("INBOX", readonly=True)   # readonly: this must never write to Gmail
     return m
